@@ -1,0 +1,49 @@
+From 77b06c999ae6f187bbca96b2a856b5514851c700 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 22 May 2026 14:16:15 +0800
+Subject: [PATCH] config: disable DRM display drivers in V-gatron U-Boot stage
+
+Disable CONFIG_DM_VIDEO, CONFIG_DISPLAY, CONFIG_DRM_ROCKCHIP and
+all associated Rockchip DRM sub-drivers (HDMI-QP, MIPI-DSI2, DP,
+Analogix-DP, Samsung MIPI DCPHY, HDPTX HDMI PHY).
+
+U-Boot no longer drives the display pipeline; the kernel takes
+ownership of display initialization from the earliest boot stage.
+---
+ configs/V-gatron_defconfig | 20 ++++++++++----------
+ 1 file changed, 10 insertions(+), 10 deletions(-)
+
+diff --git a/configs/V-gatron_defconfig b/configs/V-gatron_defconfig
+index fe9a71a99a..acdfd70f4e 100644
+--- a/configs/V-gatron_defconfig
++++ b/configs/V-gatron_defconfig
+@@ -125,16 +125,16 @@ CONFIG_DM_ETH_PHY=y
+ CONFIG_DWC_ETH_QOS=y
+ CONFIG_GMAC_ROCKCHIP=y
+ 
+-# 显示
+-CONFIG_DM_VIDEO=y
+-CONFIG_DISPLAY=y
+-CONFIG_DRM_ROCKCHIP=y
+-CONFIG_DRM_ROCKCHIP_DW_HDMI_QP=y
+-CONFIG_DRM_ROCKCHIP_DW_MIPI_DSI2=y
+-CONFIG_DRM_ROCKCHIP_DW_DP=y
+-CONFIG_DRM_ROCKCHIP_ANALOGIX_DP=y
+-CONFIG_DRM_ROCKCHIP_SAMSUNG_MIPI_DCPHY=y
+-CONFIG_PHY_ROCKCHIP_SAMSUNG_HDPTX_HDMI=y
++# 显示（已禁用 DRM 显示，U-Boot 阶段不输出画面，内核接管显示）
++# CONFIG_DM_VIDEO is not set
++# CONFIG_DISPLAY is not set
++# CONFIG_DRM_ROCKCHIP is not set
++# CONFIG_DRM_ROCKCHIP_DW_HDMI_QP is not set
++# CONFIG_DRM_ROCKCHIP_DW_MIPI_DSI2 is not set
++# CONFIG_DRM_ROCKCHIP_DW_DP is not set
++# CONFIG_DRM_ROCKCHIP_ANALOGIX_DP is not set
++# CONFIG_DRM_ROCKCHIP_SAMSUNG_MIPI_DCPHY is not set
++# CONFIG_PHY_ROCKCHIP_SAMSUNG_HDPTX_HDMI is not set
+ 
+ # GPIO / I2C / SPI / PWM / Pinctrl
+ CONFIG_GPIO_HOG=y
+-- 
+2.25.1
+

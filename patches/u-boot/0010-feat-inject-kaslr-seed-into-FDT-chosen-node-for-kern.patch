@@ -1,0 +1,37 @@
+From d31458718cb0d2258f58714289d2771d8cd68d98 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 22 May 2026 14:15:54 +0800
+Subject: [PATCH] feat: inject kaslr-seed into FDT chosen node for kernel ASLR
+
+When CONFIG_BOARD_RNG_SEED is enabled, write a board-generated
+random 64-bit value as "kaslr-seed" in the /chosen DT node.
+This is distinct from "rng-seed" and is consumed by the kernel
+to randomize its own load address (KASLR).
+---
+ common/fdt_support.c | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/common/fdt_support.c b/common/fdt_support.c
+index b741f06ac9..abe7c8b3eb 100644
+--- a/common/fdt_support.c
++++ b/common/fdt_support.c
+@@ -365,6 +365,16 @@ int fdt_chosen(void *fdt)
+ 		}
+ 	}
+ 
++	/* Provide kaslr-seed for kernel ASLR (separate from rng-seed) */
++	if (IS_ENABLED(CONFIG_BOARD_RNG_SEED) && !board_rng_seed(&buf)) {
++		err = fdt_setprop(fdt, nodeoffset, "kaslr-seed",
++				  abuf_data(&buf), sizeof(u64));
++		abuf_uninit(&buf);
++		if (err < 0)
++			printf("WARNING: could not set kaslr-seed %s.\n",
++			       fdt_strerror(err));
++	}
++
+ 	str = board_fdt_chosen_bootargs(fdt);
+ 	if (str) {
+ 		err = fdt_setprop(fdt, nodeoffset, "bootargs", str,
+-- 
+2.25.1
+

@@ -1,0 +1,29 @@
+From 114d53fe20c8c72a9141e92a7c8916dea1ede6c3 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Wed, 6 May 2026 01:28:22 +0800
+Subject: [PATCH] fix(Makefile): suppress DO_STATIC_RELA verbose output
+
+Prefix the DO_STATIC_RELA call in the u-boot-nodtb.bin rule with
+$(Q) so it respects the quiet-build flag (make V=0 / default).
+Previously the internal rela patching script printed its full
+command line unconditionally, polluting the build output.
+---
+ Makefile | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/Makefile b/Makefile
+index 1012b065ad..7e07646dc6 100644
+--- a/Makefile
++++ b/Makefile
+@@ -977,7 +977,7 @@ binary_size_check: u-boot-nodtb.bin FORCE
+ 
+ u-boot-nodtb.bin: u-boot FORCE
+ 	$(call if_changed,objcopy)
+-	$(call DO_STATIC_RELA,$<,$@,$(CONFIG_SYS_TEXT_BASE))
++	$(Q)$(call DO_STATIC_RELA,$<,$@,$(CONFIG_SYS_TEXT_BASE))
+ 	$(BOARD_SIZE_CHECK)
+ 
+ u-boot.ldr:	u-boot
+-- 
+2.25.1
+

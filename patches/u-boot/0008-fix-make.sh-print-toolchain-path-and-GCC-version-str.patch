@@ -1,0 +1,31 @@
+From 87c73682b427f59d87b1ed8ea24ab7358c61ec1a Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Wed, 6 May 2026 01:28:33 +0800
+Subject: [PATCH] fix(make.sh): print toolchain path and GCC version string
+
+Replace the bare 'echo ${TOOLCHAIN}' at the end of make.sh with a
+formatted line that shows both the toolchain prefix path and the
+full GCC version string, e.g.:
+
+  Toolchain: .../aarch64-linux-gnu-gcc (Linaro GCC 6.3-2017.05) 6.3.1
+
+This makes it easy to confirm which compiler was used without having
+to run the toolchain binary manually.
+---
+ make.sh | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/make.sh b/make.sh
+index de02200dca..d8040a32a5 100755
+--- a/make.sh
++++ b/make.sh
+@@ -825,5 +825,5 @@ clean_files
+ make PYTHON=python2 ${ARG_SPL_FWVER} ${ARG_FWVER} CROSS_COMPILE=${TOOLCHAIN} all --jobs=${JOB}
+ pack_images
+ finish
+-echo ${TOOLCHAIN}
++echo "Toolchain: ${TOOLCHAIN}gcc ($(${TOOLCHAIN}gcc --version | head -1))"
+ date
+-- 
+2.25.1
+

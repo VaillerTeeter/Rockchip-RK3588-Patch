@@ -1,0 +1,33 @@
+From 860e573e499c96db93eed2b70b0389a207316eae Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Wed, 6 May 2026 01:26:15 +0800
+Subject: [PATCH] fix(dts): rk3588: set eMMC-first SPL boot order
+
+Change u-boot,spl-boot-order in rk3588-u-boot.dtsi from
+  sdmmc -> sdhci -> spi_nand -> spi_nor
+to
+  sdhci -> sdmmc -> spi_nand -> spi_nor
+
+On the Alientek board the system image lives on eMMC (sdhci).
+The original SD-first order caused SPL to waste time scanning
+the SD slot before falling back to eMMC on every cold boot.
+---
+ arch/arm/dts/rk3588-u-boot.dtsi | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/arch/arm/dts/rk3588-u-boot.dtsi b/arch/arm/dts/rk3588-u-boot.dtsi
+index 8dbc5d688e..177d0cc457 100644
+--- a/arch/arm/dts/rk3588-u-boot.dtsi
++++ b/arch/arm/dts/rk3588-u-boot.dtsi
+@@ -14,7 +14,7 @@
+ 
+ 	chosen {
+ 		stdout-path = &uart2;
+-		u-boot,spl-boot-order = &sdmmc, &sdhci, &spi_nand, &spi_nor;
++		u-boot,spl-boot-order = &sdhci, &sdmmc, &spi_nand, &spi_nor;
+ 	};
+ 
+ 	secure-otp@fe3a0000 {
+-- 
+2.25.1
+

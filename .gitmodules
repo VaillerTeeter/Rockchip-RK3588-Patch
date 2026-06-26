@@ -1,0 +1,6 @@
+[submodule "u-boot"]
+	path = u-boot
+	url = https://github.com/VaillerTeeter/Rockchip-RK3588-u-boot.git
+[submodule "rkbin"]
+	path = rkbin
+	url = https://github.com/VaillerTeeter/Rockchip-RK3588-rkbin.git

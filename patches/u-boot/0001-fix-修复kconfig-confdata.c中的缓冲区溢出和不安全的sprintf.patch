@@ -1,0 +1,48 @@
+From d96611515a12736c8797c339a976ec4e74f6fc92 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Mon, 4 May 2026 03:20:10 +0800
+Subject: [PATCH] =?UTF-8?q?fix:=20=E4=BF=AE=E5=A4=8D=20kconfig/confdata.c?=
+ =?UTF-8?q?=20=E4=B8=AD=E7=9A=84=E7=BC=93=E5=86=B2=E5=8C=BA=E6=BA=A2?=
+ =?UTF-8?q?=E5=87=BA=E5=92=8C=E4=B8=8D=E5=AE=89=E5=85=A8=E7=9A=84=20sprint?=
+ =?UTF-8?q?f?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- 将 tmpname 缓冲区从 PATH_MAX+1 扩大到 PATH_MAX+32，
+  将 newname 缓冲区从 PATH_MAX+1 扩大到 PATH_MAX*2+2，
+  防止路径拼接时溢出
+- 将 sprintf 替换为 snprintf，确保字符串安全格式化
+---
+ scripts/kconfig/confdata.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/scripts/kconfig/confdata.c b/scripts/kconfig/confdata.c
+index 745cb93050..460c4382c3 100644
+--- a/scripts/kconfig/confdata.c
++++ b/scripts/kconfig/confdata.c
+@@ -743,7 +743,7 @@ int conf_write(const char *name)
+ 	struct menu *menu;
+ 	const char *basename;
+ 	const char *str;
+-	char dirname[PATH_MAX+1], tmpname[PATH_MAX+1], newname[PATH_MAX+1];
++	char dirname[PATH_MAX+1], tmpname[PATH_MAX+32], newname[PATH_MAX*2+2];
+ 	char *env;
+ 
+ 	dirname[0] = 0;
+@@ -768,10 +768,10 @@ int conf_write(const char *name)
+ 	} else
+ 		basename = conf_get_configname();
+ 
+-	sprintf(newname, "%s%s", dirname, basename);
++	snprintf(newname, sizeof(newname), "%s%s", dirname, basename);
+ 	env = getenv("KCONFIG_OVERWRITECONFIG");
+ 	if (!env || !*env) {
+-		sprintf(tmpname, "%s.tmpconfig.%d", dirname, (int)getpid());
++		snprintf(tmpname, sizeof(tmpname), "%s.tmpconfig.%d", dirname, (int)getpid());
+ 		out = fopen(tmpname, "w");
+ 	} else {
+ 		*tmpname = 0;
+-- 
+2.25.1
+

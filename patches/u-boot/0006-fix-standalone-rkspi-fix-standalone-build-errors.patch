@@ -1,0 +1,59 @@
+From 20c90ffe16f248ebf30d0d9969d1d9b7dfe90635 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Wed, 6 May 2026 01:27:59 +0800
+Subject: [PATCH] fix(standalone): rkspi: fix standalone build errors
+
+Two issues prevented rkspi from compiling as a standalone example:
+
+1. Missing entry point: the standalone Makefile links with -e rkspi,
+   so a function named rkspi() must exist and be the first symbol in
+   the binary. Add rkspi() that calls app_startup() as required by
+   the standalone framework.
+
+2. Missing type definitions: rkspi.h used u32/u16/u8 from
+   linux/types.h but did not include it, causing build failures
+   when compiled outside the normal U-Boot include path.
+   Add the explicit include.
+---
+ examples/standalone/rkspi.c | 11 +++++++++++
+ examples/standalone/rkspi.h |  2 ++
+ 2 files changed, 13 insertions(+)
+
+diff --git a/examples/standalone/rkspi.c b/examples/standalone/rkspi.c
+index e2e2bef4cb..de813bd1eb 100644
+--- a/examples/standalone/rkspi.c
++++ b/examples/standalone/rkspi.c
+@@ -9,6 +9,17 @@
+ 
+ #include "rkspi.h"
+ 
++/*
++ * Entry point required by the standalone Makefile (-e rkspi).
++ * Must appear before all other functions so -fno-toplevel-reorder
++ * places it first in the binary.
++ */
++int rkspi(int argc, char * const argv[])
++{
++	app_startup(argv);
++	return 0;
++}
++
+ /* Change to 1 to output registers at the start of each transaction */
+ #define DEBUG_RK_SPI	0
+ 
+diff --git a/examples/standalone/rkspi.h b/examples/standalone/rkspi.h
+index a836cfc50b..79c1fece3c 100644
+--- a/examples/standalone/rkspi.h
++++ b/examples/standalone/rkspi.h
+@@ -7,6 +7,8 @@
+ #ifndef _DRIVER_SPI_H_
+ #define _DRIVER_SPI_H_
+ 
++#include <linux/types.h>
++
+ struct rockchip_spi {
+ 	u32 ctrlr0;
+ 	u32 ctrlr1;
+-- 
+2.25.1
+
