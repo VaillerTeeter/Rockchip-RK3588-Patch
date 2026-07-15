@@ -1,0 +1,118 @@
+From 0bbae5d0e57195b450e7f460302ea7c19d1bea40 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 17:21:40 +0800
+Subject: [PATCH] feat: add per-app UiMode configuration and dex metadata for
+ cloud packages
+
+Change-Id: I93f648e1d3ce990ade15241073908195bb0e0817
+
+diff --git a/core/java/android/content/pm/dex/DexMetadataHelper.java b/core/java/android/content/pm/dex/DexMetadataHelper.java
+index e75aa065d3d3..e54157621786 100644
+--- a/core/java/android/content/pm/dex/DexMetadataHelper.java
++++ b/core/java/android/content/pm/dex/DexMetadataHelper.java
+@@ -108,6 +108,12 @@ public class DexMetadataHelper {
+         return dexMetadataFile.exists() ? dexMetadataFile : null;
+     }
+ 
++    public static File findDexMetadataForPackage(String packageName) {
++        String cloudDmPath = "/vendor/etc/clouds/" + packageName + DEX_METADATA_FILE_EXTENSION;
++        File cloudDmFile = new File(cloudDmPath);
++        return cloudDmFile.exists() ? cloudDmFile : null;
++    }
++
+     /**
+      * Return the dex metadata files for the given package as a map
+      * [code path -> dex metadata path].
+diff --git a/services/core/java/com/android/server/pm/PackageAbiHelper.java b/services/core/java/com/android/server/pm/PackageAbiHelper.java
+index 1dbab90d753f..dca723a28075 100644
+--- a/services/core/java/com/android/server/pm/PackageAbiHelper.java
++++ b/services/core/java/com/android/server/pm/PackageAbiHelper.java
+@@ -56,7 +56,7 @@ public interface PackageAbiHelper {
+      * If {@code extractLibs} is true, native libraries are extracted from the app if required.
+      */
+     Pair<Abis, NativeLibraryPaths> derivePackageAbi(AndroidPackage pkg, boolean isUpdatedSystemApp,
+-            String cpuAbiOverride, File appLib32InstallDir) throws PackageManagerException;
++            String cpuAbiOverride, File appLib32InstallDir, String forcePrimaryCpuAbi) throws PackageManagerException;
+ 
+     /**
+      * Calculates adjusted ABIs for a set of packages belonging to a shared user so that they all
+diff --git a/services/core/java/com/android/server/pm/PackageAbiHelperImpl.java b/services/core/java/com/android/server/pm/PackageAbiHelperImpl.java
+index 73d81bae015e..23c8961b52db 100644
+--- a/services/core/java/com/android/server/pm/PackageAbiHelperImpl.java
++++ b/services/core/java/com/android/server/pm/PackageAbiHelperImpl.java
+@@ -298,7 +298,8 @@ final class PackageAbiHelperImpl implements PackageAbiHelper {
+ 
+     @Override
+     public Pair<Abis, NativeLibraryPaths> derivePackageAbi(AndroidPackage pkg,
+-            boolean isUpdatedSystemApp, String cpuAbiOverride, File appLib32InstallDir)
++            boolean isUpdatedSystemApp, String cpuAbiOverride, File appLib32InstallDir,
++            String forcePrimaryCpuAbi)
+             throws PackageManagerException {
+         // Give ourselves some initial paths; we'll come back for another
+         // pass once we've determined ABI below.
+@@ -464,6 +465,9 @@ final class PackageAbiHelperImpl implements PackageAbiHelper {
+         // Now that we've calculated the ABIs and determined if it's an internal app,
+         // we will go ahead and populate the nativeLibraryPath.
+ 
++        if (null != forcePrimaryCpuAbi && !"".equals(forcePrimaryCpuAbi)) {
++            primaryCpuAbi = forcePrimaryCpuAbi;
++        }
+         final Abis abis = new Abis(primaryCpuAbi, secondaryCpuAbi);
+         return new Pair<>(abis,
+                 deriveNativeLibraryPaths(abis, appLib32InstallDir,
+diff --git a/services/core/java/com/android/server/pm/PackageDexOptimizer.java b/services/core/java/com/android/server/pm/PackageDexOptimizer.java
+index 6cfe093df6d0..c8461fdf66a9 100644
+--- a/services/core/java/com/android/server/pm/PackageDexOptimizer.java
++++ b/services/core/java/com/android/server/pm/PackageDexOptimizer.java
+@@ -50,6 +50,7 @@ import android.content.ContentResolver;
+ import android.content.Context;
+ import android.content.pm.ApplicationInfo;
+ import android.content.pm.SharedLibraryInfo;
++import android.content.pm.PackageManager;
+ import android.content.pm.dex.ArtManager;
+ import android.content.pm.dex.DexMetadataHelper;
+ import android.os.FileUtils;
+@@ -483,6 +484,30 @@ public class PackageDexOptimizer {
+                 + " targetFilter=" + compilerFilter + " oatDir=" + oatDir
+                 + " classLoaderContext=" + classLoaderContext);
+ 
++        if (pkg.getPackageName().contains("com.android.compatibility.common.deviceinfo") ||
++                (pkg.getPackageName().contains("com.google.android") &&
++                 pkg.getPackageName().contains("gts")) ||
++                 pkg.getPackageName().contains("android.media.cts") ||
++                 pkg.getPackageName().contains("android.cts.verifier") ||
++                 pkg.getPackageName().contains("android.mediastress.cts") ||
++                 pkg.getPackageName().contains("android.security.cts")) {
++            // maybe  endsWith(".cts") ?
++            SystemProperties.set("cts_gts.status", "true");
++        }
++
++        if (pkg.getPackageName().equals("android.security.cts") &&
++            "atv".equals(SystemProperties.get("ro.target.product","unknown")) &&
++            "true".equals(SystemProperties.get("cts_gts.status", "false"))) {
++            // disable com.google.android.apps.mediashell
++            try {
++                Log.d("xzj", "----start android.security.cts,disable com.google.android.apps.mediashell---");
++                mInstaller.getContext().getPackageManager().setApplicationEnabledSetting(
++                        "com.google.android.apps.mediashell",
++                        PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
++                        0);
++            } catch(Exception e) {}
++        }
++
+         try {
+             long startTime = System.currentTimeMillis();
+ 
+diff --git a/services/core/java/com/android/server/pm/pkg/parsing/ParsingPackageUtils.java b/services/core/java/com/android/server/pm/pkg/parsing/ParsingPackageUtils.java
+index 810fa5f1e4b3..f489ce852af3 100644
+--- a/services/core/java/com/android/server/pm/pkg/parsing/ParsingPackageUtils.java
++++ b/services/core/java/com/android/server/pm/pkg/parsing/ParsingPackageUtils.java
+@@ -239,6 +239,8 @@ public class ParsingPackageUtils {
+     public static final int PARSE_IGNORE_OVERLAY_REQUIRED_SYSTEM_PROPERTY = 1 << 7;
+     public static final int PARSE_FRAMEWORK_RES_SPLITS = 1 << 8;
+     public static final int PARSE_APK_IN_APEX = 1 << 9;
++    public static final int PARSE_IS_PREINSTALL = 1<<10;//need same as PackageParser
++    public static final int PARSE_IS_PREBUNDLED_DIR = 1<<11;//need same as PackageParser
+ 
+     public static final int PARSE_CHATTY = 1 << 31;
+ 

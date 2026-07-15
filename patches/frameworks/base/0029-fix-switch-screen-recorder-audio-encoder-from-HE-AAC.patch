@@ -1,0 +1,20 @@
+From 45948c2979a9a94eb7523801948675bb6ba656df Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 17:26:26 +0800
+Subject: [PATCH] fix: switch screen recorder audio encoder from HE-AAC to AAC
+
+Change-Id: Ic51c2b71ebf034046f1e00a2274f339237f8ea0b
+
+diff --git a/packages/SystemUI/src/com/android/systemui/screenrecord/ScreenMediaRecorder.java b/packages/SystemUI/src/com/android/systemui/screenrecord/ScreenMediaRecorder.java
+index b8d96f774e02..70bf34928be4 100644
+--- a/packages/SystemUI/src/com/android/systemui/screenrecord/ScreenMediaRecorder.java
++++ b/packages/SystemUI/src/com/android/systemui/screenrecord/ScreenMediaRecorder.java
+@@ -158,7 +158,7 @@ public class ScreenMediaRecorder extends MediaProjection.Callback {
+ 
+         // Set up audio
+         if (mAudioSource == MIC) {
+-            mMediaRecorder.setAudioEncoder(MediaRecorder.AudioEncoder.HE_AAC);
++            mMediaRecorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC);
+             mMediaRecorder.setAudioChannels(TOTAL_NUM_TRACKS);
+             mMediaRecorder.setAudioEncodingBitRate(AUDIO_BIT_RATE);
+             mMediaRecorder.setAudioSamplingRate(AUDIO_SAMPLE_RATE);

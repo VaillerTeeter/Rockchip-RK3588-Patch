@@ -1,0 +1,235 @@
+From 48a821d187c0ebe0dfcee95234db45c73e54c57e Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Sat, 11 Jul 2026 01:47:48 +0800
+Subject: [PATCH 02/27] feat: adapt Android.bp and AndroidManifest for Rockchip
+ platform build
+
+Change-Id: I54872ffbaa836cf401d9d3b67ce4c2e1996a7f1d
+---
+ Android.bp          | 36 +++++++++++++++++++++---------------
+ AndroidManifest.xml | 12 ++++++++++--
+ jni/Android.bp      | 27 ++++++++++++++++++++-------
+ 3 files changed, 51 insertions(+), 24 deletions(-)
+
+diff --git a/Android.bp b/Android.bp
+index 5cf37d569..1842f10f4 100644
+--- a/Android.bp
++++ b/Android.bp
+@@ -1,6 +1,4 @@
+-//
+-// Copyright (C) 2013 Google Inc.
+-//
++
+ 
+ package {
+     // See: http://go/android-license-faq
+@@ -16,26 +14,26 @@ android_app {
+         "androidx.legacy_legacy-support-v13",
+         "androidx.legacy_legacy-support-v4",
+         "androidx.core_core",
+-        "android-ex-camera2-portability",
+-        "xmp_toolkit",
+-        "glide",
+-        "guava",
+-        "jsr305",
++		"android-ex-camera2-portability",
++		"xmp_toolkit",
++		"glide",
++		"guava",
++		"jsr305",
+     ],
+ 
++
+     optional_uses_libs: ["org.apache.http.legacy"],
+ 
+-    srcs: [
+-        "src/**/*.java",
+-        "src_pd/**/*.java",
+-        "src_pd_gcam/**/*.java",
+-    ],
++    srcs: ["src/**/*.java"] + ["src_pd/**/*.java"] + ["src_pd_gcam/**/*.java"],
+ 
+     resource_dirs: [
+         "res",
+         "res_p",
+     ],
+ 
++    // ANDROIDMK TRANSLATION ERROR: unsupported include
++    // include $(LOCAL_PATH)/version.mk
++
+     aaptflags: [
+         "--auto-add-overlay",
+         "--version-name",
+@@ -44,9 +42,16 @@ android_app {
+         "20002000",
+     ],
+ 
+-    sdk_version: "system_current",
++    //LOCAL_SDK_VERSION := current
++    //sdk_version: "system_current",
+ 
+-    product_specific: true,
++    //LOCAL_PRODUCT_MODULE := true
++
++    platform_apis: true,
++
++    certificate: "platform",
++
++    //LOCAL_DEX_PREOPT := false
+ 
+     optimize: {
+         proguard_flags_files: ["proguard.flags"],
+@@ -59,4 +64,5 @@ android_app {
+         "libjni_tinyplanet",
+         "libjni_jpegutil",
+     ],
++
+ }
+diff --git a/AndroidManifest.xml b/AndroidManifest.xml
+index 4d7e17144..3d718dc4f 100644
+--- a/AndroidManifest.xml
++++ b/AndroidManifest.xml
+@@ -2,7 +2,8 @@
+ 
+ <manifest
+     xmlns:android="http://schemas.android.com/apk/res/android"
+-    package="com.android.camera2">
++    package="com.android.camera2"
++    android:versionName="rk_camera2_v1.0.18">
+ 
+     <uses-sdk
+         android:minSdkVersion="19"
+@@ -26,8 +27,10 @@
+     <uses-permission android:name="android.permission.USE_CREDENTIALS" />
+     <uses-permission android:name="android.permission.VIBRATE" />
+     <uses-permission android:name="android.permission.WAKE_LOCK" />
++    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+     <uses-permission android:name="android.permission.WRITE_SETTINGS" />
+     <uses-permission android:name="android.permission.WRITE_SYNC_SETTINGS" />
++    <uses-permission android:name="android.permission.WRITE_MEDIA_STORAGE"/>
+     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+ 
+     <supports-screens
+@@ -50,7 +53,7 @@
+         <activity
+             android:name="com.android.camera.CameraActivity"
+             android:clearTaskOnLaunch="true"
+-            android:configChanges="orientation|screenSize|keyboardHidden"
++            android:configChanges="keyboard|keyboardHidden|navigation|layoutDirection|orientation|screenLayout|screenSize|smallestScreenSize"
+             android:label="@string/app_name"
+             android:launchMode="singleTask"
+             android:taskAffinity="com.android.camera.CameraActivity"
+@@ -60,6 +63,7 @@
+             <intent-filter>
+                 <action android:name="android.media.action.STILL_IMAGE_CAMERA" />
+                 <category android:name="android.intent.category.DEFAULT" />
++                <category android:name="android.intent.category.VOICE" />
+             </intent-filter>
+             <intent-filter>
+                 <action android:name="android.intent.action.MAIN" />
+@@ -157,6 +161,10 @@
+             android:configChanges="keyboardHidden|orientation|screenSize">
+         </activity>
+ 
++        <service android:name="com.android.camera.processing.ProcessingService"
++            android:exported="false">
++        </service>
++
+         <receiver android:name="com.android.camera.SetActivitiesCameraReceiver"
+             android:exported="true">
+             <intent-filter>
+diff --git a/jni/Android.bp b/jni/Android.bp
+index b71e81f25..873964281 100644
+--- a/jni/Android.bp
++++ b/jni/Android.bp
+@@ -1,8 +1,13 @@
++
++
++// TinyPlanet
+ package {
+-    default_applicable_licenses: ["packages_apps_Camera2_license"],
++    // See: http://go/android-license-faq
++    default_applicable_licenses: [
++        "packages_apps_Camera2_license",
++    ],
+ }
+ 
+-// See: http://go/android-license-faq
+ license {
+     name: "packages_apps_Camera2_license",
+     visibility: [":__subpackages__"],
+@@ -14,34 +19,38 @@ license {
+     ],
+ }
+ 
+-// TinyPlanet
+ cc_library_shared {
+     name: "libjni_tinyplanet",
++
+     shared_libs: [
+         "liblog",
+         "libjnigraphics",
+     ],
+     sdk_version: "17",
+     srcs: ["tinyplanet.cc"],
+-    product_specific: true,
++    //LOCAL_PRODUCT_MODULE := true
++
+     cflags: [
+         "-ffast-math",
+         "-O3",
+         "-funroll-loops",
++    ] + [
++        "-Wall",
+         "-Wextra",
++        "-Werror",
+     ],
+     arch: {
+         arm: {
+             instruction_set: "arm",
+         },
+     },
+-    // for including the jni.h file
+     header_libs: ["jni_headers"],
+ }
+ 
+ // JpegUtil
+ cc_library_shared {
+     name: "libjni_jpegutil",
++
+     stl: "c++_static",
+     shared_libs: [
+         "liblog",
+@@ -49,23 +58,27 @@ cc_library_shared {
+         "libjnigraphics",
+     ],
+     sdk_version: "17",
+-    product_specific: true,
++    //LOCAL_DEX_PREOPT := false
+     srcs: [
+         "jpegutil.cpp",
+         "jpegutilnative.cpp",
+     ],
++
+     static_libs: ["libjpeg_static_ndk"],
++
+     cflags: [
+         "-ffast-math",
+         "-O3",
+         "-funroll-loops",
++    ] + [
++        "-Wall",
+         "-Wextra",
++        "-Werror",
+     ],
+     arch: {
+         arm: {
+             instruction_set: "arm",
+         },
+     },
+-    // for including the jni.h file
+     header_libs: ["jni_headers"],
+ }
+-- 
+2.53.0
+

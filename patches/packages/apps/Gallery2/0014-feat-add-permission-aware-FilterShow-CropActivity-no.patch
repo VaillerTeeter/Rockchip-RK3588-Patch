@@ -1,0 +1,548 @@
+From a9e575726a9ede47e3eba001296d20c1b31d39ea Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Sat, 11 Jul 2026 13:45:56 +0800
+Subject: [PATCH 41/51] feat: add permission-aware FilterShow/CropActivity,
+ notification channel for gallery processing, source-not-move save flag, and
+ null-safe history reset for Rockchip Gallery2
+
+Change-Id: I0e61bdb82f13cc682188aeb92257fd25d070c2da
+---
+ .../filtershow/EditorPlaceHolder.java         |  4 +-
+ .../filtershow/FilterShowActivity.java        | 48 +++++++++++++++++--
+ .../filtershow/cache/ImageLoader.java         |  5 ++
+ .../filtershow/crop/CropActivity.java         | 41 +++++++++++++++-
+ .../filtershow/editors/EditorColorBorder.java |  4 +-
+ .../filters/FilterDrawRepresentation.java     |  3 ++
+ .../filtershow/imageshow/ImageShow.java       |  5 +-
+ .../filtershow/imageshow/PrimaryImage.java    |  2 +-
+ .../filtershow/pipeline/ImagePreset.java      |  3 ++
+ .../filtershow/pipeline/ImageSavingTask.java  |  7 ++-
+ .../pipeline/ProcessingService.java           | 44 +++++++++++++++--
+ .../gallery3d/filtershow/tools/SaveImage.java | 13 +++--
+ 12 files changed, 158 insertions(+), 21 deletions(-)
+
+diff --git a/src/com/android/gallery3d/filtershow/EditorPlaceHolder.java b/src/com/android/gallery3d/filtershow/EditorPlaceHolder.java
+index 8c447b40b..bd93f95d8 100644
+--- a/src/com/android/gallery3d/filtershow/EditorPlaceHolder.java
++++ b/src/com/android/gallery3d/filtershow/EditorPlaceHolder.java
+@@ -82,7 +82,9 @@ public class EditorPlaceHolder {
+     }
+ 
+     public void hide() {
+-        mContainer.setVisibility(View.GONE);
++        if (null != mContainer) {
++            mContainer.setVisibility(View.GONE);
++        }
+     }
+ 
+     public void hideOldViews() {
+diff --git a/src/com/android/gallery3d/filtershow/FilterShowActivity.java b/src/com/android/gallery3d/filtershow/FilterShowActivity.java
+index e827b82aa..fd04c8d50 100644
+--- a/src/com/android/gallery3d/filtershow/FilterShowActivity.java
++++ b/src/com/android/gallery3d/filtershow/FilterShowActivity.java
+@@ -26,6 +26,7 @@ import android.content.DialogInterface;
+ import android.content.Intent;
+ import android.content.ServiceConnection;
+ import android.content.pm.ActivityInfo;
++import android.content.pm.PackageManager;
+ import android.content.res.Configuration;
+ import android.content.res.Resources;
+ import android.graphics.Bitmap;
+@@ -67,6 +68,7 @@ import android.widget.Spinner;
+ import android.widget.Toast;
+ 
+ import com.android.gallery3d.R;
++import com.android.gallery3d.app.CheckPermissionActivity;
+ import com.android.gallery3d.app.PhotoPage;
+ import com.android.gallery3d.data.LocalAlbum;
+ import com.android.gallery3d.filtershow.cache.ImageLoader;
+@@ -193,6 +195,7 @@ public class FilterShowActivity extends FragmentActivity implements OnItemClickL
+     private DialogInterface mCurrentDialog = null;
+     private PopupMenu mCurrentMenu = null;
+     private boolean mLoadingVisible = true;
++    private boolean mUnInit;
+ 
+     public ProcessingService getProcessingService() {
+         return mBoundService;
+@@ -278,7 +281,13 @@ public class FilterShowActivity extends FragmentActivity implements OnItemClickL
+         }
+ 
+         clearGalleryBitmapPool();
+-        doBindService();
++        if (CheckPermissionActivity.hasUnauthorizedPermission(this)) {
++            requestPermissions(CheckPermissionActivity.REQUEST_PERMISSIONS,
++                    CheckPermissionActivity.REQUEST_CODE_ASK_PERMISSIONS);
++            mUnInit = true;
++        } else {
++            doBindService();
++        }
+         getWindow().setBackgroundDrawable(new ColorDrawable(Color.GRAY));
+         setContentView(R.layout.filtershow_splashscreen);
+     }
+@@ -898,8 +907,12 @@ public class FilterShowActivity extends FragmentActivity implements OnItemClickL
+         if (mLoadBitmapTask != null) {
+             mLoadBitmapTask.cancel(false);
+         }
+-        mUserPresetsManager.close();
+-        doUnbindService();
++        if (null != mUserPresetsManager) {
++            mUserPresetsManager.close();
++        }
++        if (!mUnInit) {
++            doUnbindService();
++        }
+         super.onDestroy();
+     }
+ 
+@@ -1289,6 +1302,9 @@ public class FilterShowActivity extends FragmentActivity implements OnItemClickL
+     }
+ 
+     void resetHistory() {
++        if(mPrimaryImage == null){
++            return;
++        }
+         HistoryManager adapter = mPrimaryImage.getHistory();
+         adapter.reset();
+         HistoryItem historyItem = adapter.getItem(0);
+@@ -1401,7 +1417,9 @@ public class FilterShowActivity extends FragmentActivity implements OnItemClickL
+             int bucketId = GalleryUtils.getBucketId(saveDir.getPath());
+             String albumName = LocalAlbum.getLocalizedName(getResources(), bucketId, null);
+             showSavingProgress(albumName);
+-            mImageShow.saveImage(this, null);
++            mSelectedImageUri = SaveImage.makeAndInsertUri(this,mSelectedImageUri);
++            File newFile = SaveImage.getNewFile(this, mSelectedImageUri);
++            mImageShow.saveImage(this, newFile, true);
+         } else {
+             done();
+         }
+@@ -1517,4 +1535,26 @@ public class FilterShowActivity extends FragmentActivity implements OnItemClickL
+             }
+         });
+     }
++
++    @Override
++    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
++        switch (requestCode) {
++            case CheckPermissionActivity.REQUEST_CODE_ASK_PERMISSIONS:
++                for (int result : grantResults) {
++                    if (result != PackageManager.PERMISSION_GRANTED) {
++                        // Permission Denied
++                        String toast_text = getResources().getString(R.string.err_permission);
++                        Toast.makeText(this, toast_text, Toast.LENGTH_SHORT).show();
++                        finish();
++                        return;
++                    }
++                }
++                // Permission Granted
++                mUnInit = false;
++                doBindService();
++                break;
++            default:
++                super.onRequestPermissionsResult(requestCode, permissions, grantResults);
++        }
++    }
+ }
+diff --git a/src/com/android/gallery3d/filtershow/cache/ImageLoader.java b/src/com/android/gallery3d/filtershow/cache/ImageLoader.java
+index 003ff482f..8dfdd4367 100644
+--- a/src/com/android/gallery3d/filtershow/cache/ImageLoader.java
++++ b/src/com/android/gallery3d/filtershow/cache/ImageLoader.java
+@@ -41,6 +41,7 @@ import com.android.gallery3d.exif.ExifTag;
+ import com.android.gallery3d.filtershow.imageshow.PrimaryImage;
+ import com.android.gallery3d.filtershow.pipeline.FilterEnvironment;
+ import com.android.gallery3d.filtershow.tools.XmpPresets;
++import com.android.gallery3d.util.FileUtils;
+ import com.android.gallery3d.util.XmpUtilHelper;
+ 
+ import java.io.FileNotFoundException;
+@@ -101,6 +102,10 @@ public final class ImageLoader {
+             throw new IllegalArgumentException("bad argument to getOrientation");
+         }
+ 
++        if (FileUtils.FILE_PROVIDER_SCHEME.equals(uri.getHost())) {
++            return ORI_NORMAL;
++        }
++
+         // First try to find orientation data in Gallery's ContentProvider.
+         Cursor cursor = null;
+         try {
+diff --git a/src/com/android/gallery3d/filtershow/crop/CropActivity.java b/src/com/android/gallery3d/filtershow/crop/CropActivity.java
+index 3a7829681..71fb76bbe 100644
+--- a/src/com/android/gallery3d/filtershow/crop/CropActivity.java
++++ b/src/com/android/gallery3d/filtershow/crop/CropActivity.java
+@@ -21,6 +21,7 @@ import android.app.Activity;
+ import android.app.WallpaperManager;
+ import android.content.Context;
+ import android.content.Intent;
++import android.content.pm.PackageManager;
+ import android.content.res.Configuration;
+ import android.graphics.Bitmap;
+ import android.graphics.Bitmap.CompressFormat;
+@@ -43,6 +44,7 @@ import android.view.WindowManager;
+ import android.widget.Toast;
+ 
+ import com.android.gallery3d.R;
++import com.android.gallery3d.app.CheckPermissionActivity;
+ import com.android.gallery3d.common.Utils;
+ import com.android.gallery3d.filtershow.cache.ImageLoader;
+ import com.android.gallery3d.filtershow.tools.SaveImage;
+@@ -91,6 +93,7 @@ public class CropActivity extends Activity {
+     private static final int DO_EXTRA_OUTPUT = 1 << 2;
+ 
+     private static final int FLAG_CHECK = DO_SET_WALLPAPER | DO_RETURN_DATA | DO_EXTRA_OUTPUT;
++    private boolean mUnInit;
+ 
+     @Override
+     public void onCreate(Bundle savedInstanceState) {
+@@ -118,6 +121,18 @@ public class CropActivity extends Activity {
+                 }
+             });
+         }
++
++        if (CheckPermissionActivity.hasUnauthorizedPermission(this)) {
++            requestPermissions(CheckPermissionActivity.REQUEST_PERMISSIONS,
++                    CheckPermissionActivity.REQUEST_CODE_ASK_PERMISSIONS);
++            mUnInit = true;
++            return;
++        }
++        initData();
++    }
++
++    private void initData(){
++        Intent intent = getIntent();
+         if (intent.getData() != null) {
+             mSourceUri = intent.getData();
+             startLoadBitmap(mSourceUri);
+@@ -143,7 +158,9 @@ public class CropActivity extends Activity {
+     @Override
+     public void onConfigurationChanged (Configuration newConfig) {
+         super.onConfigurationChanged(newConfig);
+-        mCropView.configChanged();
++        if (null != mCropView) {
++            mCropView.configChanged();
++        }
+     }
+ 
+     /**
+@@ -695,4 +712,26 @@ public class CropActivity extends Activity {
+         RectF scaledCrop = CropMath.getScaledCropBounds(crop, photo, imageBounds);
+         return scaledCrop;
+     }
++
++    @Override
++    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
++        switch (requestCode) {
++            case CheckPermissionActivity.REQUEST_CODE_ASK_PERMISSIONS:
++                for (int result : grantResults) {
++                    if (result != PackageManager.PERMISSION_GRANTED) {
++                        // Permission Denied
++                        String toast_text = getResources().getString(R.string.err_permission);
++                        Toast.makeText(this, toast_text, Toast.LENGTH_SHORT).show();
++                        finish();
++                        return;
++                    }
++                }
++                // Permission Granted
++                mUnInit = false;
++                initData();
++                break;
++            default:
++                super.onRequestPermissionsResult(requestCode, permissions, grantResults);
++        }
++    }
+ }
+diff --git a/src/com/android/gallery3d/filtershow/editors/EditorColorBorder.java b/src/com/android/gallery3d/filtershow/editors/EditorColorBorder.java
+index 98659df38..455a76986 100644
+--- a/src/com/android/gallery3d/filtershow/editors/EditorColorBorder.java
++++ b/src/com/android/gallery3d/filtershow/editors/EditorColorBorder.java
+@@ -176,7 +176,9 @@ public class EditorColorBorder extends ParametricEditor  {
+             c.setColorSet(mBasColors);
+         }
+         updateText();
+-        mControl.updateUI();
++        if(null != mControl) {
++            mControl.updateUI();
++        }
+         mView.invalidate();
+     }
+ 
+diff --git a/src/com/android/gallery3d/filtershow/filters/FilterDrawRepresentation.java b/src/com/android/gallery3d/filtershow/filters/FilterDrawRepresentation.java
+index 48d3d9077..3f5c73c1d 100644
+--- a/src/com/android/gallery3d/filtershow/filters/FilterDrawRepresentation.java
++++ b/src/com/android/gallery3d/filtershow/filters/FilterDrawRepresentation.java
+@@ -271,6 +271,9 @@ public class FilterDrawRepresentation extends FilterRepresentation {
+     public void fillStrokeParameters(StrokeData sd){
+         byte type = (byte) mParamStyle.getSelected();
+         int color = computeCurrentColor();
++        if (color == 0) {
++            color = DEFAULT_MENU_COLOR1;
++        }
+         float size = mParamSize.getValue();
+         sd.mColor = color;
+         sd.mRadius = size;
+diff --git a/src/com/android/gallery3d/filtershow/imageshow/ImageShow.java b/src/com/android/gallery3d/filtershow/imageshow/ImageShow.java
+index 04dab73a2..397704ac3 100644
+--- a/src/com/android/gallery3d/filtershow/imageshow/ImageShow.java
++++ b/src/com/android/gallery3d/filtershow/imageshow/ImageShow.java
+@@ -601,9 +601,12 @@ public class ImageShow extends View implements OnGestureListener,
+     }
+ 
+     public void saveImage(FilterShowActivity filterShowActivity, File file) {
+-        SaveImage.saveImage(getImagePreset(), filterShowActivity, file);
++        saveImage(filterShowActivity, file, false);
+     }
+ 
++    public void saveImage(FilterShowActivity filterShowActivity, File file, boolean notMoveSource){
++        SaveImage.saveImage(getImagePreset(), filterShowActivity, file, notMoveSource);
++    }
+ 
+     public boolean scaleInProgress() {
+         return mScaleGestureDetector.isInProgress();
+diff --git a/src/com/android/gallery3d/filtershow/imageshow/PrimaryImage.java b/src/com/android/gallery3d/filtershow/imageshow/PrimaryImage.java
+index 63e683a1d..4a775600e 100644
+--- a/src/com/android/gallery3d/filtershow/imageshow/PrimaryImage.java
++++ b/src/com/android/gallery3d/filtershow/imageshow/PrimaryImage.java
+@@ -831,6 +831,6 @@ public class PrimaryImage implements RenderingRequestCaller {
+     }
+ 
+     public boolean hasTinyPlanet() {
+-        return mPreset.contains(FilterRepresentation.TYPE_TINYPLANET);
++        return mPreset != null && mPreset.contains(FilterRepresentation.TYPE_TINYPLANET);
+     }
+ }
+diff --git a/src/com/android/gallery3d/filtershow/pipeline/ImagePreset.java b/src/com/android/gallery3d/filtershow/pipeline/ImagePreset.java
+index 8ad825d63..aeb227ba1 100644
+--- a/src/com/android/gallery3d/filtershow/pipeline/ImagePreset.java
++++ b/src/com/android/gallery3d/filtershow/pipeline/ImagePreset.java
+@@ -67,6 +67,9 @@ public class ImagePreset {
+     }
+ 
+     public ImagePreset(ImagePreset source) {
++        if(source == null || source.mFilters == null){
++            return;
++        }
+         for (int i = 0; i < source.mFilters.size(); i++) {
+             FilterRepresentation sourceRepresentation = source.mFilters.elementAt(i);
+             mFilters.add(sourceRepresentation.copy());
+diff --git a/src/com/android/gallery3d/filtershow/pipeline/ImageSavingTask.java b/src/com/android/gallery3d/filtershow/pipeline/ImageSavingTask.java
+index 801aee46b..f3e0db47e 100644
+--- a/src/com/android/gallery3d/filtershow/pipeline/ImageSavingTask.java
++++ b/src/com/android/gallery3d/filtershow/pipeline/ImageSavingTask.java
+@@ -39,6 +39,7 @@ public class ImageSavingTask extends ProcessingTask {
+         float sizeFactor;
+         Bitmap previewImage;
+         boolean exit;
++        boolean notMoveSource;
+     }
+ 
+     static class UpdateBitmap implements Update {
+@@ -67,7 +68,8 @@ public class ImageSavingTask extends ProcessingTask {
+     public void saveImage(Uri sourceUri, Uri selectedUri,
+                           File destinationFile, ImagePreset preset,
+                           Bitmap previewImage, boolean flatten,
+-                          int quality, float sizeFactor, boolean exit) {
++                          int quality, float sizeFactor,
++                          boolean exit, boolean notMoveSource) {
+         SaveRequest request = new SaveRequest();
+         request.sourceUri = sourceUri;
+         request.selectedUri = selectedUri;
+@@ -78,6 +80,7 @@ public class ImageSavingTask extends ProcessingTask {
+         request.sizeFactor = sizeFactor;
+         request.previewImage = previewImage;
+         request.exit = exit;
++        request.notMoveSource = notMoveSource;
+         postRequest(request);
+     }
+ 
+@@ -115,7 +118,7 @@ public class ImageSavingTask extends ProcessingTask {
+                     }
+                 });
+         Uri uri = saveImage.processAndSaveImage(preset, flatten,
+-                request.quality, request.sizeFactor, request.exit);
++                request.quality, request.sizeFactor, request.exit, request.notMoveSource);
+         URIResult result = new URIResult();
+         result.uri = uri;
+         result.exit = request.exit;
+diff --git a/src/com/android/gallery3d/filtershow/pipeline/ProcessingService.java b/src/com/android/gallery3d/filtershow/pipeline/ProcessingService.java
+index c0b7536fa..c49fd813e 100644
+--- a/src/com/android/gallery3d/filtershow/pipeline/ProcessingService.java
++++ b/src/com/android/gallery3d/filtershow/pipeline/ProcessingService.java
+@@ -17,6 +17,7 @@
+ package com.android.gallery3d.filtershow.pipeline;
+ 
+ import android.app.Notification;
++import android.app.NotificationChannel;
+ import android.app.NotificationManager;
+ import android.app.Service;
+ import android.content.Context;
+@@ -53,6 +54,7 @@ public class ProcessingService extends Service {
+     private static final String FLATTEN = "flatten";
+     private static final String SIZE_FACTOR = "sizeFactor";
+     private static final String EXIT = "exit";
++    private static final String SOURCE_NOT_MOVE = "notMoveSource";
+ 
+     private ProcessingTaskController mProcessingTaskController;
+     private ImageSavingTask mImageSavingTask;
+@@ -67,6 +69,8 @@ public class ProcessingService extends Service {
+     private boolean mSaving = false;
+     private boolean mNeedsAlive = false;
+ 
++    private static final String CHANNEL_ID_GALLERY_PROCESS = "gallery2_process";
++
+     public void setFiltershowActivity(FilterShowActivity filtershowActivity) {
+         mFiltershowActivity = filtershowActivity;
+     }
+@@ -140,9 +144,16 @@ public class ProcessingService extends Service {
+         }
+     }
+ 
++    public static Intent getSaveIntent(Context context, ImagePreset preset, File destination,
++                                       Uri selectedImageUri, Uri sourceImageUri, boolean doFlatten, int quality,
++                                       float sizeFactor, boolean needsExit) {
++        return getSaveIntent(context, preset, destination, selectedImageUri,
++                sourceImageUri, doFlatten, quality, sizeFactor, needsExit, false);
++    }
++
+     public static Intent getSaveIntent(Context context, ImagePreset preset, File destination,
+             Uri selectedImageUri, Uri sourceImageUri, boolean doFlatten, int quality,
+-            float sizeFactor, boolean needsExit) {
++            float sizeFactor, boolean needsExit, boolean notMoveSource) {
+         Intent processIntent = new Intent(context, ProcessingService.class);
+         processIntent.putExtra(ProcessingService.SOURCE_URI,
+                 sourceImageUri.toString());
+@@ -157,6 +168,7 @@ public class ProcessingService extends Service {
+                 preset.getJsonString(ImagePreset.JASON_SAVED));
+         processIntent.putExtra(ProcessingService.SAVING, true);
+         processIntent.putExtra(ProcessingService.EXIT, needsExit);
++        processIntent.putExtra(ProcessingService.SOURCE_NOT_MOVE, notMoveSource);
+         if (doFlatten) {
+             processIntent.putExtra(ProcessingService.FLATTEN, true);
+         }
+@@ -196,6 +208,7 @@ public class ProcessingService extends Service {
+             String source = intent.getStringExtra(SOURCE_URI);
+             String selected = intent.getStringExtra(SELECTED_URI);
+             String destination = intent.getStringExtra(DESTINATION_FILE);
++            boolean notMoveSource = intent.getBooleanExtra(SOURCE_NOT_MOVE, false);
+             int quality = intent.getIntExtra(QUALITY, 100);
+             float sizeFactor = intent.getFloatExtra(SIZE_FACTOR, 1);
+             boolean flatten = intent.getBooleanExtra(FLATTEN, false);
+@@ -215,7 +228,7 @@ public class ProcessingService extends Service {
+             mSaving = true;
+             handleSaveRequest(sourceUri, selectedUri, destinationFile, preset,
+                     PrimaryImage.getImage().getHighresImage(),
+-                    flatten, quality, sizeFactor, exit);
++                    flatten, quality, sizeFactor, exit, notMoveSource);
+         }
+         return START_REDELIVER_INTENT;
+     }
+@@ -234,12 +247,12 @@ public class ProcessingService extends Service {
+ 
+     public void handleSaveRequest(Uri sourceUri, Uri selectedUri,
+             File destinationFile, ImagePreset preset, Bitmap previewImage,
+-            boolean flatten, int quality, float sizeFactor, boolean exit) {
++            boolean flatten, int quality, float sizeFactor, boolean exit, boolean notMoveSource) {
+         mNotifyMgr = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+         mNotifyMgr.cancelAll();
+ 
+         mBuilder =
+-                new Notification.Builder(this)
++                new Notification.Builder(this, getNotifyChannelGalleryProcessId(this))
+                         .setSmallIcon(R.drawable.filtershow_button_fx)
+                         .setContentTitle(getString(R.string.filtershow_notification_label))
+                         .setContentText(getString(R.string.filtershow_notification_message));
+@@ -251,7 +264,7 @@ public class ProcessingService extends Service {
+         // Process the image
+ 
+         mImageSavingTask.saveImage(sourceUri, selectedUri, destinationFile,
+-                preset, previewImage, flatten, quality, sizeFactor, exit);
++                preset, previewImage, flatten, quality, sizeFactor, exit, notMoveSource);
+     }
+ 
+     public void updateNotificationWithBitmap(Bitmap bitmap) {
+@@ -321,4 +334,25 @@ public class ProcessingService extends Service {
+     static {
+         System.loadLibrary("jni_filtershow_filters");
+     }
++
++
++    private String getNotifyChannelGalleryProcessId(Context context){
++        // create android channel
++        NotificationChannel androidChannel = new NotificationChannel(CHANNEL_ID_GALLERY_PROCESS,
++                CHANNEL_ID_GALLERY_PROCESS, NotificationManager.IMPORTANCE_LOW);
++        // Sets whether notifications posted to this channel should display notification lights
++        androidChannel.enableLights(false);
++        androidChannel.enableVibration(false);
++        // Sets whether notification posted to this channel should vibrate.
++        //androidChannel.enableVibration(true);
++        // Sets the notification light color for notifications posted to this channel
++        //androidChannel.setLightColor(Color.GREEN);
++        // Sets whether notifications posted to this channel appear on the lockscreen or not
++        androidChannel.setLockscreenVisibility(Notification.VISIBILITY_PRIVATE);
++
++        final NotificationManager nm =
++                (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
++        nm.createNotificationChannel(androidChannel);
++        return CHANNEL_ID_GALLERY_PROCESS;
++    }
+ }
+diff --git a/src/com/android/gallery3d/filtershow/tools/SaveImage.java b/src/com/android/gallery3d/filtershow/tools/SaveImage.java
+index 8711465af..d46ee2380 100644
+--- a/src/com/android/gallery3d/filtershow/tools/SaveImage.java
++++ b/src/com/android/gallery3d/filtershow/tools/SaveImage.java
+@@ -32,6 +32,7 @@ import android.widget.Toast;
+ 
+ import com.android.gallery3d.R;
+ import com.android.gallery3d.common.Utils;
++import com.android.gallery3d.data.DataManager;
+ import com.android.gallery3d.exif.ExifInterface;
+ import com.android.gallery3d.filtershow.FilterShowActivity;
+ import com.android.gallery3d.filtershow.cache.ImageLoader;
+@@ -268,7 +269,8 @@ public class SaveImage {
+         boolean ret = false;
+         OutputStream s = null;
+         try {
+-            s = exif.getExifWriterStream(file.getAbsolutePath());
++            s = exif.getExifWriterStream(
++                    DataManager.convertStorageToMntCanWrite(file.getAbsolutePath()));
+             image.compress(Bitmap.CompressFormat.JPEG,
+                     (jpegCompressQuality > 0) ? jpegCompressQuality : 1, s);
+             s.flush();
+@@ -326,7 +328,8 @@ public class SaveImage {
+     }
+ 
+     public Uri processAndSaveImage(ImagePreset preset, boolean flatten,
+-                                   int quality, float sizeFactor, boolean exit) {
++                                   int quality, float sizeFactor,
++                                   boolean exit, boolean notMoveSource) {
+ 
+         Uri uri = null;
+         if (exit) {
+@@ -346,7 +349,7 @@ public class SaveImage {
+         // newSourceUri is then pointing to the new location.
+         // If no file is moved, newSourceUri will be the same as mSourceUri.
+         Uri newSourceUri = mSourceUri;
+-        if (!flatten) {
++        if (!flatten && !notMoveSource) {
+             newSourceUri = moveSrcToAuxIfNeeded(mSourceUri, mDestinationFile);
+         }
+ 
+@@ -533,7 +536,7 @@ public class SaveImage {
+     }
+ 
+     public static void saveImage(ImagePreset preset, final FilterShowActivity filterShowActivity,
+-            File destination) {
++            File destination, boolean notMoveSource) {
+         Uri selectedImageUri = filterShowActivity.getSelectedImageUri();
+         Uri sourceImageUri = PrimaryImage.getImage().getUri();
+         boolean flatten = false;
+@@ -541,7 +544,7 @@ public class SaveImage {
+             flatten = true;
+         }
+         Intent processIntent = ProcessingService.getSaveIntent(filterShowActivity, preset,
+-                destination, selectedImageUri, sourceImageUri, flatten, 90, 1f, true);
++                destination, selectedImageUri, sourceImageUri, flatten, 90, 1f, true, notMoveSource);
+ 
+         filterShowActivity.startService(processIntent);
+ 
+-- 
+2.53.0
+

@@ -1,0 +1,44 @@
+From 98f4653450c6924188532796a3d12d85de004169 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 17:29:56 +0800
+Subject: [PATCH] feat: update API surface (current.txt, system-current.txt)
+
+Change-Id: I5511fbcab3da67bdb60c773f80d2b809722755cd
+
+diff --git a/core/api/current.txt b/core/api/current.txt
+index 487e57d114c9..1d610ab7536b 100644
+--- a/core/api/current.txt
++++ b/core/api/current.txt
+@@ -20504,6 +20504,13 @@ package android.media {
+     method public void onRoutingChanged(android.media.AudioRouting);
+   }
+ 
++  public class AudioStream implements java.io.Closeable {
++    ctor public AudioStream(@NonNull android.content.Context);
++    method public void close();
++    method public boolean start();
++    method public void stop();
++  }
++
+   public final class AudioTimestamp {
+     ctor public AudioTimestamp();
+     field public static final int TIMEBASE_BOOTTIME = 1; // 0x1
+diff --git a/core/api/system-current.txt b/core/api/system-current.txt
+index 0126199add0c..b33d317e9872 100644
+--- a/core/api/system-current.txt
++++ b/core/api/system-current.txt
+@@ -6876,12 +6876,14 @@ package android.media.tv {
+   public static final class TvInputManager.Hardware {
+     method public void overrideAudioSink(int, String, int, int, int);
+     method public void overrideAudioSink(@NonNull android.media.AudioDeviceInfo, @IntRange(from=0) int, int, int);
++    method public void sendAppPrivateCommand(@NonNull String, @NonNull android.os.Bundle);
+     method public void setStreamVolume(float);
+     method public boolean setSurface(android.view.Surface, android.media.tv.TvStreamConfig);
+   }
+ 
+   public abstract static class TvInputManager.HardwareCallback {
+     ctor public TvInputManager.HardwareCallback();
++    method public abstract void onPrivCmdToApp(@NonNull String, @NonNull android.os.Bundle);
+     method public abstract void onReleased();
+     method public abstract void onStreamConfigChanged(android.media.tv.TvStreamConfig[]);
+   }

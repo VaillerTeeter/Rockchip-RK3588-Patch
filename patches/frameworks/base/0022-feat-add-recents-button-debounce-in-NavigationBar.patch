@@ -1,0 +1,50 @@
+From cd998c0cd11fb310b82e9d21bdfda87e69358aa9 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 17:25:19 +0800
+Subject: [PATCH] feat: add recents button debounce in NavigationBar
+
+Change-Id: I6335902fdc6bd346bb29d9894dd9216eee127634
+
+diff --git a/packages/SystemUI/src/com/android/systemui/navigationbar/NavigationBar.java b/packages/SystemUI/src/com/android/systemui/navigationbar/NavigationBar.java
+index 941770cff014..4687a1eeed04 100644
+--- a/packages/SystemUI/src/com/android/systemui/navigationbar/NavigationBar.java
++++ b/packages/SystemUI/src/com/android/systemui/navigationbar/NavigationBar.java
+@@ -168,6 +168,7 @@ import java.util.concurrent.Executor;
+ import javax.inject.Inject;
+ 
+ import dagger.Lazy;
++import android.os.SystemClock;
+ 
+ /**
+  * Contains logic for a navigation bar view.
+@@ -281,6 +282,7 @@ public class NavigationBar extends ViewController<NavigationBarView> implements
+     private boolean mImeVisible;
+     private final Rect mSamplingBounds = new Rect();
+ 
++    private long lastClickTime;
+     /**
+      * When quickswitching between apps of different orientations, we draw a secondary home handle
+      * in the position of the first app's orientation. This rect represents the region of that
+@@ -1382,12 +1384,16 @@ public class NavigationBar extends ViewController<NavigationBarView> implements
+     }
+ 
+     private void onRecentsClick(View v) {
+-        if (LatencyTracker.isEnabled(mContext)) {
+-            LatencyTracker.getInstance(mContext).onActionStart(
+-                    LatencyTracker.ACTION_TOGGLE_RECENTS);
+-        }
+-        mCentralSurfacesOptionalLazy.get().ifPresent(CentralSurfaces::awakenDreams);
+-        mCommandQueue.toggleRecentApps();
++        long currentClickTime = SystemClock.uptimeMillis();
++        if (currentClickTime - lastClickTime > 500){
++            lastClickTime = currentClickTime;
++            if (LatencyTracker.isEnabled(mContext)) {
++                LatencyTracker.getInstance(mContext).onActionStart(
++                        LatencyTracker.ACTION_TOGGLE_RECENTS);
++            }
++            mCentralSurfacesOptionalLazy.get().ifPresent(CentralSurfaces::awakenDreams);
++            mCommandQueue.toggleRecentApps();
++         }
+     }
+ 
+     private void onImeSwitcherClick(View v) {

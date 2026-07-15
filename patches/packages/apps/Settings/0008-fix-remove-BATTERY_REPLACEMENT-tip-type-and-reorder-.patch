@@ -1,0 +1,89 @@
+From 82ac55b85ca5a8bc3de8df90f24d4c8f70b8476b Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Sat, 11 Jul 2026 20:57:16 +0800
+Subject: [PATCH 64/67] fix: remove BATTERY_REPLACEMENT tip type and reorder
+ BatteryTip priorities for Rockchip compatibility
+
+Change-Id: Ia78f9747971b833625549d5bba4cd34e03833688
+---
+ .../batterytip/BatteryTipLoader.java          |  2 --
+ .../fuelgauge/batterytip/BatteryTipUtils.java |  3 ---
+ .../fuelgauge/batterytip/tips/BatteryTip.java | 21 +++++++++----------
+ 3 files changed, 10 insertions(+), 16 deletions(-)
+
+diff --git a/src/com/android/settings/fuelgauge/batterytip/BatteryTipLoader.java b/src/com/android/settings/fuelgauge/batterytip/BatteryTipLoader.java
+index 9fe358c8c4..7bdc5d5686 100644
+--- a/src/com/android/settings/fuelgauge/batterytip/BatteryTipLoader.java
++++ b/src/com/android/settings/fuelgauge/batterytip/BatteryTipLoader.java
+@@ -24,7 +24,6 @@ import androidx.annotation.VisibleForTesting;
+ import com.android.settings.fuelgauge.BatteryInfo;
+ import com.android.settings.fuelgauge.BatteryUtils;
+ import com.android.settings.fuelgauge.batterytip.detectors.BatteryDefenderDetector;
+-import com.android.settings.fuelgauge.batterytip.detectors.BatteryReplacementDetector;
+ import com.android.settings.fuelgauge.batterytip.detectors.DockDefenderDetector;
+ import com.android.settings.fuelgauge.batterytip.detectors.EarlyWarningDetector;
+ import com.android.settings.fuelgauge.batterytip.detectors.HighUsageDetector;
+@@ -69,7 +68,6 @@ public class BatteryTipLoader extends AsyncLoaderCompat<List<BatteryTip>> {
+         final BatteryInfo batteryInfo = mBatteryUtils.getBatteryInfo(TAG);
+         final Context context = getContext();
+ 
+-        tips.add(new BatteryReplacementDetector(batteryInfo).detect());
+         tips.add(new LowBatteryDetector(context, policy, batteryInfo).detect());
+         tips.add(new HighUsageDetector(context, policy, mBatteryUsageStats, batteryInfo).detect());
+         tips.add(new SmartBatteryDetector(
+diff --git a/src/com/android/settings/fuelgauge/batterytip/BatteryTipUtils.java b/src/com/android/settings/fuelgauge/batterytip/BatteryTipUtils.java
+index b521a0361b..4dcdc0cc11 100644
+--- a/src/com/android/settings/fuelgauge/batterytip/BatteryTipUtils.java
++++ b/src/com/android/settings/fuelgauge/batterytip/BatteryTipUtils.java
+@@ -29,7 +29,6 @@ import androidx.annotation.NonNull;
+ import com.android.internal.util.CollectionUtils;
+ import com.android.settings.SettingsActivity;
+ import com.android.settings.core.InstrumentedPreferenceFragment;
+-import com.android.settings.fuelgauge.batterytip.actions.BatteryReplacementAction;
+ import com.android.settings.fuelgauge.batterytip.actions.BatteryTipAction;
+ import com.android.settings.fuelgauge.batterytip.actions.OpenBatterySaverAction;
+ import com.android.settings.fuelgauge.batterytip.actions.OpenRestrictAppFragmentAction;
+@@ -107,8 +106,6 @@ public class BatteryTipUtils {
+                 }
+             case BatteryTip.TipType.REMOVE_APP_RESTRICTION:
+                 return new UnrestrictAppAction(settingsActivity, (UnrestrictAppTip) batteryTip);
+-            case BatteryTip.TipType.BATTERY_REPLACEMENT:
+-                return new BatteryReplacementAction(settingsActivity);
+             default:
+                 return null;
+         }
+diff --git a/src/com/android/settings/fuelgauge/batterytip/tips/BatteryTip.java b/src/com/android/settings/fuelgauge/batterytip/tips/BatteryTip.java
+index 86104125a1..f184664081 100644
+--- a/src/com/android/settings/fuelgauge/batterytip/tips/BatteryTip.java
++++ b/src/com/android/settings/fuelgauge/batterytip/tips/BatteryTip.java
+@@ -79,17 +79,16 @@ public abstract class BatteryTip implements Comparable<BatteryTip>, Parcelable {
+     static final SparseIntArray TIP_ORDER;
+     static {
+         TIP_ORDER = new SparseIntArray();
+-        TIP_ORDER.append(TipType.BATTERY_REPLACEMENT, 0);
+-        TIP_ORDER.append(TipType.BATTERY_SAVER, 1);
+-        TIP_ORDER.append(TipType.LOW_BATTERY, 2);
+-        TIP_ORDER.append(TipType.BATTERY_DEFENDER, 3);
+-        TIP_ORDER.append(TipType.DOCK_DEFENDER, 4);
+-        TIP_ORDER.append(TipType.APP_RESTRICTION, 5);
+-        TIP_ORDER.append(TipType.HIGH_DEVICE_USAGE, 6);
+-        TIP_ORDER.append(TipType.SUMMARY, 7);
+-        TIP_ORDER.append(TipType.SMART_BATTERY_MANAGER, 8);
+-        TIP_ORDER.append(TipType.REDUCED_BATTERY, 9);
+-        TIP_ORDER.append(TipType.REMOVE_APP_RESTRICTION, 10);
++        TIP_ORDER.append(TipType.BATTERY_SAVER, 0);
++        TIP_ORDER.append(TipType.LOW_BATTERY, 1);
++        TIP_ORDER.append(TipType.BATTERY_DEFENDER, 2);
++        TIP_ORDER.append(TipType.DOCK_DEFENDER, 3);
++        TIP_ORDER.append(TipType.APP_RESTRICTION, 4);
++        TIP_ORDER.append(TipType.HIGH_DEVICE_USAGE, 5);
++        TIP_ORDER.append(TipType.SUMMARY, 6);
++        TIP_ORDER.append(TipType.SMART_BATTERY_MANAGER, 7);
++        TIP_ORDER.append(TipType.REDUCED_BATTERY, 8);
++        TIP_ORDER.append(TipType.REMOVE_APP_RESTRICTION, 9);
+     }
+ 
+     private static final String KEY_PREFIX = "key_battery_tip";
+-- 
+2.53.0
+

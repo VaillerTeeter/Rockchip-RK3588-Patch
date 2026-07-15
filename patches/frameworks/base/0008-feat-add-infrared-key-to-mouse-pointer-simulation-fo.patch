@@ -1,0 +1,359 @@
+From 5c2dfa68d1728e606348c553fa3c51f29972d4a1 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 17:22:43 +0800
+Subject: [PATCH] feat: add infrared key-to-mouse pointer simulation for box
+ products
+
+Change-Id: I0c27dd8101478892708b12b3ac7d0882ee55d8c1
+
+diff --git a/core/java/android/view/WindowManagerPolicyConstants.java b/core/java/android/view/WindowManagerPolicyConstants.java
+index 4c49f2c049ee..de14ae9e02df 100644
+--- a/core/java/android/view/WindowManagerPolicyConstants.java
++++ b/core/java/android/view/WindowManagerPolicyConstants.java
+@@ -89,6 +89,14 @@ public interface WindowManagerPolicyConstants {
+      */
+     String EXTRA_HDMI_PLUGGED_STATE = "state";
+ 
++    String EXTRA_MULTI_HDMI_PLUGGED_NAME = "extcon_name";
++
++    String ACTION_DP_PLUGGED = "android.intent.action.DP_PLUGGED";
++
++    String EXTRA_DP_PLUGGED_STATE = "state";
++
++    String EXTRA_MULTI_DP_PLUGGED_NAME = "extcon_name";
++
+     /**
+      * Set to {@code true} when intent was invoked from pressing the home key.
+      * @hide
+diff --git a/services/core/java/com/android/server/policy/GlobalActions.java b/services/core/java/com/android/server/policy/GlobalActions.java
+index e1461356cc4c..6f22d4f59844 100644
+--- a/services/core/java/com/android/server/policy/GlobalActions.java
++++ b/services/core/java/com/android/server/policy/GlobalActions.java
+@@ -17,6 +17,7 @@ package com.android.server.policy;
+ import android.content.Context;
+ import android.os.Handler;
+ import android.util.Slog;
++import android.os.SystemProperties;
+ 
+ import com.android.server.LocalServices;
+ import com.android.server.policy.WindowManagerPolicy.WindowManagerFuncs;
+@@ -91,6 +92,7 @@ class GlobalActions implements GlobalActionsProvider.GlobalActionsListener {
+     public void onGlobalActionsAvailableChanged(boolean available) {
+         if (DEBUG) Slog.d(TAG, "onGlobalActionsAvailableChanged " + available);
+         mGlobalActionsAvailable = available;
++        if ("box".equals(SystemProperties.get("ro.target.product"))) mGlobalActionsAvailable = false;
+         if (mShowing && !mGlobalActionsAvailable) {
+             // Global actions provider died but we need to be showing global actions still, show the
+             // legacy global acrions provider.
+diff --git a/services/core/java/com/android/server/policy/PhoneWindowManager.java b/services/core/java/com/android/server/policy/PhoneWindowManager.java
+index 6e5421782261..40643f638ac0 100644
+--- a/services/core/java/com/android/server/policy/PhoneWindowManager.java
++++ b/services/core/java/com/android/server/policy/PhoneWindowManager.java
+@@ -225,6 +225,7 @@ import java.io.FileNotFoundException;
+ import java.io.FileReader;
+ import java.io.IOException;
+ import java.io.PrintWriter;
++import java.util.ArrayList;
+ import java.util.HashSet;
+ import java.util.List;
+ import java.util.Set;
+@@ -656,6 +657,51 @@ public class PhoneWindowManager implements WindowManagerPolicy {
+     private static final int MSG_LAUNCH_ASSIST = 23;
+     private static final int MSG_RINGER_TOGGLE_CHORD = 24;
+ 
++    private int screenWidth;
++    private int screenHeight;
++    private String mstate = null;
++    private float mdeltax, mdeltay;
++    boolean keydown;
++
++    public Handler mKeyMouseHandler = new Handler() {
++        public void handleMessage(Message msg) {
++            switch(msg.what){
++            case KeyEvent.KEYCODE_SYSTEM_NAVIGATION_LEFT:
++                mdeltax = -1.0f;
++                mdeltay = 0;
++                break;
++            case KeyEvent.KEYCODE_SYSTEM_NAVIGATION_RIGHT:
++                mdeltax = 1.0f;
++                mdeltay = 0;
++                break;
++            case KeyEvent.KEYCODE_SYSTEM_NAVIGATION_UP:
++                mdeltax = 0;
++                mdeltay = -1.0f;
++                break;
++            case KeyEvent.KEYCODE_SYSTEM_NAVIGATION_DOWN:
++                mdeltax = 0;
++                mdeltay = 1.0f;
++                break;
++            case KeyEvent.KEYCODE_PROFILE_SWITCH:
++                mdeltax = 0;
++                mdeltay = 0;
++                break;
++            default:
++                break;
++            }
++
++            try {
++                mWindowManagerFuncs.dispatchMouse(mdeltax,mdeltay,screenWidth,screenHeight);
++            } catch (Exception e){
++                e.printStackTrace();
++            }
++
++            if (keydown) {
++                mKeyMouseHandler.sendEmptyMessageDelayed(msg.what,30);
++            }
++        }
++    };
++
+     private class PolicyHandler extends Handler {
+         @Override
+         public void handleMessage(Message msg) {
+@@ -2127,6 +2173,8 @@ public class PhoneWindowManager implements WindowManagerPolicy {
+         // Controls rotation and the like.
+         initializeHdmiState();
+ 
++        initializeDpState();
++
+         // Match current screen state.
+         if (!mPowerManager.isInteractive()) {
+             startedGoingToSleep(PowerManager.GO_TO_SLEEP_REASON_TIMEOUT);
+@@ -2827,6 +2875,26 @@ public class PhoneWindowManager implements WindowManagerPolicy {
+                     + repeatCount + " keyguardOn=" + keyguardOn + " canceled=" + canceled);
+         }
+ 
++        //infrare simulate mouse
++        boolean isBox = "box".equals(SystemProperties.get("ro.target.product"));
++        if (isBox) {
++            mstate = SystemProperties.get("sys.KeyMouse.mKeyMouseState");
++            if (mstate.equals("on") && ((keyCode == KeyEvent.KEYCODE_SYSTEM_NAVIGATION_LEFT)
++                || (keyCode == KeyEvent.KEYCODE_SYSTEM_NAVIGATION_RIGHT)
++                || (keyCode == KeyEvent.KEYCODE_SYSTEM_NAVIGATION_UP)
++                || (keyCode == KeyEvent.KEYCODE_SYSTEM_NAVIGATION_DOWN)
++                || (keyCode == KeyEvent.KEYCODE_PROFILE_SWITCH))) {
++            keydown = down;
++            mKeyMouseHandler.sendEmptyMessage(keyCode);
++            //return -1;
++            }
++
++            if (mstate.equals("on") && ((keyCode == KeyEvent.KEYCODE_ENTER)
++                ||(keyCode == KeyEvent.KEYCODE_DPAD_CENTER))) {
++            return -1;
++            }
++        }
++
+         if (mKeyCombinationManager.isKeyConsumed(event)) {
+             return key_consumed;
+         }
+@@ -3703,6 +3771,30 @@ public class PhoneWindowManager implements WindowManagerPolicy {
+         }
+     }
+ 
++    void initializeDpState() {
++        final int oldMask = StrictMode.allowThreadDiskReadsMask();
++        try {
++            initializeDpStateInternal();
++        } finally {
++            StrictMode.setThreadPolicyMask(oldMask);
++        }
++    }
++
++    void initializeDpStateInternal(){
++        boolean plugged = false;
++        ArrayList list=(ArrayList) ExtconUEventObserver.ExtconInfo.getDpExtconInfos("extcon.*");
++        if(ExtconUEventObserver.extconExists()&&list.size()!=0){
++            for(int i=0;i<list.size();i++){
++                MultiDpVideoExtconUEventObserver observer=new MultiDpVideoExtconUEventObserver();
++                ExtconUEventObserver.ExtconInfo info=(ExtconUEventObserver.ExtconInfo) list.get(i);
++                plugged=observer.init(info.getName());
++                mDefaultDisplayPolicy.addDpPluggedState(info.getName(),plugged);
++                mDefaultDisplayPolicy.setMultiDpPlugged(plugged,info);
++            }
++
++        }
++    }
++
+     void initializeHdmiStateInternal() {
+         boolean plugged = false;
+         // watch for HDMI plug messages if the hdmi switch exists
+@@ -3730,6 +3822,18 @@ public class PhoneWindowManager implements WindowManagerPolicy {
+                     }
+                 }
+             }
++        //-----------------------rk code----------
++        } else if (ExtconUEventObserver.extconExists() &&
++                       ExtconUEventObserver.ExtconInfo.getHdmiExtconInfos("extcon.*").size() != 0) {
++            ArrayList list = (ArrayList) ExtconUEventObserver.ExtconInfo.getHdmiExtconInfos("extcon.*");
++            for (int i = 0; i < list.size(); i++) {
++                MultiHdmiVideoExtconUEventObserver observer = new MultiHdmiVideoExtconUEventObserver();
++                ExtconUEventObserver.ExtconInfo info = (ExtconUEventObserver.ExtconInfo) list.get(i);
++                plugged=observer.init(info.getName());
++                mDefaultDisplayPolicy.addHdmiPluggedState(info.getName(), plugged);
++                mDefaultDisplayPolicy.setMultiHdmiPlugged(plugged, true, info);
++            }
++        //----------------------------------------
+         } else {
+             final List<ExtconUEventObserver.ExtconInfo> extcons =
+                     ExtconUEventObserver.ExtconInfo.getExtconInfoForTypes(
+@@ -3802,6 +3906,7 @@ public class PhoneWindowManager implements WindowManagerPolicy {
+ 
+         // Basic policy based on interactive state.
+         int result;
++	boolean isBox = "box".equals(SystemProperties.get("ro.target.product"));
+         if (interactive || (isInjected && !isWakeKey)) {
+             // When the device is interactive or the key is injected pass the
+             // key to the application.
+@@ -4037,8 +4142,10 @@ public class PhoneWindowManager implements WindowManagerPolicy {
+             case KeyEvent.KEYCODE_SYSTEM_NAVIGATION_LEFT:
+                 // fall through
+             case KeyEvent.KEYCODE_SYSTEM_NAVIGATION_RIGHT: {
+-                result &= ~ACTION_PASS_TO_USER;
+-                interceptSystemNavigationKey(event);
++                if(!isBox){
++                   result &= ~ACTION_PASS_TO_USER;
++                   interceptSystemNavigationKey(event);
++                }
+                 break;
+             }
+ 
+@@ -4770,11 +4877,11 @@ public class PhoneWindowManager implements WindowManagerPolicy {
+ 
+     // Called on the DisplayManager's DisplayPowerController thread.
+     @Override
+-    public void screenTurnedOff(int displayId) {
++    public void screenTurnedOff(int displayId, boolean isSwappingDisplay) {
+         if (DEBUG_WAKEUP) Slog.i(TAG, "Display" + displayId + " turned off...");
+ 
+         if (displayId == DEFAULT_DISPLAY) {
+-            updateScreenOffSleepToken(true);
++            updateScreenOffSleepToken(true, isSwappingDisplay);
+             mRequestedOrSleepingDefaultDisplay = false;
+             mDefaultDisplayPolicy.screenTurnedOff();
+             synchronized (mLock) {
+@@ -4825,7 +4932,7 @@ public class PhoneWindowManager implements WindowManagerPolicy {
+         if (displayId == DEFAULT_DISPLAY) {
+             Trace.asyncTraceBegin(Trace.TRACE_TAG_WINDOW_MANAGER, "screenTurningOn",
+                     0 /* cookie */);
+-            updateScreenOffSleepToken(false);
++            updateScreenOffSleepToken(false /* acquire */, false /* isSwappingDisplay */);
+             mDefaultDisplayPolicy.screenTurnedOn(screenOnListener);
+             mBootAnimationDismissable = false;
+ 
+@@ -5344,9 +5451,9 @@ public class PhoneWindowManager implements WindowManagerPolicy {
+     }
+ 
+     // TODO (multidisplay): Support multiple displays in WindowManagerPolicy.
+-    private void updateScreenOffSleepToken(boolean acquire) {
++    private void updateScreenOffSleepToken(boolean acquire, boolean isSwappingDisplay) {
+         if (acquire) {
+-            mScreenOffSleepTokenAcquirer.acquire(DEFAULT_DISPLAY);
++            mScreenOffSleepTokenAcquirer.acquire(DEFAULT_DISPLAY, isSwappingDisplay);
+         } else {
+             mScreenOffSleepTokenAcquirer.release(DEFAULT_DISPLAY);
+         }
+@@ -6132,4 +6239,79 @@ public class PhoneWindowManager implements WindowManagerPolicy {
+         }
+     }
+ 
++    //-----------------------rk code----------
++    private class MultiHdmiVideoExtconUEventObserver extends ExtconStateObserver<Boolean> {
++        private static final String HDMI_EXIST = "HDMI=1";
++        private static final String NAME = "hdmi";
++        private static final String EXIST = "=1";
++
++        private boolean init(String name) {
++            ExtconInfo mHdmi = new ExtconInfo(name);
++            boolean plugged = false;
++            try {
++                plugged = parseStateFromFile(mHdmi);
++            } catch (FileNotFoundException e) {
++                Slog.w(TAG, mHdmi.getStatePath()
++                       + " not found while attempting to determine initial state", e);
++            } catch (IOException e) {
++                Slog.e(TAG, "Error reading " + mHdmi.getStatePath()
++                       + " while attempting to determine initial state", e);
++            }
++            Slog.d(TAG, "start observing " + mHdmi);
++            startObserving(mHdmi);
++            return plugged;
++        }
++
++        @Override
++        public void updateState(ExtconInfo extconInfo, String eventName, Boolean state) {
++            mDefaultDisplayPolicy.setMultiHdmiPlugged(state,extconInfo);
++        }
++
++        @Override
++        public Boolean parseState(ExtconInfo extconIfno, String state) {
++            // state: HDMI=1 or state: hdmi*=1
++            return (state.contains(NAME) && state.contains(EXIST))
++                || state.contains(HDMI_EXIST);
++        }
++    }
++
++    private class MultiDpVideoExtconUEventObserver extends ExtconStateObserver<Boolean> {
++        private static final String DP_EXIST = "DP=1";
++        private static final String NAME = "dp";
++        private static final String EXIST = "=1";
++
++        private boolean init(String name) {
++            ExtconInfo mDp= new ExtconInfo(name);
++            boolean plugged = false;
++            try {
++                plugged = parseStateFromFile(mDp);
++            } catch (FileNotFoundException e) {
++                Slog.w(TAG, mDp.getStatePath()
++                        + " not found while attempting to determine initial state", e);
++            } catch (IOException e) {
++                Slog.e(
++                        TAG,
++                        "Error reading " + mDp.getStatePath()
++                                + " while attempting to determine initial state",
++                        e);
++            }
++            Slog.d(TAG,"start observing "+mDp);
++            startObserving(mDp);
++            return plugged;
++        }
++
++        @Override
++        public void updateState(ExtconInfo extconInfo, String eventName, Boolean state) {
++            mDefaultDisplayPolicy.setMultiDpPlugged(state,extconInfo);
++        }
++
++        @Override
++        public Boolean parseState(ExtconInfo extconIfno, String state) {
++            // state: DP=1 or state: dp*=1
++            return (state.contains(NAME) && state.contains(EXIST))
++                || state.contains(DP_EXIST);
++        }
++    }
++    //----------------------------------------
++
+ }
+diff --git a/services/core/java/com/android/server/policy/WindowManagerPolicy.java b/services/core/java/com/android/server/policy/WindowManagerPolicy.java
+index 77007fa229a2..1e4ab1a2f097 100644
+--- a/services/core/java/com/android/server/policy/WindowManagerPolicy.java
++++ b/services/core/java/com/android/server/policy/WindowManagerPolicy.java
+@@ -229,6 +229,9 @@ public interface WindowManagerPolicy extends WindowManagerPolicyConstants {
+         public static final int CAMERA_LENS_COVER_ABSENT = -1;
+         public static final int CAMERA_LENS_UNCOVERED = 0;
+         public static final int CAMERA_LENS_COVERED = 1;
++	//interfaces for mouse keyevent input
++	public void dispatchMouse(float x, float y, int w, int h);
++	public void dispatchMouseByCd(float x, float y);
+ 
+         /**
+          * Returns a code that describes the current state of the lid switch.
+@@ -829,8 +832,10 @@ public interface WindowManagerPolicy extends WindowManagerPolicyConstants {
+ 
+     /**
+      * Called when the display has turned off.
++     * @param displayId The display to apply to.
++     * @param isSwappingDisplay Whether the display is swapping to another physical display.
+      */
+-    public void screenTurnedOff(int displayId);
++    void screenTurnedOff(int displayId, boolean isSwappingDisplay);
+ 
+     public interface ScreenOnListener {
+         void onScreenOn();

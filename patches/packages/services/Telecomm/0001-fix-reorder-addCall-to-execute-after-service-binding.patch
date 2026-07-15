@@ -1,0 +1,40 @@
+From 7d8aca88a57a4a28fcb505a1ee2b68cc76ee5e02 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Sun, 12 Jul 2026 01:02:47 +0800
+Subject: [PATCH 80/81] fix: reorder addCall to execute after service binding
+ check for Rockchip InCallService compatibility
+
+Change-Id: If03a102260c563935bb6cfb3deb08d21d5ff886d
+---
+ src/com/android/server/telecom/InCallController.java | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/src/com/android/server/telecom/InCallController.java b/src/com/android/server/telecom/InCallController.java
+index 6e092912e..9a53575c3 100644
+--- a/src/com/android/server/telecom/InCallController.java
++++ b/src/com/android/server/telecom/InCallController.java
+@@ -1136,10 +1136,6 @@ public class InCallController extends CallsManagerListenerBase implements
+ 
+     @Override
+     public void onCallAdded(Call call) {
+-        Log.i(this, "onCallAdded: %s", call);
+-        // Track the call if we don't already know about it.
+-        addCall(call);
+-
+         if (!isBoundAndConnectedToServices()) {
+             Log.i(this, "onCallAdded: %s; not bound or connected.", call);
+             // We are not bound, or we're not connected.
+@@ -1152,6 +1148,10 @@ public class InCallController extends CallsManagerListenerBase implements
+             mEmergencyCallHelper.maybeGrantTemporaryLocationPermission(call,
+                     mCallsManager.getCurrentUserHandle());
+ 
++            Log.i(this, "onCallAdded: %s", call);
++            // Track the call if we don't already know about it.
++            addCall(call);
++
+             Log.i(this, "mInCallServiceConnection isConnected=%b",
+                     mInCallServiceConnection.isConnected());
+ 
+-- 
+2.53.0
+

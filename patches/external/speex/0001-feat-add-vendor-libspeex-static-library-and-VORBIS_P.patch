@@ -1,0 +1,79 @@
+From 2a787144437e4a136575fbb045a08ac09f05484f Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 13:42:41 +0800
+Subject: [PATCH] feat: add vendor libspeex static library and VORBIS_PSYCHO
+ compile fix
+
+Change-Id: I0dcc5d035146bab0b32d2c4404177f749091102d
+---
+ Android.bp         | 42 ++++++++++++++++++++++++++++++++++++++++++
+ libspeexdsp/scal.c |  2 ++
+ 2 files changed, 44 insertions(+)
+
+diff --git a/Android.bp b/Android.bp
+index ec1f5ac..3c1e9c1 100644
+--- a/Android.bp
++++ b/Android.bp
+@@ -94,3 +94,45 @@ cc_library_shared {
+         misc_undefined: ["bounds"],
+     },
+ }
++
++cc_library_static {
++    name: "libspeex",
++
++    vendor: true,
++    arch: {
++        arm: {
++            instruction_set: "arm",
++        },
++    },
++    srcs: ["libspeexdsp/preprocess.c",
++           "libspeexdsp/jitter.c",
++           "libspeexdsp/mdf.c",
++           "libspeexdsp/fftwrap.c",
++           "libspeexdsp/filterbank.c",
++           "libspeexdsp/resample.c",
++           "libspeexdsp/buffer.c",
++           "libspeexdsp/scal.c",
++           "libspeexdsp/smallft.c"],
++
++    cflags: [
++        "-DEXPORT=__attribute__((visibility(\"default\")))",
++        "-DFLOATING_POINT",
++        "-DHAVE_STDINT_H",
++        "-DUSE_SMALLFT",
++        "-DVAR_ARRAYS",
++        "-O3",
++        "-fstrict-aliasing",
++        "-fprefetch-loop-arrays",
++        "-Wall",
++        "-Werror",
++        "-Wno-sign-compare",
++        "-Wno-unused-parameter",
++    ],
++
++    local_include_dirs: ["include"],
++    export_include_dirs: ["include"],
++    sanitize: {
++        integer_overflow: true,
++        misc_undefined: ["bounds"],
++    },
++}
+diff --git a/libspeexdsp/scal.c b/libspeexdsp/scal.c
+index d2ea59c..de0de17 100644
+--- a/libspeexdsp/scal.c
++++ b/libspeexdsp/scal.c
+@@ -152,7 +152,9 @@ EXPORT void speex_decorrelate(SpeexDecorrState *st, const spx_int16_t *in, spx_i
+    for (ch=0;ch<st->channels;ch++)
+    {
+       int i;
++#ifdef VORBIS_PSYCHO
+       int N=2*st->frame_size;
++#endif
+       float beta, beta2;
+       float *x;
+       float max_alpha = 0;
+-- 
+2.53.0
+

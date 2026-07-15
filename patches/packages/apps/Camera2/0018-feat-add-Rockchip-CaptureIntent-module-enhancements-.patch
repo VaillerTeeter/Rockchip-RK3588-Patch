@@ -1,0 +1,175 @@
+From cc0943c4c7a93cc25ae2e65a278218eaccb9ad67 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Sat, 11 Jul 2026 02:29:06 +0800
+Subject: [PATCH 19/27] feat: add Rockchip CaptureIntent module enhancements
+ for seamless camera capture workflow
+
+Change-Id: I3d274da82a45d84758799395204fae40c7469633
+---
+ .../captureintent/CaptureIntentConfig.java    |  2 +-
+ .../captureintent/CaptureIntentModule.java    | 19 +++++++++++++++++++
+ .../resource/ResourceCaptureToolsImpl.java    |  2 ++
+ .../resource/ResourceConstructedImpl.java     |  1 +
+ .../captureintent/state/StateFatal.java       |  6 ++++++
+ .../state/StateIntentCompleted.java           |  1 +
+ .../state/StateOpeningCamera.java             | 18 ++++++++++++++++++
+ .../state/StateReadyForCapture.java           |  2 +-
+ 8 files changed, 49 insertions(+), 2 deletions(-)
+
+diff --git a/src/com/android/camera/captureintent/CaptureIntentConfig.java b/src/com/android/camera/captureintent/CaptureIntentConfig.java
+index 76bf208a6..c41557543 100644
+--- a/src/com/android/camera/captureintent/CaptureIntentConfig.java
++++ b/src/com/android/camera/captureintent/CaptureIntentConfig.java
+@@ -19,7 +19,7 @@ package com.android.camera.captureintent;
+ import com.android.camera.util.ApiHelper;
+ 
+ public class CaptureIntentConfig {
+-    public static final int DOWN_SAMPLE_FACTOR = 4;
++    public static final int DOWN_SAMPLE_FACTOR = 1;
+     public static final int INLINE_BITMAP_MAX_PIXEL_NUM = 50 * 1024;
+ 
+     /**
+diff --git a/src/com/android/camera/captureintent/CaptureIntentModule.java b/src/com/android/camera/captureintent/CaptureIntentModule.java
+index 9e0fa317d..6d63bbdd3 100644
+--- a/src/com/android/camera/captureintent/CaptureIntentModule.java
++++ b/src/com/android/camera/captureintent/CaptureIntentModule.java
+@@ -162,6 +162,7 @@ public class CaptureIntentModule extends CameraModule {
+     @Override
+     public void destroy() {
+         // Never called. Do nothing here.
++        mResourceConstructed.get().close();
+     }
+ 
+     @Override
+@@ -305,4 +306,22 @@ public class CaptureIntentModule extends CameraModule {
+             mStateMachine.processEvent(new EventOnSurfaceTextureUpdated());
+         }
+     };
++
++    @Override
++    public void onOrientationChanged(int orientation) {
++        // TODO Auto-generated method stub
++
++    }
++
++    @Override
++    public void onNonDecorWindowSizeChanged() {
++        // TODO Auto-generated method stub
++
++    }
++
++    @Override
++    public void onShutterButtonLongClickRelease() {
++        // TODO Auto-generated method stub
++
++    }
+ }
+diff --git a/src/com/android/camera/captureintent/resource/ResourceCaptureToolsImpl.java b/src/com/android/camera/captureintent/resource/ResourceCaptureToolsImpl.java
+index adce211de..880c74053 100644
+--- a/src/com/android/camera/captureintent/resource/ResourceCaptureToolsImpl.java
++++ b/src/com/android/camera/captureintent/resource/ResourceCaptureToolsImpl.java
+@@ -114,6 +114,8 @@ public final class ResourceCaptureToolsImpl implements ResourceCaptureTools {
+         mHeadingSensor.deactivate();
+         mSoundPlayer.unloadSound(R.raw.timer_increment);
+         mSoundPlayer.unloadSound(R.raw.timer_final_second);
++        mSoundPlayer.release();
++        mMediaActionSound.release();
+     }
+ 
+     @Override
+diff --git a/src/com/android/camera/captureintent/resource/ResourceConstructedImpl.java b/src/com/android/camera/captureintent/resource/ResourceConstructedImpl.java
+index 5e90f40b2..29b565479 100644
+--- a/src/com/android/camera/captureintent/resource/ResourceConstructedImpl.java
++++ b/src/com/android/camera/captureintent/resource/ResourceConstructedImpl.java
+@@ -125,6 +125,7 @@ public final class ResourceConstructedImpl implements ResourceConstructed {
+ 
+     @Override
+     public void close() {
++        mSoundPlayer.release();
+         mCameraThread.quit();
+     }
+ 
+diff --git a/src/com/android/camera/captureintent/state/StateFatal.java b/src/com/android/camera/captureintent/state/StateFatal.java
+index 42115da74..aa62fef19 100644
+--- a/src/com/android/camera/captureintent/state/StateFatal.java
++++ b/src/com/android/camera/captureintent/state/StateFatal.java
+@@ -55,4 +55,10 @@ public final class StateFatal extends StateImpl {
+         });
+         return NO_CHANGE;
+     }
++
++    @Override
++    public void onLeave() {
++        mResourceConstructed.close();
++    }
++
+ }
+\ No newline at end of file
+diff --git a/src/com/android/camera/captureintent/state/StateIntentCompleted.java b/src/com/android/camera/captureintent/state/StateIntentCompleted.java
+index a285a377e..60cbe1767 100644
+--- a/src/com/android/camera/captureintent/state/StateIntentCompleted.java
++++ b/src/com/android/camera/captureintent/state/StateIntentCompleted.java
+@@ -76,5 +76,6 @@ public final class StateIntentCompleted extends StateImpl {
+ 
+     @Override
+     public void onLeave() {
++        mResourceConstructed.close();
+     }
+ }
+\ No newline at end of file
+diff --git a/src/com/android/camera/captureintent/state/StateOpeningCamera.java b/src/com/android/camera/captureintent/state/StateOpeningCamera.java
+index 1b27c6c21..c47b34af8 100644
+--- a/src/com/android/camera/captureintent/state/StateOpeningCamera.java
++++ b/src/com/android/camera/captureintent/state/StateOpeningCamera.java
+@@ -215,10 +215,17 @@ public final class StateOpeningCamera extends StateImpl {
+         return Optional.absent();
+     }
+ 
++    private void unRegisterEventHandler() {
++        removeEventHandler(EventPause.class);
++        removeEventHandler(EventOnOpenCameraSucceeded.class);
++        removeEventHandler(EventOnOpenCameraFailed.class);
++    }
++
+     @Override
+     public void onLeave() {
+         mResourceConstructed.close();
+         mResourceSurfaceTexture.close();
++        unRegisterEventHandler();
+     }
+ 
+     @VisibleForTesting
+@@ -273,6 +280,17 @@ public final class StateOpeningCamera extends StateImpl {
+         /** Flash button UI spec. */
+         bottomBarSpec.enableFlash = mCameraCharacteristics.isFlashSupported();
+ 
++        bottomBarSpec.enableWhiteBalance = mCameraCharacteristics.isWhiteBalanceSupported();
++        bottomBarSpec.supportedWhiteBalances = mCameraCharacteristics.getSupportedWhiteBalances();
++        bottomBarSpec.whiteBalanceSetCallback =
++            new CameraAppUI.BottomBarUISpec.WhiteBalanceSetCallback() {
++                @Override
++                public void setWhiteBalance(String value) {
++                    mResourceConstructed.get().getSettingsManager().set(
++                            mCameraSettingsScope, Keys.KEY_WHITEBALANCE, value);
++            }
++        };
++
+         /** Setup exposure compensation */
+         bottomBarSpec.isExposureCompensationSupported = mCameraCharacteristics
+                 .isExposureCompensationSupported();
+diff --git a/src/com/android/camera/captureintent/state/StateReadyForCapture.java b/src/com/android/camera/captureintent/state/StateReadyForCapture.java
+index d4fb5e8e7..d5ea40bb2 100644
+--- a/src/com/android/camera/captureintent/state/StateReadyForCapture.java
++++ b/src/com/android/camera/captureintent/state/StateReadyForCapture.java
+@@ -320,7 +320,7 @@ public final class StateReadyForCapture extends StateImpl {
+                         });
+ 
+                         OneCamera.Facing cameraFacing =
+-                                resourceConstructed.getCameraFacingSetting().getCameraFacing();
++                                resourceConstructed.getCameraFacingSetting().switchCameraFacing();
+                         CameraId cameraId =  resourceConstructed.getOneCameraManager()
+                               .findFirstCameraFacing(cameraFacing);
+                         OneCameraCharacteristics characteristics;
+-- 
+2.53.0
+

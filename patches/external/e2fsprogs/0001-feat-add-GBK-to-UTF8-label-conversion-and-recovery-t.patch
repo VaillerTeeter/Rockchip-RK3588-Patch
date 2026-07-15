@@ -1,0 +1,309 @@
+From 7c5b138339eb547a776f8f4cde35097d90dc4342 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 13:40:44 +0800
+Subject: [PATCH] feat: add GBK-to-UTF8 label conversion and recovery tune2fs
+ support
+
+Change-Id: I052adfee9e999f42f03f584f4cfb98225fde842e
+---
+ lib/blkid/Android.bp |  12 +++
+ lib/blkid/probe.c    | 180 ++++++++++++++++++++++++++-----------------
+ misc/Android.bp      |   1 +
+ misc/blkid.c         |   6 +-
+ 4 files changed, 126 insertions(+), 73 deletions(-)
+
+diff --git a/lib/blkid/Android.bp b/lib/blkid/Android.bp
+index eb5ae48a..62b748b7 100644
+--- a/lib/blkid/Android.bp
++++ b/lib/blkid/Android.bp
+@@ -49,6 +49,17 @@ cc_library {
+             ],
+             enabled: true
+         },
++        android: {
++            local_include_dirs: [
++                "libiconv/include/iconv.h",
++            ],
++            static_libs: [
++                "libiconv-1.16"
++            ],
++            cflags: [
++                "-DUSING_ICONV",
++            ],
++        }
+     },
+ 
+     cflags: [
+@@ -56,6 +67,7 @@ cc_library {
+         "-Wno-error=pointer-sign",
+         "-Wno-unused-parameter",
+         "-fno-strict-aliasing",
++        "-Wno-unused-variable",
+     ],
+ 
+     header_libs: ["libext2-headers"],
+diff --git a/lib/blkid/probe.c b/lib/blkid/probe.c
+index f8687cde..962b37c3 100644
+--- a/lib/blkid/probe.c
++++ b/lib/blkid/probe.c
+@@ -37,6 +37,14 @@
+ #include "uuid/uuid.h"
+ #include "probe.h"
+ 
++
++#ifdef USING_ICONV
++#include <dlfcn.h>
++#include "iconv.h"
++int utf16toUtf8(char *inbuf, size_t len,char *outbuf);
++int gbk2utf8(char *inbuf, size_t inlen, char *outbuf);
++#endif
++
+ static int figure_label_len(const unsigned char *label, int len)
+ {
+ 	const unsigned char *end = label + len - 1;
+@@ -507,6 +515,26 @@ static unsigned char *search_fat_label(struct vfat_dir_entry *dir, int count)
+ 	return 0;
+ }
+ 
++#ifdef USING_ICONV
++int gbk2utf8(char *inbuf, size_t inlen, char *outbuf)
++{
++    char **pin = &inbuf;
++    char **pout = &outbuf;
++    size_t dlen= 32 * 4;
++    size_t ret = -1;
++    iconv_t cd = iconv_open("UTF-8","GB2312");
++    if (cd==NULL){
++        printf("iconv open error!!");
++        return -1;
++    }
++    printf("iconv begin inbuf = %s, inlen = %zu, outbuf = %s, dlen = %zu\n", inbuf, inlen, outbuf, dlen);
++    ret = iconv(cd, pin, &inlen, pout, &dlen);
++    printf("iconv end ret = %zu, inbuf = %s, inlen = %zu, outbuf = %s, dlen = %zu\n", ret, inbuf, inlen, outbuf, dlen);
++    iconv_close(cd);
++    return 0;
++}
++#endif
++
+ /* FAT label extraction from the root directory taken from Kay
+  * Sievers's volume_id library */
+ static int probe_fat(struct blkid_probe *probe,
+@@ -618,8 +646,19 @@ static int probe_fat(struct blkid_probe *probe,
+ 	}
+ 
+ 	if (vol_label && memcmp(vol_label, no_name, 11)) {
+-		if ((label_len = figure_label_len(vol_label, 11)))
+-			label = vol_label;
++		if ((label_len = figure_label_len(vol_label, 11))) {
++#ifdef USING_ICONV
++                    char tmp[129];
++                    memset((void*)tmp, 0, 129);
++                    printf("fat32 before gbk2utf8 vol_label=(%s), tmp=(%s), label_len=%d\n", vol_label, tmp, label_len);
++                    int ret = gbk2utf8((char *)vol_label, label_len, tmp);
++                    label_len = strlen(tmp);
++                    printf("fat32 end gbk2utf8 vol_label=(%s), tmp=(%s), label_len=%d, ret=%d\n", vol_label, tmp, label_len, ret);
++                    label = tmp;
++#else
++                    label = vol_label;
++#endif
++		}
+ 	}
+ 
+ 	/* We can't just print them as %04X, because they are unaligned */
+@@ -679,6 +718,68 @@ static int probe_fat_nomagic(struct blkid_probe *probe,
+ 	return probe_fat(probe, id, buf);
+ }
+ 
++static void unicode_16be_to_utf8(unsigned char *str, int out_len,
++    const unsigned char *buf, int in_len)
++{
++    int i, j;
++    unsigned int c;
++
++    for (i = j = 0; i + 2 <= in_len; i += 2) {
++        c = (buf[i] << 8) | buf[i+1];
++        if (c == 0) {
++            str[j] = '\0';
++            break;
++        } else if (c < 0x80) {
++            if (j+1 >= out_len)
++                break;
++            str[j++] = (unsigned char) c;
++        } else if (c < 0x800) {
++            if (j+2 >= out_len)
++                break;
++            str[j++] = (unsigned char) (0xc0 | (c >> 6));
++            str[j++] = (unsigned char) (0x80 | (c & 0x3f));
++        } else {
++            if (j+3 >= out_len)
++                break;
++            str[j++] = (unsigned char) (0xe0 | (c >> 12));
++            str[j++] = (unsigned char) (0x80 | ((c >> 6) & 0x3f));
++            str[j++] = (unsigned char) (0x80 | (c & 0x3f));
++        }
++    }
++    str[j] = '\0';
++}
++
++static void unicode_16le_to_utf8(unsigned char *str, int out_len,
++    const unsigned char *buf, int in_len)
++{
++    int i, j;
++    unsigned int c;
++
++    for (i = j = 0; i + 2 <= in_len; i += 2) {
++        c = (buf[i+1] << 8) | buf[i];
++        if (c == 0) {
++            str[j] = '\0';
++            break;
++        } else if (c < 0x80) {
++            if (j+1 >= out_len)
++                break;
++            str[j++] = (unsigned char) c;
++        } else if (c < 0x800) {
++            if (j+2 >= out_len)
++                break;
++            str[j++] = (unsigned char) (0xc0 | (c >> 6));
++            str[j++] = (unsigned char) (0x80 | (c & 0x3f));
++        } else {
++            if (j+3 >= out_len)
++                break;
++            str[j++] = (unsigned char) (0xe0 | (c >> 12));
++            str[j++] = (unsigned char) (0x80 | ((c >> 6) & 0x3f));
++            str[j++] = (unsigned char) (0x80 | (c & 0x3f));
++        }
++    }
++    str[j] = '\0';
++}
++
+ static int probe_ntfs(struct blkid_probe *probe,
+ 		      struct blkid_magic *id __BLKID_ATTR((unused)),
+ 		      unsigned char *buf)
+@@ -686,7 +787,7 @@ static int probe_ntfs(struct blkid_probe *probe,
+ 	struct ntfs_super_block *ns;
+ 	struct master_file_table_record *mft;
+ 	struct file_attribute *attr;
+-	char		uuid_str[17], label_str[129], *cp;
++	char		uuid_str[17], label_str[129]/*, *cp*/;
+ 	int		bytes_per_sector, sectors_per_cluster;
+ 	int		mft_record_size, attr_off, attr_len;
+ 	unsigned int	i, attr_type, val_len;
+@@ -769,13 +870,10 @@ static int probe_ntfs(struct blkid_probe *probe,
+ 			if (val_len > sizeof(label_str))
+ 				val_len = sizeof(label_str)-1;
+ 
+-			for (i=0, cp=label_str; i < val_len; i+=2,cp++) {
+-				val = ((__u8 *) attr) + val_off + i;
+-				*cp = val[0];
+-				if (val[1])
+-					*cp = '?';
+-			}
+-			*cp = 0;
++            val = ((__u8 *) attr) + val_off;
++            memset(label_str, 0, sizeof(label_str));
++            unicode_16le_to_utf8(label_str, sizeof(label_str), val, val_len);
++            printf("probe_ntfs --> volume_id_set_label_unicode16 --> %s\n", label_str);
+ 		}
+ 	}
+ 
+@@ -1130,68 +1228,6 @@ static int probe_gfs2(struct blkid_probe *probe,
+ 	return 1;
+ }
+ 
+-static void unicode_16be_to_utf8(unsigned char *str, int out_len,
+-				 const unsigned char *buf, int in_len)
+-{
+-	int i, j;
+-	unsigned int c;
+-
+-	for (i = j = 0; i + 2 <= in_len; i += 2) {
+-		c = (buf[i] << 8) | buf[i+1];
+-		if (c == 0) {
+-			str[j] = '\0';
+-			break;
+-		} else if (c < 0x80) {
+-			if (j+1 >= out_len)
+-				break;
+-			str[j++] = (unsigned char) c;
+-		} else if (c < 0x800) {
+-			if (j+2 >= out_len)
+-				break;
+-			str[j++] = (unsigned char) (0xc0 | (c >> 6));
+-			str[j++] = (unsigned char) (0x80 | (c & 0x3f));
+-		} else {
+-			if (j+3 >= out_len)
+-				break;
+-			str[j++] = (unsigned char) (0xe0 | (c >> 12));
+-			str[j++] = (unsigned char) (0x80 | ((c >> 6) & 0x3f));
+-			str[j++] = (unsigned char) (0x80 | (c & 0x3f));
+-		}
+-	}
+-	str[j] = '\0';
+-}
+-
+-static void unicode_16le_to_utf8(unsigned char *str, int out_len,
+-				 const unsigned char *buf, int in_len)
+-{
+-	int i, j;
+-	unsigned int c;
+-
+-	for (i = j = 0; i + 2 <= in_len; i += 2) {
+-		c = (buf[i+1] << 8) | buf[i];
+-		if (c == 0) {
+-			str[j] = '\0';
+-			break;
+-		} else if (c < 0x80) {
+-			if (j+1 >= out_len)
+-				break;
+-			str[j++] = (unsigned char) c;
+-		} else if (c < 0x800) {
+-			if (j+2 >= out_len)
+-				break;
+-			str[j++] = (unsigned char) (0xc0 | (c >> 6));
+-			str[j++] = (unsigned char) (0x80 | (c & 0x3f));
+-		} else {
+-			if (j+3 >= out_len)
+-				break;
+-			str[j++] = (unsigned char) (0xe0 | (c >> 12));
+-			str[j++] = (unsigned char) (0x80 | ((c >> 6) & 0x3f));
+-			str[j++] = (unsigned char) (0x80 | (c & 0x3f));
+-		}
+-	}
+-	str[j] = '\0';
+-}
+-
+ static int probe_hfs(struct blkid_probe *probe __BLKID_ATTR((unused)),
+ 			 struct blkid_magic *id __BLKID_ATTR((unused)),
+ 			 unsigned char *buf)
+diff --git a/misc/Android.bp b/misc/Android.bp
+index 78e18e42..4994cf87 100644
+--- a/misc/Android.bp
++++ b/misc/Android.bp
+@@ -141,6 +141,7 @@ cc_binary {
+     name: "tune2fs",
+     host_supported: true,
+     vendor_ramdisk_available: true,
++    recovery_available: true,
+     defaults: ["tune2fs-defaults"],
+ 
+     shared_libs: tune2fs_libs,
+diff --git a/misc/blkid.c b/misc/blkid.c
+index 472f0179..219bbb68 100644
+--- a/misc/blkid.c
++++ b/misc/blkid.c
+@@ -266,7 +266,11 @@ static void print_tags(blkid_dev dev, char *show[], int numtag, int output)
+ 			}
+ 			fputs(type, stdout);
+ 			fputs("=\"", stdout);
+-			safe_print(value, -1);
++            if(strcmp(type, "LABEL") == 0 ){
++                fputs(value, stdout);
++            }else {
++                safe_print(value, -1);
++            }
+ 			fputs("\" ", stdout);
+ 		}
+ 	}
+-- 
+2.53.0
+

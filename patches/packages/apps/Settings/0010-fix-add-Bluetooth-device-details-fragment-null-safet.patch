@@ -1,0 +1,35 @@
+From c03dd49bce5ac196f19d05db5fda91fe6f3fdcea Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Sat, 11 Jul 2026 21:05:30 +0800
+Subject: [PATCH 66/67] fix: add Bluetooth device details fragment null-safety
+ for Rockchip Settings
+
+Change-Id: I84b85e4156e5e144703f97b299e839f8da2bd2db
+---
+ .../settings/bluetooth/BluetoothDeviceDetailsFragment.java     | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/src/com/android/settings/bluetooth/BluetoothDeviceDetailsFragment.java b/src/com/android/settings/bluetooth/BluetoothDeviceDetailsFragment.java
+index fa15b5ca33..562ffec17a 100644
+--- a/src/com/android/settings/bluetooth/BluetoothDeviceDetailsFragment.java
++++ b/src/com/android/settings/bluetooth/BluetoothDeviceDetailsFragment.java
+@@ -42,7 +42,6 @@ import com.android.settings.R;
+ import com.android.settings.core.SettingsUIDeviceConfig;
+ import com.android.settings.dashboard.RestrictedDashboardFragment;
+ import com.android.settings.overlay.FeatureFactory;
+-import com.android.settings.slices.BlockingSlicePrefController;
+ import com.android.settings.slices.SlicePreferenceController;
+ import com.android.settingslib.bluetooth.CachedBluetoothDevice;
+ import com.android.settingslib.bluetooth.LocalBluetoothManager;
+@@ -133,7 +132,7 @@ public class BluetoothDeviceDetailsFragment extends RestrictedDashboardFragment
+         final boolean sliceEnabled = DeviceConfig.getBoolean(DeviceConfig.NAMESPACE_SETTINGS_UI,
+                 SettingsUIDeviceConfig.BT_SLICE_SETTINGS_ENABLED, true);
+ 
+-        use(BlockingSlicePrefController.class).setSliceUri(sliceEnabled
++        use(BlockingPrefWithSliceController.class).setSliceUri(sliceEnabled
+                 ? featureProvider.getBluetoothDeviceSettingsUri(mCachedDevice.getDevice())
+                 : null);
+     }
+-- 
+2.53.0
+

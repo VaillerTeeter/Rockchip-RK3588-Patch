@@ -1,0 +1,35 @@
+From 78d1dfe8b9b926cbf23b194966e2b3963993e757 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 17:46:34 +0800
+Subject: [PATCH] fix: MTP cancel handling
+
+Change-Id: I6563f8bce12a23b3514cdbdb96351ca8a6411784
+
+diff --git a/media/mtp/MtpServer.cpp b/media/mtp/MtpServer.cpp
+index 6fcf119976..0fca1e00b8 100644
+--- a/media/mtp/MtpServer.cpp
++++ b/media/mtp/MtpServer.cpp
+@@ -236,7 +236,13 @@ void MtpServer::run() {
+                 break;
+             }
+         } else {
+-            ALOGV("skipping response\n");
++	    ALOGV("skipping response. errno: %d", errno);
++
++	    if (errno == ECANCELED) {
++                // return to top of loop and wait for next command
++                continue;
++            }
++            break;
+         }
+     }
+ 
+@@ -453,7 +459,7 @@ bool MtpServer::handleRequest() {
+     if (response != MTP_RESPONSE_OK)
+       ALOGW("[MTP] got response 0x%X in command %s (%x)", response,
+             MtpDebug::getOperationCodeName(operation), operation);
+-    if (response == MTP_RESPONSE_TRANSACTION_CANCELLED)
++    if ((response == MTP_RESPONSE_TRANSACTION_CANCELLED) || (response == MTP_RESPONSE_GENERAL_ERROR))
+         return false;
+     mResponse.setResponseCode(response);
+     return true;

@@ -1,0 +1,26 @@
+From e4ddc200dd5cf5b02bbbe3a163cf0723c32b0cd8 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 17:28:05 +0800
+Subject: [PATCH] fix: adjust 5G NR SSRSRP signal strength thresholds
+
+Change-Id: I86bbc813b148c3fbd496f6a9299ec9c7d753e415
+
+diff --git a/telephony/java/android/telephony/CarrierConfigManager.java b/telephony/java/android/telephony/CarrierConfigManager.java
+index 741721d14ac1..be25d22798c9 100644
+--- a/telephony/java/android/telephony/CarrierConfigManager.java
++++ b/telephony/java/android/telephony/CarrierConfigManager.java
+@@ -9055,10 +9055,10 @@ public class CarrierConfigManager {
+         sDefaults.putIntArray(KEY_5G_NR_SSRSRP_THRESHOLDS_INT_ARRAY,
+                 // Boundaries: [-140 dB, -44 dB]
+                 new int[] {
+-                    -110, /* SIGNAL_STRENGTH_POOR */
+-                    -90, /* SIGNAL_STRENGTH_MODERATE */
+-                    -80, /* SIGNAL_STRENGTH_GOOD */
+-                    -65,  /* SIGNAL_STRENGTH_GREAT */
++                    -120, /* SIGNAL_STRENGTH_POOR */
++                    -110, /* SIGNAL_STRENGTH_MODERATE */
++                    -100, /* SIGNAL_STRENGTH_GOOD */
++                    -90,  /* SIGNAL_STRENGTH_GREAT */
+                 });
+         sDefaults.putIntArray(KEY_5G_NR_SSRSRQ_THRESHOLDS_INT_ARRAY,
+                 // Boundaries: [-43 dB, 20 dB]

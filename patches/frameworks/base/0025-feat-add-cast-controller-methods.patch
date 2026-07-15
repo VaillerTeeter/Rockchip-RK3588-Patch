@@ -1,0 +1,40 @@
+From a5e5765de712abacf560d761f90948b626b2a320 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 17:52:40 +0800
+Subject: [PATCH] feat: add cast controller methods
+
+Change-Id: I6586d7e5a1904e11501ca5c287c4175bea29aa9e
+
+diff --git a/packages/SystemUI/src/com/android/systemui/statusbar/policy/CastController.java b/packages/SystemUI/src/com/android/systemui/statusbar/policy/CastController.java
+index 98cde2a049da..abedd3220c93 100644
+--- a/packages/SystemUI/src/com/android/systemui/statusbar/policy/CastController.java
++++ b/packages/SystemUI/src/com/android/systemui/statusbar/policy/CastController.java
+@@ -28,6 +28,11 @@ public interface CastController extends CallbackController<Callback>, Dumpable {
+     void startCasting(CastDevice device);
+     void stopCasting(CastDevice device);
+ 
++    /**
++     * @return whether we have a connected device.
++     */
++    boolean hasConnectedCastDevice();
++
+     public interface Callback {
+         void onCastDevicesChanged();
+     }
+diff --git a/packages/SystemUI/src/com/android/systemui/statusbar/policy/CastControllerImpl.java b/packages/SystemUI/src/com/android/systemui/statusbar/policy/CastControllerImpl.java
+index 7290a1a82070..f7b601b9d284 100644
+--- a/packages/SystemUI/src/com/android/systemui/statusbar/policy/CastControllerImpl.java
++++ b/packages/SystemUI/src/com/android/systemui/statusbar/policy/CastControllerImpl.java
+@@ -217,6 +217,12 @@ public class CastControllerImpl implements CastController {
+         }
+     }
+ 
++    @Override
++    public boolean hasConnectedCastDevice() {
++        return getCastDevices().stream().anyMatch(
++                castDevice -> castDevice.state == CastDevice.STATE_CONNECTED);
++    }
++
+     private void setProjection(MediaProjectionInfo projection, boolean started) {
+         boolean changed = false;
+         final MediaProjectionInfo oldProjection = mProjection;

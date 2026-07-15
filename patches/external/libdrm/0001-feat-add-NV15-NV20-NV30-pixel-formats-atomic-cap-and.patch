@@ -1,0 +1,123 @@
+From 369714108d4083a954d3828f95d6291fc5c01c24 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 13:41:55 +0800
+Subject: [PATCH] feat: add NV15/NV20/NV30 pixel formats, atomic cap, and
+ drmModeAddFB2_ext
+
+Change-Id: I75a13c21bdecd3c55145fe5b5f8e64b5c226a49b
+---
+ include/drm/drm_fourcc.h  | 11 +++++++++++
+ tests/modetest/modetest.c |  1 +
+ tests/util/format.c       |  3 +++
+ xf86drmMode.c             | 25 +++++++++++++++++++++++++
+ xf86drmMode.h             |  5 +++++
+ 5 files changed, 45 insertions(+)
+
+diff --git a/include/drm/drm_fourcc.h b/include/drm/drm_fourcc.h
+index 957c7be2..384d6d32 100644
+--- a/include/drm/drm_fourcc.h
++++ b/include/drm/drm_fourcc.h
+@@ -268,11 +268,22 @@ extern "C" {
+  * index 1 = Cb:Cr plane, [15:0] Cb:Cr little endian
+  */
+ #define DRM_FORMAT_NV12		fourcc_code('N', 'V', '1', '2') /* 2x2 subsampled Cr:Cb plane */
++#define DRM_FORMAT_NV12_10		fourcc_code('N', 'A', '1', '2') /* 2x2 subsampled Cr:Cb plane */
+ #define DRM_FORMAT_NV21		fourcc_code('N', 'V', '2', '1') /* 2x2 subsampled Cb:Cr plane */
+ #define DRM_FORMAT_NV16		fourcc_code('N', 'V', '1', '6') /* 2x1 subsampled Cr:Cb plane */
+ #define DRM_FORMAT_NV61		fourcc_code('N', 'V', '6', '1') /* 2x1 subsampled Cb:Cr plane */
+ #define DRM_FORMAT_NV24		fourcc_code('N', 'V', '2', '4') /* non-subsampled Cr:Cb plane */
+ #define DRM_FORMAT_NV42		fourcc_code('N', 'V', '4', '2') /* non-subsampled Cb:Cr plane */
++
++/*
++* 2 plane YCbCr
++* index 0 = Y plane, [39:0] Y3:Y2:Y1:Y0 little endian
++* index 1 = Cr:Cb plane, [39:0] Cr1:Cb1:Cr0:Cb0 little endian
++*/
++#define DRM_FORMAT_NV15         fourcc_code('N', 'V', '1', '5') /* 2x2 subsampled Cr:Cb plane */
++#define DRM_FORMAT_NV20         fourcc_code('N', 'V', '2', '0') /* 2x1 subsampled Cr:Cb plane */
++#define DRM_FORMAT_NV30         fourcc_code('N', 'V', '3', '0') /* non-subsampled Cr:Cb plane */
++
+ /*
+  * 2 plane YCbCr
+  * index 0 = Y plane, [39:0] Y3:Y2:Y1:Y0 little endian
+diff --git a/tests/modetest/modetest.c b/tests/modetest/modetest.c
+index 5fd22f79..a4f4b80b 100644
+--- a/tests/modetest/modetest.c
++++ b/tests/modetest/modetest.c
+@@ -605,6 +605,7 @@ static struct resources *get_resources(struct device *dev)
+ 		return NULL;
+ 
+ 	drmSetClientCap(dev->fd, DRM_CLIENT_CAP_UNIVERSAL_PLANES, 1);
++	drmSetClientCap(dev->fd, DRM_CLIENT_CAP_ATOMIC, 1);
+ 
+ 	_res = drmModeGetResources(dev->fd);
+ 	if (!_res) {
+diff --git a/tests/util/format.c b/tests/util/format.c
+index 1ca1b82c..3106f6cd 100644
+--- a/tests/util/format.c
++++ b/tests/util/format.c
+@@ -51,6 +51,9 @@ static const struct util_format_info format_info[] = {
+ 	{ DRM_FORMAT_NV21, "NV21", MAKE_YUV_INFO(YUV_YCrCb, 2, 2, 2) },
+ 	{ DRM_FORMAT_NV16, "NV16", MAKE_YUV_INFO(YUV_YCbCr, 2, 1, 2) },
+ 	{ DRM_FORMAT_NV61, "NV61", MAKE_YUV_INFO(YUV_YCrCb, 2, 1, 2) },
++	{ DRM_FORMAT_NV15, "NV15", MAKE_YUV_INFO(YUV_YCrCb, 2, 2, 2) },
++	{ DRM_FORMAT_NV20, "NV20", MAKE_YUV_INFO(YUV_YCrCb, 2, 2, 2) },
++	{ DRM_FORMAT_NV30, "NV30", MAKE_YUV_INFO(YUV_YCrCb, 2, 2, 2) },
+ 	/* YUV planar */
+ 	{ DRM_FORMAT_YUV420, "YU12", MAKE_YUV_INFO(YUV_YCbCr, 2, 2, 1) },
+ 	{ DRM_FORMAT_YVU420, "YV12", MAKE_YUV_INFO(YUV_YCrCb, 2, 2, 1) },
+diff --git a/xf86drmMode.c b/xf86drmMode.c
+index 84d3c771..5e79e896 100644
+--- a/xf86drmMode.c
++++ b/xf86drmMode.c
+@@ -315,6 +315,31 @@ drm_public int drmModeAddFB2(int fd, uint32_t width, uint32_t height,
+ 					  buf_id, flags);
+ }
+ 
++int drmModeAddFB2_ext(int fd, uint32_t width, uint32_t height,
++                 uint32_t pixel_format, uint32_t bo_handles[4],
++                 uint32_t pitches[4], uint32_t offsets[4], __u64 modifier[4],
++                 uint32_t *buf_id, uint32_t flags)
++{
++       struct drm_mode_fb_cmd2 f;
++       int ret;
++       int i;
++
++       f.width  = width;
++       f.height = height;
++       f.pixel_format = pixel_format;
++       f.flags = flags;
++       memcpy(f.handles, bo_handles, 4 * sizeof(bo_handles[0]));
++       memcpy(f.pitches, pitches, 4 * sizeof(pitches[0]));
++       memcpy(f.offsets, offsets, 4 * sizeof(offsets[0]));
++       memcpy(f.modifier, modifier, 4 * sizeof(modifier[0]));
++
++       if ((ret = DRM_IOCTL(fd, DRM_IOCTL_MODE_ADDFB2, &f)))
++               return ret;
++
++       *buf_id = f.fb_id;
++       return 0;
++}
++
+ drm_public int drmModeRmFB(int fd, uint32_t bufferId)
+ {
+ 	return DRM_IOCTL(fd, DRM_IOCTL_MODE_RMFB, &bufferId);
+diff --git a/xf86drmMode.h b/xf86drmMode.h
+index 19bf91dd..b0be8838 100644
+--- a/xf86drmMode.h
++++ b/xf86drmMode.h
+@@ -309,6 +309,11 @@ int drmModeAddFB2WithModifiers(int fd, uint32_t width, uint32_t height,
+ 			       const uint64_t modifier[4], uint32_t *buf_id,
+ 				   uint32_t flags);
+ 
++extern int drmModeAddFB2_ext(int fd, uint32_t width, uint32_t height,
++                        uint32_t pixel_format, uint32_t bo_handles[4],
++                        uint32_t pitches[4], uint32_t offsets[4], __u64 modifier[4],
++                        uint32_t *buf_id, uint32_t flags);
++
+ /**
+  * Destroies the given framebuffer.
+  */
+-- 
+2.53.0
+

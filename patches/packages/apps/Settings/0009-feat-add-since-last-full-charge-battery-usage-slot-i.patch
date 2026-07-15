@@ -1,0 +1,130 @@
+From 90632005826fce0f34b393d224511a9e5d5559e8 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Sat, 11 Jul 2026 21:05:30 +0800
+Subject: [PATCH 65/67] feat: add since-last-full-charge battery usage slot
+ info for Rockchip Settings
+
+Change-Id: I05d1a7eecb1eba10ab2738653a63e2901970ee39
+---
+ .../BatteryChartPreferenceController.java     | 28 +++++++++++---
+ .../BatteryChartPreferenceControllerTest.java | 37 +++++++++++++++++--
+ 2 files changed, 56 insertions(+), 9 deletions(-)
+
+diff --git a/src/com/android/settings/fuelgauge/batteryusage/BatteryChartPreferenceController.java b/src/com/android/settings/fuelgauge/batteryusage/BatteryChartPreferenceController.java
+index 56da0f4793..7ce8b3af2c 100644
+--- a/src/com/android/settings/fuelgauge/batteryusage/BatteryChartPreferenceController.java
++++ b/src/com/android/settings/fuelgauge/batteryusage/BatteryChartPreferenceController.java
+@@ -593,8 +593,19 @@ public class BatteryChartPreferenceController extends AbstractPreferenceControll
+ 
+     private String getSlotInformation(boolean isApp, String slotInformation) {
+         // TODO: Updates the right slot information from daily and hourly chart selection.
+-        // Null means we show all information without a specific time slot.
+-        if (slotInformation == null) {
++        if (mDailyViewModel != null && mHourlyViewModels != null && isAllSelected()) {
++            int lastDailyChartIndex = mDailyViewModel.size() - 2;
++            int lastHourlyChartIndex = mHourlyViewModels.get(lastDailyChartIndex).size() - 1;
++            String lastSlotInformation = getSlotInformation(
++                    lastDailyChartIndex, lastHourlyChartIndex, /*isDayTextOnly=*/ false);
++            return isApp
++                    ? mPrefContext.getString(
++                            R.string.battery_app_usage_since_last_full_charge_to,
++                            lastSlotInformation)
++                    : mPrefContext.getString(
++                            R.string.battery_system_usage_since_last_full_charge_to,
++                            lastSlotInformation);
++        } else if (slotInformation == null) {
+             return isApp
+                     ? mPrefContext.getString(R.string.battery_app_usage)
+                     : mPrefContext.getString(R.string.battery_system_usage);
+@@ -614,14 +625,19 @@ public class BatteryChartPreferenceController extends AbstractPreferenceControll
+         if (isAllSelected()) {
+             return null;
+         }
++        return getSlotInformation(mDailyChartIndex, mHourlyChartIndex,
++                /*isDayTextOnly=*/ mHourlyChartIndex == BatteryChartViewModel.SELECTED_INDEX_ALL);
++    }
+ 
+-        final String selectedDayText = mDailyViewModel.getFullText(mDailyChartIndex);
+-        if (mHourlyChartIndex == BatteryChartViewModel.SELECTED_INDEX_ALL) {
++    private String getSlotInformation(
++            int dailyChartIndex, int hourlyChartIndex, boolean isDayTextOnly) {
++        final String selectedDayText = mDailyViewModel.getFullText(dailyChartIndex);
++        if (isDayTextOnly) {
+             return selectedDayText;
+         }
+ 
+-        final String selectedHourText = mHourlyViewModels.get(mDailyChartIndex).getFullText(
+-                mHourlyChartIndex);
++        final String selectedHourText = mHourlyViewModels.get(dailyChartIndex).getFullText(
++                hourlyChartIndex);
+         if (isBatteryLevelDataInOneDay()) {
+             return selectedHourText;
+         }
+diff --git a/tests/robotests/src/com/android/settings/fuelgauge/batteryusage/BatteryChartPreferenceControllerTest.java b/tests/robotests/src/com/android/settings/fuelgauge/batteryusage/BatteryChartPreferenceControllerTest.java
+index 9fbcb1688d..10b957bc0a 100644
+--- a/tests/robotests/src/com/android/settings/fuelgauge/batteryusage/BatteryChartPreferenceControllerTest.java
++++ b/tests/robotests/src/com/android/settings/fuelgauge/batteryusage/BatteryChartPreferenceControllerTest.java
+@@ -571,12 +571,43 @@ public final class BatteryChartPreferenceControllerTest {
+     }
+ 
+     @Test
+-    public void refreshCategoryTitle_setLastFullChargeIntoBothTitleTextView() {
++    public void refreshCategoryTitle_singleDayData_setLastFullChargeIntoBothTitleTextView() {
+         mBatteryChartPreferenceController = createController();
+         mBatteryChartPreferenceController.mAppListPrefGroup =
+                 spy(new PreferenceCategory(mContext));
+         mBatteryChartPreferenceController.mExpandDividerPreference =
+                 spy(new ExpandDividerPreference(mContext));
++        mBatteryChartPreferenceController.setBatteryHistoryMap(createBatteryHistoryMap(6));
++        // Simulates select all condition.
++        mBatteryChartPreferenceController.mDailyChartIndex =
++                BatteryChartViewModel.SELECTED_INDEX_ALL;
++        mBatteryChartPreferenceController.mHourlyChartIndex =
++                BatteryChartViewModel.SELECTED_INDEX_ALL;
++
++        mBatteryChartPreferenceController.refreshCategoryTitle();
++
++        ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
++        // Verifies the title in the preference group.
++        verify(mBatteryChartPreferenceController.mAppListPrefGroup)
++                .setTitle(captor.capture());
++        assertThat(captor.getValue())
++                .isEqualTo("App usage since last full charge to 12 PM");
++        // Verifies the title in the expandable divider.
++        captor = ArgumentCaptor.forClass(String.class);
++        verify(mBatteryChartPreferenceController.mExpandDividerPreference)
++                .setTitle(captor.capture());
++        assertThat(captor.getValue())
++                .isEqualTo("System usage since last full charge to 12 PM");
++    }
++
++    @Test
++    public void refreshCategoryTitle_multiDaysData_setLastFullChargeIntoBothTitleTextView() {
++        mBatteryChartPreferenceController = createController();
++        mBatteryChartPreferenceController.mAppListPrefGroup =
++                spy(new PreferenceCategory(mContext));
++        mBatteryChartPreferenceController.mExpandDividerPreference =
++                spy(new ExpandDividerPreference(mContext));
++        mBatteryChartPreferenceController.setBatteryHistoryMap(createBatteryHistoryMap(60));
+         // Simulates select all condition.
+         mBatteryChartPreferenceController.mDailyChartIndex =
+                 BatteryChartViewModel.SELECTED_INDEX_ALL;
+@@ -590,13 +621,13 @@ public final class BatteryChartPreferenceControllerTest {
+         verify(mBatteryChartPreferenceController.mAppListPrefGroup)
+                 .setTitle(captor.capture());
+         assertThat(captor.getValue())
+-                .isEqualTo("App usage since last full charge");
++                .isEqualTo("App usage since last full charge to Monday 6 PM");
+         // Verifies the title in the expandable divider.
+         captor = ArgumentCaptor.forClass(String.class);
+         verify(mBatteryChartPreferenceController.mExpandDividerPreference)
+                 .setTitle(captor.capture());
+         assertThat(captor.getValue())
+-                .isEqualTo("System usage since last full charge");
++                .isEqualTo("System usage since last full charge to Monday 6 PM");
+     }
+ 
+     @Test
+-- 
+2.53.0
+

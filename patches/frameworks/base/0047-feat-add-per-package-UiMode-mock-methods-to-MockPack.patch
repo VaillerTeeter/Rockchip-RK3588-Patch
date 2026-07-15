@@ -1,0 +1,33 @@
+From 128dddc88ddf3704b02b21737de93f938e74b294 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 17:51:54 +0800
+Subject: [PATCH] feat: add per-package UiMode mock methods to
+ MockPackageManager
+
+Change-Id: Ibac8c06b8f61818abb00d30dd5014da3765acc71
+
+diff --git a/test-mock/src/android/test/mock/MockPackageManager.java b/test-mock/src/android/test/mock/MockPackageManager.java
+index 5f95bc124de6..0981a7df9c26 100644
+--- a/test-mock/src/android/test/mock/MockPackageManager.java
++++ b/test-mock/src/android/test/mock/MockPackageManager.java
+@@ -1249,4 +1249,20 @@ public class MockPackageManager extends PackageManager {
+             int uid, byte[] certificate, @PackageManager.CertificateInputType int type) {
+         throw new UnsupportedOperationException();
+     }
++
++    /**
++     * @hide
++     */
++    @Override
++    public void setPackageUiModeType(String packageName, int oldUiMode, int newUiMode) {
++        throw new UnsupportedOperationException();
++    }
++
++    /**
++     * @hide
++     */
++    @Override
++    public int getPackageUiModeType(String packageName) {
++        throw new UnsupportedOperationException();
++    }
+ }

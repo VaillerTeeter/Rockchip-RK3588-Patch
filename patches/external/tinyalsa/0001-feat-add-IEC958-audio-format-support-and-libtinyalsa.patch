@@ -1,0 +1,105 @@
+From 351c17bfe81778cb273b7697f82d492e2c0402a7 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 13:43:14 +0800
+Subject: [PATCH] feat: add IEC958 audio format support and libtinyalsa_iec958
+ for HDMI passthrough
+
+Change-Id: I61aa64cfd6a6c02edfb31776d27bd4188cffe33d
+---
+ Android.bp                   | 26 ++++++++++++++++++++++++++
+ include/tinyalsa/asoundlib.h |  4 +++-
+ pcm.c                        | 12 +++++++++++-
+ 3 files changed, 40 insertions(+), 2 deletions(-)
+
+diff --git a/Android.bp b/Android.bp
+index 045924c..3b05b4f 100644
+--- a/Android.bp
++++ b/Android.bp
+@@ -46,6 +46,32 @@ cc_library {
+     },
+ }
+ 
++cc_library {
++    name: "libtinyalsa_iec958",
++    vendor: true,
++    srcs: [
++        "mixer.c",
++        "mixer_hw.c",
++        "mixer_plugin.c",
++        "pcm.c",
++        "pcm_hw.c",
++        "pcm_plugin.c",
++        "snd_utils.c",
++    ],
++    cflags: ["-Werror", "-Wno-macro-redefined", "-DSUPPORT_IEC958"],
++    export_include_dirs: ["include"],
++    local_include_dirs: ["include"],
++
++    target: {
++        darwin: {
++            enabled: false,
++        },
++        bionic: {
++            system_shared_libs: ["libc","libdl"],
++        },
++    },
++}
++
+ cc_binary {
+     name: "tinyplay",
+     host_supported: true,
+diff --git a/include/tinyalsa/asoundlib.h b/include/tinyalsa/asoundlib.h
+index 063a256..582f0cf 100644
+--- a/include/tinyalsa/asoundlib.h
++++ b/include/tinyalsa/asoundlib.h
+@@ -79,7 +79,9 @@ enum pcm_format {
+     PCM_FORMAT_S8,          /* 8-bit signed */
+     PCM_FORMAT_S24_LE,      /* 24-bits in 4-bytes */
+     PCM_FORMAT_S24_3LE,     /* 24-bits in 3-bytes */
+-
++#ifdef SUPPORT_IEC958
++    PCM_FORMAT_IEC958_SUBFRAME_LE = 18,  /* 32bit for IEC-958 */
++#endif
+     PCM_FORMAT_MAX,
+ };
+ 
+diff --git a/pcm.c b/pcm.c
+index 1709be9..b546f1f 100644
+--- a/pcm.c
++++ b/pcm.c
+@@ -315,6 +315,12 @@ static unsigned int pcm_format_to_alsa(enum pcm_format format)
+         return SNDRV_PCM_FORMAT_S24_3LE;
+     case PCM_FORMAT_S24_LE:
+         return SNDRV_PCM_FORMAT_S24_LE;
++
++#ifdef SUPPORT_IEC958
++    case PCM_FORMAT_IEC958_SUBFRAME_LE:
++        return SNDRV_PCM_FORMAT_IEC958_SUBFRAME_LE;
++#endif
++
+     default:
+     case PCM_FORMAT_S16_LE:
+         return SNDRV_PCM_FORMAT_S16_LE;
+@@ -329,6 +335,10 @@ unsigned int pcm_format_to_bits(enum pcm_format format)
+         return 32;
+     case PCM_FORMAT_S24_3LE:
+         return 24;
++#ifdef SUPPORT_IEC958
++    case PCM_FORMAT_IEC958_SUBFRAME_LE:
++        return 32;
++#endif
+     default:
+     case PCM_FORMAT_S16_LE:
+         return 16;
+@@ -1010,7 +1020,7 @@ struct pcm *pcm_open(unsigned int card, unsigned int device,
+     if (!config->stop_threshold) {
+         if (pcm->flags & PCM_IN)
+             pcm->config.stop_threshold = sparams.stop_threshold =
+-                config->period_count * config->period_size * 10;
++                config->period_count * config->period_size;
+         else
+             pcm->config.stop_threshold = sparams.stop_threshold =
+                 config->period_count * config->period_size;
+-- 
+2.53.0
+

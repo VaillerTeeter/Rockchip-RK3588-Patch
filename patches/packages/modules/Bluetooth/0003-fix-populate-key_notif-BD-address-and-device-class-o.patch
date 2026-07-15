@@ -1,0 +1,30 @@
+From 225a70124593cc0236ec2d56fbb43fd2729ec80f Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Sun, 12 Jul 2026 01:17:38 +0800
+Subject: [PATCH 84/89] fix: populate key_notif BD address and device class on
+ RNR failure for Rockchip BT bonding compatibility
+
+Change-Id: If8319a7c1be5d02736359a3754d632dfd4ff6147
+---
+ system/bta/dm/bta_dm_act.cc | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/system/bta/dm/bta_dm_act.cc b/system/bta/dm/bta_dm_act.cc
+index 0ad1e185c3..8d166c6f58 100644
+--- a/system/bta/dm/bta_dm_act.cc
++++ b/system/bta/dm/bta_dm_act.cc
+@@ -2310,6 +2310,11 @@ static tBTM_STATUS bta_dm_sp_cback(tBTM_SP_EVT event,
+             return BTM_CMD_STARTED;
+           APPL_TRACE_WARNING(
+               " bta_dm_sp_cback() -> Failed to start Remote Name Request  ");
++
++          sec_event.key_notif.bd_addr = p_data->cfm_req.bd_addr;
++          BTA_COPY_DEVICE_CLASS(sec_event.key_notif.dev_class,
++                                p_data->cfm_req.dev_class);
++          sec_event.key_notif.bd_name[0] = 0;
+         } else {
+           /* Due to the switch case falling through below to
+              BTM_SP_KEY_NOTIF_EVT,
+-- 
+2.53.0
+

@@ -1,0 +1,218 @@
+From 61307f8fd899975a86fcd99ced3665d5ca2efec2 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 17:27:25 +0800
+Subject: [PATCH] fix: Shell split-screen stage listener and coordinator
+ lifecycle
+
+Change-Id: I186ae60ef3e276c71388a8ff7582ee6ef3c4e6cc
+
+diff --git a/libs/WindowManager/Shell/src/com/android/wm/shell/RootDisplayAreaOrganizer.java b/libs/WindowManager/Shell/src/com/android/wm/shell/RootDisplayAreaOrganizer.java
+index b085b73d78ce..50ff6a2b1dde 100644
+--- a/libs/WindowManager/Shell/src/com/android/wm/shell/RootDisplayAreaOrganizer.java
++++ b/libs/WindowManager/Shell/src/com/android/wm/shell/RootDisplayAreaOrganizer.java
+@@ -33,6 +33,7 @@ import com.android.internal.protolog.common.ProtoLog;
+ import java.io.PrintWriter;
+ import java.util.List;
+ import java.util.concurrent.Executor;
++import android.util.Slog;
+ 
+ /** Display area organizer for the root display areas */
+ public class RootDisplayAreaOrganizer extends DisplayAreaOrganizer {
+diff --git a/libs/WindowManager/Shell/src/com/android/wm/shell/common/split/SplitLayout.java b/libs/WindowManager/Shell/src/com/android/wm/shell/common/split/SplitLayout.java
+index b4acd6046182..ffc56b6f6106 100644
+--- a/libs/WindowManager/Shell/src/com/android/wm/shell/common/split/SplitLayout.java
++++ b/libs/WindowManager/Shell/src/com/android/wm/shell/common/split/SplitLayout.java
+@@ -727,10 +727,6 @@ public final class SplitLayout implements DisplayInsetsController.OnInsetsChange
+         getRefBounds2(mTempRect);
+         t.setPosition(leash2, mTempRect.left, mTempRect.top)
+                 .setWindowCrop(leash2, mTempRect.width(), mTempRect.height());
+-        // Make right or bottom side surface always higher than left or top side to avoid weird
+-        // animation when dismiss split. e.g. App surface fling above on decor surface.
+-        t.setLayer(leash1, 1);
+-        t.setLayer(leash2, 2);
+ 
+         if (mImePositionProcessor.adjustSurfaceLayoutForIme(
+                 t, dividerLeash, leash1, leash2, dimLayer1, dimLayer2)) {
+diff --git a/libs/WindowManager/Shell/src/com/android/wm/shell/splitscreen/StageCoordinator.java b/libs/WindowManager/Shell/src/com/android/wm/shell/splitscreen/StageCoordinator.java
+index 77939c7c6964..fbeff255b45d 100644
+--- a/libs/WindowManager/Shell/src/com/android/wm/shell/splitscreen/StageCoordinator.java
++++ b/libs/WindowManager/Shell/src/com/android/wm/shell/splitscreen/StageCoordinator.java
+@@ -468,26 +468,10 @@ public class StageCoordinator implements SplitLayout.SplitLayoutHandler,
+                     RemoteAnimationTarget[] wallpapers,
+                     RemoteAnimationTarget[] nonApps,
+                     final IRemoteAnimationFinishedCallback finishedCallback) {
+-                boolean openingToSide = false;
+-                if (apps != null) {
+-                    for (int i = 0; i < apps.length; ++i) {
+-                        if (apps[i].mode == MODE_OPENING
+-                                && mSideStage.containsTask(apps[i].taskId)) {
+-                            openingToSide = true;
+-                            break;
+-                        }
+-                    }
+-                } else if (mSideStage.getChildCount() != 0) {
+-                    // There are chances the entering app transition got canceled by performing
+-                    // rotation transition. Checks if there is any child task existed in split
+-                    // screen before fallback to cancel entering flow.
+-                    openingToSide = true;
+-                }
+-
+-                if (isEnteringSplit && !openingToSide) {
++                if (isEnteringSplit && mSideStage.getChildCount() == 0) {
+                     mMainExecutor.execute(() -> exitSplitScreen(
+-                            mSideStage.getChildCount() == 0 ? mMainStage : mSideStage,
+-                            EXIT_REASON_UNKNOWN));
++                            null /* childrenToTop */, EXIT_REASON_UNKNOWN));
++                    mSplitUnsupportedToast.show();
+                 }
+ 
+                 if (finishedCallback != null) {
+@@ -572,26 +556,10 @@ public class StageCoordinator implements SplitLayout.SplitLayoutHandler,
+                     RemoteAnimationTarget[] wallpapers, RemoteAnimationTarget[] nonApps,
+                     IRemoteAnimationFinishedCallback finishedCallback,
+                     SurfaceControl.Transaction t) {
+-                boolean openingToSide = false;
+-                if (apps != null) {
+-                    for (int i = 0; i < apps.length; ++i) {
+-                        if (apps[i].mode == MODE_OPENING
+-                                && mSideStage.containsTask(apps[i].taskId)) {
+-                            openingToSide = true;
+-                            break;
+-                        }
+-                    }
+-                } else if (mSideStage.getChildCount() != 0) {
+-                    // There are chances the entering app transition got canceled by performing
+-                    // rotation transition. Checks if there is any child task existed in split
+-                    // screen before fallback to cancel entering flow.
+-                    openingToSide = true;
+-                }
+-
+-                if (isEnteringSplit && !openingToSide && apps != null) {
++                if (isEnteringSplit && mSideStage.getChildCount() == 0) {
+                     mMainExecutor.execute(() -> exitSplitScreen(
+-                            mSideStage.getChildCount() == 0 ? mMainStage : mSideStage,
+-                            EXIT_REASON_UNKNOWN));
++                            null /* childrenToTop */, EXIT_REASON_UNKNOWN));
++                    mSplitUnsupportedToast.show();
+                 }
+ 
+                 if (apps != null) {
+@@ -1034,7 +1002,7 @@ public class StageCoordinator implements SplitLayout.SplitLayoutHandler,
+     private void onRemoteAnimationFinishedOrCancelled(WindowContainerTransaction evictWct) {
+         mIsDividerRemoteAnimating = false;
+         mShouldUpdateRecents = true;
+-        mSplitRequest = null;
++        clearRequestIfPresented();
+         // If any stage has no child after animation finished, it means that split will display
+         // nothing, such status will happen if task and intent is same app but not support
+         // multi-instance, we should exit split and expand that app as full screen.
+@@ -1054,7 +1022,7 @@ public class StageCoordinator implements SplitLayout.SplitLayoutHandler,
+     private void onRemoteAnimationFinished(RemoteAnimationTarget[] apps) {
+         mIsDividerRemoteAnimating = false;
+         mShouldUpdateRecents = true;
+-        mSplitRequest = null;
++        clearRequestIfPresented();
+         // If any stage has no child after finished animation, that side of the split will display
+         // nothing. This might happen if starting the same app on the both sides while not
+         // supporting multi-instance. Exit the split screen and expand that app to full screen.
+@@ -1320,6 +1288,7 @@ public class StageCoordinator implements SplitLayout.SplitLayoutHandler,
+         });
+         mShouldUpdateRecents = false;
+         mIsDividerRemoteAnimating = false;
++        mSplitRequest = null;
+ 
+         mSplitLayout.getInvisibleBounds(mTempRect1);
+         if (childrenToTop == null || childrenToTop.getTopVisibleChildTaskId() == INVALID_TASK_ID) {
+@@ -1412,6 +1381,13 @@ public class StageCoordinator implements SplitLayout.SplitLayoutHandler,
+         }
+     }
+ 
++    private void clearRequestIfPresented() {
++        if (mSideStageListener.mVisible && mSideStageListener.mHasChildren
++                && mMainStageListener.mVisible && mSideStageListener.mHasChildren) {
++            mSplitRequest = null;
++        }
++    }
++
+     /**
+      * Returns whether the split pair in the recent tasks list should be broken.
+      */
+@@ -1776,6 +1752,7 @@ public class StageCoordinator implements SplitLayout.SplitLayoutHandler,
+                     true /* setReparentLeafTaskIfRelaunch */);
+             setRootForceTranslucent(true, wct);
+         } else {
++            clearRequestIfPresented();
+             wct.setReparentLeafTaskIfRelaunch(mRootTaskInfo.token,
+                     false /* setReparentLeafTaskIfRelaunch */);
+             setRootForceTranslucent(false, wct);
+@@ -1926,7 +1903,7 @@ public class StageCoordinator implements SplitLayout.SplitLayoutHandler,
+         }
+         if (mMainStageListener.mHasChildren && mSideStageListener.mHasChildren) {
+             mShouldUpdateRecents = true;
+-            mSplitRequest = null;
++            clearRequestIfPresented();
+             updateRecentTasksSplitPair();
+ 
+             if (!mLogger.hasStartedSession()) {
+@@ -2565,6 +2542,7 @@ public class StageCoordinator implements SplitLayout.SplitLayoutHandler,
+             }
+         });
+         mShouldUpdateRecents = false;
++        mSplitRequest = null;
+ 
+         // Update local states.
+         setSplitsVisible(false);
+diff --git a/libs/WindowManager/Shell/src/com/android/wm/shell/splitscreen/StageTaskListener.java b/libs/WindowManager/Shell/src/com/android/wm/shell/splitscreen/StageTaskListener.java
+index ead0bcd15c73..a841b7f96d3c 100644
+--- a/libs/WindowManager/Shell/src/com/android/wm/shell/splitscreen/StageTaskListener.java
++++ b/libs/WindowManager/Shell/src/com/android/wm/shell/splitscreen/StageTaskListener.java
+@@ -220,20 +220,12 @@ class StageTaskListener implements ShellTaskOrganizer.TaskListener {
+                 mCallbacks.onNoLongerSupportMultiWindow();
+                 return;
+             }
+-            if (taskInfo.topActivity == null && mChildrenTaskInfo.contains(taskInfo.taskId)
+-                    && mChildrenTaskInfo.get(taskInfo.taskId).topActivity != null) {
+-                // If top activity become null, it means the task is about to vanish, we use this
+-                // signal to remove it from children list earlier for smooth dismiss transition.
+-                mChildrenTaskInfo.remove(taskInfo.taskId);
+-                mChildrenLeashes.remove(taskInfo.taskId);
+-            } else {
+-                mChildrenTaskInfo.put(taskInfo.taskId, taskInfo);
+-            }
++            mChildrenTaskInfo.put(taskInfo.taskId, taskInfo);
+             mCallbacks.onChildTaskStatusChanged(taskInfo.taskId, true /* present */,
+                     taskInfo.isVisible);
+-            if (!ENABLE_SHELL_TRANSITIONS && mChildrenLeashes.contains(taskInfo.taskId)) {
+-                updateChildTaskSurface(taskInfo, mChildrenLeashes.get(taskInfo.taskId),
+-                        false /* firstAppeared */);
++            if (!ENABLE_SHELL_TRANSITIONS) {
++                updateChildTaskSurface(
++                        taskInfo, mChildrenLeashes.get(taskInfo.taskId), false /* firstAppeared */);
+             }
+         } else {
+             throw new IllegalArgumentException(this + "\n Unknown task: " + taskInfo
+@@ -267,6 +259,9 @@ class StageTaskListener implements ShellTaskOrganizer.TaskListener {
+                 return;
+             }
+             sendStatusChanged();
++        } else {
++            throw new IllegalArgumentException(this + "\n Unknown task: " + taskInfo
++                    + "\n mRootTaskInfo: " + mRootTaskInfo);
+         }
+     }
+ 
+diff --git a/libs/hwui/Android.bp b/libs/hwui/Android.bp
+index ad9aa6cdd3d9..89a1efe1e4a9 100644
+--- a/libs/hwui/Android.bp
++++ b/libs/hwui/Android.bp
+@@ -70,6 +70,10 @@ cc_defaults {
+         },
+     },
+ 
++    export_include_dirs: [
++        ".",
++    ],
++
+     target: {
+         android: {
+             include_dirs: [

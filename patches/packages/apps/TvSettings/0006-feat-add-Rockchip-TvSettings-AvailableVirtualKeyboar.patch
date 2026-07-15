@@ -1,0 +1,82 @@
+From cf6af114140c796565d1b94da998a761e2912007 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Sat, 11 Jul 2026 22:04:24 +0800
+Subject: [PATCH 75/78] feat: add Rockchip TvSettings
+ AvailableVirtualKeyboardFragment enhancements
+
+Change-Id: I6453aec6598dd05b05a386a7ec198623aa5fbd9c
+---
+ .../AvailableVirtualKeyboardFragment.java     | 35 ++++++++++++++++++-
+ 1 file changed, 34 insertions(+), 1 deletion(-)
+
+diff --git a/Settings/src/com/android/tv/settings/inputmethod/AvailableVirtualKeyboardFragment.java b/Settings/src/com/android/tv/settings/inputmethod/AvailableVirtualKeyboardFragment.java
+index 5616030db..c3e581b1c 100644
+--- a/Settings/src/com/android/tv/settings/inputmethod/AvailableVirtualKeyboardFragment.java
++++ b/Settings/src/com/android/tv/settings/inputmethod/AvailableVirtualKeyboardFragment.java
+@@ -19,6 +19,7 @@ package com.android.tv.settings.inputmethod;
+ import android.annotation.DrawableRes;
+ import android.annotation.NonNull;
+ import android.annotation.Nullable;
++import android.annotation.UserIdInt;
+ import android.app.Activity;
+ import android.app.admin.DevicePolicyManager;
+ import android.app.tvsettings.TvSettingsEnums;
+@@ -34,9 +35,12 @@ import android.os.Bundle;
+ import android.os.UserHandle;
+ import android.view.inputmethod.InputMethodInfo;
+ import android.view.inputmethod.InputMethodManager;
++import android.widget.Switch;
+ 
+ import androidx.annotation.Keep;
+ import androidx.preference.PreferenceScreen;
++import androidx.preference.Preference;
++import androidx.preference.PreferenceViewHolder;
+ 
+ import com.android.settingslib.inputmethod.InputMethodAndSubtypeUtilCompat;
+ import com.android.settingslib.inputmethod.InputMethodPreference;
+@@ -152,7 +156,7 @@ public final class AvailableVirtualKeyboardFragment extends SettingsPreferenceFr
+             final InputMethodInfo imi = imis.get(i);
+             final boolean isAllowedByOrganization = permittedList == null
+                     || permittedList.contains(imi.getPackageName());
+-            final InputMethodPreference pref = new InputMethodPreference(
++            final InputMethodPreference pref = new TvInputMethodPreference(
+                     context, imi, isAllowedByOrganization, this, UserHandle.myUserId());
+             // TODO: Update the icon container in leanback_preference.xml to use LinearLayout.
+             // This is a workaround to avoid the crash. b/146654624
+@@ -176,4 +180,33 @@ public final class AvailableVirtualKeyboardFragment extends SettingsPreferenceFr
+     protected int getPageId() {
+         return TvSettingsEnums.SYSTEM_KEYBOARD_MANAGE_KEYBOARDS;
+     }
++
++
++    private class TvInputMethodPreference extends InputMethodPreference {
++
++        private Switch mSwitch;
++
++        public TvInputMethodPreference(final Context prefContext, final InputMethodInfo imi,
++                                     final boolean isAllowedByOrganization, final OnSavePreferenceListener onSaveListener,
++                                     final @UserIdInt int userId) {
++            super(prefContext, imi, isAllowedByOrganization,
++                    onSaveListener, userId);
++        }
++
++        @Override
++        public boolean onPreferenceClick(final Preference preference) {
++            final boolean newValue = !isChecked();
++            if (callChangeListener(newValue)) {
++                setChecked(newValue);
++            }
++            return true;
++        }
++
++        @Override
++        public void onBindViewHolder(PreferenceViewHolder holder) {
++            super.onBindViewHolder(holder);
++            mSwitch = getSwitch();
++
++        }
++    }
+ }
+-- 
+2.53.0
+

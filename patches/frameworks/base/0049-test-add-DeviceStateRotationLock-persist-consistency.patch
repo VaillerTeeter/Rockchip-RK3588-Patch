@@ -1,0 +1,33 @@
+From 77a4260a82afae9ab003b8555095c79cf763b0b6 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 17:29:35 +0800
+Subject: [PATCH] test: add DeviceStateRotationLock persist-consistency test
+
+Change-Id: Ibf07a2bc49bf1dd10c50c1c198f97cbd7f632c8c
+
+diff --git a/packages/SettingsLib/tests/integ/src/com/android/settingslib/devicestate/DeviceStateRotationLockSettingsManagerTest.java b/packages/SettingsLib/tests/integ/src/com/android/settingslib/devicestate/DeviceStateRotationLockSettingsManagerTest.java
+index fdefcde3a170..52c2a87cc961 100644
+--- a/packages/SettingsLib/tests/integ/src/com/android/settingslib/devicestate/DeviceStateRotationLockSettingsManagerTest.java
++++ b/packages/SettingsLib/tests/integ/src/com/android/settingslib/devicestate/DeviceStateRotationLockSettingsManagerTest.java
+@@ -113,6 +113,21 @@ public class DeviceStateRotationLockSettingsManagerTest {
+         assertThat(mNumSettingsChanges).isEqualTo(3);
+     }
+ 
++    @Test
++    public void updateSetting_twiceWithSameValue_persistedValueDifferent_persistsAgain() {
++        mManager.updateSetting(/* deviceState= */ 1, /* rotationLocked= */ true);
++        // This persists a different setting than what was set above. It simulates the persisted
++        // setting being changed from a different process.
++        persistSettings("0:1:1:2:2:2");
++        mNumSettingsChanges = 0;
++
++        // Updating again with the same value as in the first line of the test should persist the
++        // setting, as it is different to what is actually persisted.
++        mManager.updateSetting(/* deviceState= */ 1, /* rotationLocked= */ true);
++
++        assertThat(mNumSettingsChanges).isEqualTo(1);
++    }
++
+     @Test
+     public void getSettableDeviceStates_returnsExpectedValuesInOriginalOrder() {
+         when(mMockResources.getStringArray(

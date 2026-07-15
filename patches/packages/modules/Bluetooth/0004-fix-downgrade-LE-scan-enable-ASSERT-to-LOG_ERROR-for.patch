@@ -1,0 +1,43 @@
+From 5adfdefe8bccc7e76eadb51ab1a229afa7d34bba Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Sun, 12 Jul 2026 01:22:36 +0800
+Subject: [PATCH 85/89] fix: downgrade LE scan enable ASSERT to LOG_ERROR for
+ Rockchip BT scanning tolerance
+
+Change-Id: If3b0dcd370f7e740b33e21c67282f5a6859a968a
+---
+ system/gd/hci/le_scanning_manager.cc | 14 ++++++--------
+ 1 file changed, 6 insertions(+), 8 deletions(-)
+
+diff --git a/system/gd/hci/le_scanning_manager.cc b/system/gd/hci/le_scanning_manager.cc
+index 4b1ccf5a5b..a6bd6c4a1c 100644
+--- a/system/gd/hci/le_scanning_manager.cc
++++ b/system/gd/hci/le_scanning_manager.cc
+@@ -1618,18 +1618,16 @@ struct LeScanningManager::impl : public LeAddressManagerCallback {
+       case (OpCode::LE_SET_SCAN_ENABLE): {
+         auto status_view = LeSetScanEnableCompleteView::Create(view);
+         ASSERT(status_view.IsValid());
+-        ASSERT_LOG(
+-            status_view.GetStatus() == ErrorCode::SUCCESS,
+-            "Receive set scan enable with error code %s",
+-            ErrorCodeText(status_view.GetStatus()).c_str());
++        LOG_ERROR(
++             "Receive set scan enable with error code %s",
++             ErrorCodeText(status_view.GetStatus()).c_str());
+       } break;
+       case (OpCode::LE_SET_EXTENDED_SCAN_ENABLE): {
+         auto status_view = LeSetExtendedScanEnableCompleteView::Create(view);
+         ASSERT(status_view.IsValid());
+-        ASSERT_LOG(
+-            status_view.GetStatus() == ErrorCode::SUCCESS,
+-            "Receive set extended scan enable with error code %s",
+-            ErrorCodeText(status_view.GetStatus()).c_str());
++        LOG_ERROR(
++             "Receive set extended scan enable with error code %s",
++             ErrorCodeText(status_view.GetStatus()).c_str());
+       } break;
+       default:
+         LOG_ALWAYS_FATAL("Unhandled event %s", OpCodeText(view.GetCommandOpCode()).c_str());
+-- 
+2.53.0
+

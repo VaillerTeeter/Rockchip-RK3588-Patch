@@ -1,0 +1,29 @@
+From 77ed3a7d4fe3b7c9996c7d76c61af6e8dc17d29a Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Sat, 11 Jul 2026 01:43:17 +0800
+Subject: [PATCH] fix: correct Kotlin safe-call cast precedence for
+ addRule(ALIGN_PARENT_RIGHT)
+
+Change-Id: I667841c8ce957f5365fdff75fcda07432835237b
+---
+ src/com/android/calendar/AllInOneActivity.kt | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/com/android/calendar/AllInOneActivity.kt b/src/com/android/calendar/AllInOneActivity.kt
+index 550bc548..1950c90e 100644
+--- a/src/com/android/calendar/AllInOneActivity.kt
++++ b/src/com/android/calendar/AllInOneActivity.kt
+@@ -292,8 +292,8 @@ class AllInOneActivity : Activity(), EventHandler, OnSharedPreferenceChangeListe
+             if (mControlsParams == null) {
+                 mControlsParams = LayoutParams(mControlsAnimateWidth, 0)
+             }
+-            mControlsParams?.addRule(RelativeLayout.ALIGN_PARENT_RIGHT)
+-                as RelativeLayout.LayoutParams
++            (mControlsParams as RelativeLayout.LayoutParams)
++                .addRule(RelativeLayout.ALIGN_PARENT_RIGHT)
+         } else {
+             // Make sure width is in between allowed min and max width values
+             mControlsAnimateWidth = Math.max(
+-- 
+2.53.0
+

@@ -1,0 +1,28 @@
+From a87cf63d8fa2d5458a043d526068982109f551ad Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 17:23:32 +0800
+Subject: [PATCH] fix: apply initial animation transformation outside
+ pre-processing guard
+
+Change-Id: I614b475e0031b1c80695c86d551a1198dd109ce3
+
+diff --git a/services/core/java/com/android/server/wm/SurfaceAnimationRunner.java b/services/core/java/com/android/server/wm/SurfaceAnimationRunner.java
+index 1ae7816ecd24..51ace49fd50f 100644
+--- a/services/core/java/com/android/server/wm/SurfaceAnimationRunner.java
++++ b/services/core/java/com/android/server/wm/SurfaceAnimationRunner.java
+@@ -220,11 +220,11 @@ class SurfaceAnimationRunner {
+                 if (!mAnimationStartDeferred && mPreProcessingAnimations.isEmpty()) {
+                     mChoreographer.postFrameCallback(this::startAnimations);
+                 }
+-
+-                // Some animations (e.g. move animations) require the initial transform to be
+-                // applied immediately.
+-                applyTransformation(runningAnim, t, 0 /* currentPlayTime */);
+             }
++
++            // Some animations (e.g. move animations) require the initial transform to be
++            // applied immediately.
++            applyTransformation(runningAnim, t, 0 /* currentPlayTime */);
+         }
+     }
+ 

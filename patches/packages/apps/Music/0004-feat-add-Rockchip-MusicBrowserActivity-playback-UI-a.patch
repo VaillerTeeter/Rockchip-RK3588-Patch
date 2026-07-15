@@ -1,0 +1,221 @@
+From 4fe3723ba45594333c1280da94ccab81f27bcae1 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Sat, 11 Jul 2026 14:29:31 +0800
+Subject: [PATCH 56/56] feat: add Rockchip MusicBrowserActivity playback UI and
+ AudioPreview enhancements
+
+Change-Id: I444645bb1b4b865284f18a2f6bdaa00ab662b82f
+---
+ src/com/android/music/AudioPreview.java       | 22 +++++
+ .../android/music/MusicBrowserActivity.java   | 83 +++++++++++++++++--
+ 2 files changed, 98 insertions(+), 7 deletions(-)
+
+diff --git a/src/com/android/music/AudioPreview.java b/src/com/android/music/AudioPreview.java
+index c05884b..c4460d3 100644
+--- a/src/com/android/music/AudioPreview.java
++++ b/src/com/android/music/AudioPreview.java
+@@ -38,6 +38,7 @@ import android.util.Log;
+ import android.view.KeyEvent;
+ import android.view.Menu;
+ import android.view.MenuItem;
++import android.view.MotionEvent;
+ import android.view.View;
+ import android.view.Window;
+ import android.view.WindowManager;
+@@ -193,9 +194,19 @@ public class AudioPreview
+         }
+     }
+ 
++    @Override
++    public boolean onTouchEvent(MotionEvent event) {
++        boolean result = super.onTouchEvent(event);
++        if (result) {//see the Activity.java
++            Log.v(TAG, "touch dialog activity outside");
++        }
++        return result;
++    }
++
+     @Override
+     public void onPause() {
+         super.onPause();
++        Log.v(TAG, "onPause");
+         mUiPaused = true;
+         if (mProgressRefresher != null) {
+             mProgressRefresher.removeCallbacksAndMessages(null);
+@@ -205,6 +216,7 @@ public class AudioPreview
+     @Override
+     public void onResume() {
+         super.onResume();
++        Log.v(TAG, "onResume");
+         mUiPaused = false;
+         if (mPlayer.isPrepared()) {
+             showPostPrepareUI();
+@@ -220,6 +232,7 @@ public class AudioPreview
+ 
+     @Override
+     public void onDestroy() {
++        Log.v(TAG, "onDestroy");
+         stopPlayback();
+         super.onDestroy();
+     }
+@@ -237,11 +250,14 @@ public class AudioPreview
+ 
+     @Override
+     public void onUserLeaveHint() {
++        Log.v(TAG, "onUserLeaveHint");
+         stopPlayback();
+         finish();
+         super.onUserLeaveHint();
+     }
+ 
++
++
+     public void onPrepared(MediaPlayer mp) {
+         if (isFinishing()) return;
+         mPlayer = (PreviewPlayer) mp;
+@@ -254,6 +270,8 @@ public class AudioPreview
+         ProgressBar pb = (ProgressBar) findViewById(R.id.spinner);
+         pb.setVisibility(View.GONE);
+         mDuration = mPlayer.getDuration();
++        Log.v(TAG, "showPostPrepareUI mDuration=" + mDuration
++                + ", currentPos=" + mPlayer.getCurrentPosition());
+         if (mDuration != 0) {
+             mSeekBar.setMax(mDuration);
+             mSeekBar.setVisibility(View.VISIBLE);
+@@ -306,6 +324,7 @@ public class AudioPreview
+     };
+ 
+     private void start() {
++        Log.v(TAG, "player start");
+         mAudioManager.requestAudioFocus(mAudioFocusListener, AudioManager.STREAM_MUSIC,
+                 AudioManager.AUDIOFOCUS_GAIN_TRANSIENT);
+         mPlayer.start();
+@@ -368,12 +387,14 @@ public class AudioPreview
+     };
+ 
+     public boolean onError(MediaPlayer mp, int what, int extra) {
++        Log.e(TAG, "onError what=" + what + ", extra=" + extra);
+         Toast.makeText(this, R.string.playback_failed, Toast.LENGTH_SHORT).show();
+         finish();
+         return true;
+     }
+ 
+     public void onCompletion(MediaPlayer mp) {
++        Log.v(TAG, "onCompletion mDuration=" + mDuration);
+         mSeekBar.setProgress(mDuration);
+         updatePlayPause();
+     }
+@@ -415,6 +436,7 @@ public class AudioPreview
+ 
+     @Override
+     public boolean onKeyDown(int keyCode, KeyEvent event) {
++        Log.v(TAG, "onKeyDown " + keyCode + ", "+event.getAction());
+         switch (keyCode) {
+             case KeyEvent.KEYCODE_HEADSETHOOK:
+             case KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE:
+diff --git a/src/com/android/music/MusicBrowserActivity.java b/src/com/android/music/MusicBrowserActivity.java
+index ca9615e..6385e97 100644
+--- a/src/com/android/music/MusicBrowserActivity.java
++++ b/src/com/android/music/MusicBrowserActivity.java
+@@ -16,22 +16,91 @@
+ 
+ package com.android.music;
+ 
++import android.Manifest.permission;
++import android.content.pm.PackageManager;
++import com.android.music.MusicUtils.ServiceToken;
++
+ import android.app.Activity;
++import android.content.ComponentName;
++import android.content.ServiceConnection;
+ import android.os.Bundle;
++import android.os.IBinder;
++import android.os.RemoteException;
++
++public class MusicBrowserActivity extends Activity implements MusicUtils.Defs {
++    private ServiceToken mToken;
++    private static final int MY_PERMISSIONS_REQUEST_READ_EXTERNAL_STORAGE = 42;
+ 
+-/**
+- * A skeleton class that provides empty implementations for Activity class.
+- */
+-public class MusicBrowserActivity extends Activity {
+     public MusicBrowserActivity() {}
+ 
++    /**
++     * Called when the activity is first created.
++     */
+     @Override
+-    public void onCreate(Bundle icicle) {}
++    public void onCreate(Bundle icicle) {
++        super.onCreate(icicle);
++        if (checkSelfPermission(permission.READ_EXTERNAL_STORAGE)
++                != PackageManager.PERMISSION_GRANTED) {
++            requestPermissions(new String[] {permission.READ_EXTERNAL_STORAGE},
++                    MY_PERMISSIONS_REQUEST_READ_EXTERNAL_STORAGE);
++            return;
++        }
++        initApp();
++    }
++
++    public void initApp() {
++        int activeTab = MusicUtils.getIntPref(this, "activetab", R.id.albumtab);
++        if (activeTab != R.id.artisttab && activeTab != R.id.albumtab && activeTab != R.id.songtab
++                && activeTab != R.id.playlisttab) {
++            activeTab = R.id.albumtab;
++        }
++        MusicUtils.activateTab(this, activeTab);
++
++        String shuf = getIntent().getStringExtra("autoshuffle");
++        if ("true".equals(shuf)) {
++            mToken = MusicUtils.bindToService(this, autoshuffle);
++        }
++    }
+ 
+     @Override
+-    public void onDestroy() {}
++    public void onDestroy() {
++        if (mToken != null) {
++            MusicUtils.unbindFromService(mToken);
++        }
++        super.onDestroy();
++    }
++
++    private ServiceConnection autoshuffle = new ServiceConnection() {
++        public void onServiceConnected(ComponentName classname, IBinder obj) {
++            // we need to be able to bind again, so unbind
++            try {
++                unbindService(this);
++            } catch (IllegalArgumentException e) {
++            }
++            IMediaPlaybackService serv = IMediaPlaybackService.Stub.asInterface(obj);
++            if (serv != null) {
++                try {
++                    serv.setShuffleMode(MediaPlaybackService.SHUFFLE_AUTO);
++                } catch (RemoteException ex) {
++                }
++            }
++        }
++
++        public void onServiceDisconnected(ComponentName classname) {}
++    };
+ 
+     @Override
+     public void onRequestPermissionsResult(
+-            int requestCode, String permissions[], int[] grantResults) {}
++            int requestCode, String permissions[], int[] grantResults) {
++        switch (requestCode) {
++            case MY_PERMISSIONS_REQUEST_READ_EXTERNAL_STORAGE: {
++                if (grantResults.length == 0
++                        || grantResults[0] != PackageManager.PERMISSION_GRANTED) {
++                    finish();
++                    return;
++                }
++                initApp();
++            }
++        }
++    }
+ }
+-- 
+2.53.0
+

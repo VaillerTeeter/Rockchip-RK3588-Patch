@@ -1,0 +1,25 @@
+From b7ea8d88ba7307e9db4f0799a505c9b8a746df77 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 17:29:45 +0800
+Subject: [PATCH] test: update ActivityThreadTest for window configuration
+ bounds reporting
+
+Change-Id: I18c3a3cd0d12146bc6e270973f8fc762b583c484
+
+diff --git a/core/tests/coretests/src/android/app/activity/ActivityThreadTest.java b/core/tests/coretests/src/android/app/activity/ActivityThreadTest.java
+index 984ba584953a..1e1fca1ed0f4 100644
+--- a/core/tests/coretests/src/android/app/activity/ActivityThreadTest.java
++++ b/core/tests/coretests/src/android/app/activity/ActivityThreadTest.java
+@@ -351,10 +351,8 @@ public class ActivityThreadTest {
+         final Rect bounds = activity.getWindowManager().getCurrentWindowMetrics().getBounds();
+         assertEquals(activityConfigPortrait.windowConfiguration.getBounds(), bounds);
+ 
+-        // Ensure that Activity#onConfigurationChanged() not be called because the changes in
+-        // WindowConfiguration shouldn't be reported, and we only apply the latest Configuration
+-        // update in transaction.
+-        assertEquals(numOfConfig, activity.mNumOfConfigChanges);
++        // Ensure changes in window configuration bounds are reported
++        assertEquals(numOfConfig + 1, activity.mNumOfConfigChanges);
+     }
+ 
+     @Test

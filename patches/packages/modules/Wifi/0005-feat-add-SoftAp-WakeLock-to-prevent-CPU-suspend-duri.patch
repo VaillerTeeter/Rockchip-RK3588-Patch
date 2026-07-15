@@ -1,0 +1,27 @@
+From a28734c0c30532b829f43ca597c4779db4feedd1 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Sun, 12 Jul 2026 01:51:45 +0800
+Subject: [PATCH 95/95] feat: add SoftAp WakeLock to prevent CPU suspend during
+ SoftAP operation for Rockchip WiFi
+
+Change-Id: I378d317f48b67ac2d1f07da31afcff863ad38f2c
+---
+ .../java/com/android/server/wifi/WifiConnectivityManager.java   | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/service/java/com/android/server/wifi/WifiConnectivityManager.java b/service/java/com/android/server/wifi/WifiConnectivityManager.java
+index 39df9f9591..0c89ddabf4 100644
+--- a/service/java/com/android/server/wifi/WifiConnectivityManager.java
++++ b/service/java/com/android/server/wifi/WifiConnectivityManager.java
+@@ -2408,7 +2408,7 @@ public class WifiConnectivityManager {
+             startPeriodicScan(scanImmediately);
+         } else {
+             if (mWifiState == WIFI_STATE_DISCONNECTED && !mPnoScanStarted) {
+-                startDisconnectedPnoScan();
++		startDisconnectedPnoScan();
+             }
+         }
+     }
+-- 
+2.53.0
+

@@ -1,0 +1,421 @@
+From a4e23d4ae20ea68fecefc239ada4c341d1509e45 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 17:21:29 +0800
+Subject: [PATCH] feat: add per-package performance mode getter/setter
+
+Change-Id: Icee74f6546c6b3351d37d2e64988d323073716ef
+
+diff --git a/core/java/android/app/ApplicationPackageManager.java b/core/java/android/app/ApplicationPackageManager.java
+index d641a3b469a6..6fff6eaa0465 100644
+--- a/core/java/android/app/ApplicationPackageManager.java
++++ b/core/java/android/app/ApplicationPackageManager.java
+@@ -255,6 +255,25 @@ public class ApplicationPackageManager extends PackageManager {
+         return pi;
+     }
+ 
++    @Override
++    public int getPackagePerformanceMode(String pkgName) {
++        try {
++            return mPM.getPackagePerformanceMode(pkgName);
++        } catch (RemoteException e) {
++            Log.w(TAG, "Performance mode info not found.", e);
++        }
++        return 0;
++    }
++
++    @Override
++    public void setPackagePerformanceMode(String pkgName) {
++        try {
++            mPM.setPackagePerformanceMode(pkgName);
++        } catch (RemoteException e) {
++            Log.w(TAG, "Performance mode info not found.", e);
++        }
++    }
++
+     @Override
+     public String[] currentToCanonicalPackageNames(String[] names) {
+         try {
+@@ -3842,4 +3861,22 @@ public class ApplicationPackageManager extends PackageManager {
+             throw e.rethrowAsRuntimeException();
+         }
+     }
++
++    @Override
++    public void setPackageUiModeType(String packageName, int oldUiMode, int newUiMode) {
++        try {
++            mPM.setPackageUiModeType(packageName, oldUiMode, newUiMode);
++        } catch (RemoteException e) {
++            throw e.rethrowAsRuntimeException();
++        }
++    }
++
++    @Override
++    public int getPackageUiModeType(String packageName) {
++        try {
++            return mPM.getPackageUiModeType(packageName);
++        } catch (RemoteException e) {
++            throw e.rethrowAsRuntimeException();
++        }
++    }
+ }
+diff --git a/core/java/android/content/pm/IPackageManager.aidl b/core/java/android/content/pm/IPackageManager.aidl
+index 54d57a1b24d9..884119a81812 100644
+--- a/core/java/android/content/pm/IPackageManager.aidl
++++ b/core/java/android/content/pm/IPackageManager.aidl
+@@ -723,6 +723,10 @@ interface IPackageManager {
+ 
+     boolean isPackageStateProtected(String packageName, int userId);
+ 
++    int getPackagePerformanceMode(String packageName);
++
++    void setPackagePerformanceMode(String packageName);
++
+     void sendDeviceCustomizationReadyBroadcast();
+ 
+     List<ModuleInfo> getInstalledModules(int flags);
+@@ -803,4 +807,9 @@ interface IPackageManager {
+     void setKeepUninstalledPackages(in List<String> packageList);
+ 
+     boolean canPackageQuery(String sourcePackageName, String targetPackageName, int userId);
++
++    //For UiMode
++    void setPackageUiModeType(String packageName, int oldUiMode, int newUiMode);
++
++    int getPackageUiModeType(String packageName);
+ }
+diff --git a/core/java/android/content/pm/PackageManager.java b/core/java/android/content/pm/PackageManager.java
+index f224f8a189f1..3cfc18390ca6 100644
+--- a/core/java/android/content/pm/PackageManager.java
++++ b/core/java/android/content/pm/PackageManager.java
+@@ -2213,6 +2213,14 @@ public abstract class PackageManager {
+      */
+     public static final int INSTALL_ACTIVATION_FAILED = -128;
+ 
++    /**
++     * Used for prebundles
++     * Installation failed for a prebundled app because the user previously uninstalled it
++     * and we don't want to bring it back
++     * @hide
++     */
++    public static final int INSTALL_FAILED_UNINSTALLED_PREBUNDLE = -403;
++
+     /** @hide */
+     @IntDef(flag = true, prefix = { "DELETE_" }, value = {
+             DELETE_KEEP_DATA,
+@@ -2821,6 +2829,22 @@ public abstract class PackageManager {
+     @SdkConstant(SdkConstantType.FEATURE)
+     public static final String FEATURE_RAM_NORMAL = "android.hardware.ram.normal";
+ 
++    /**
++     * Feature for {@link #getSystemAvailableFeatures} and
++     * {@link #hasSystemFeature}: The device includes rockchip hdmi settings.
++     * @hide
++     */
++    @SdkConstant(SdkConstantType.FEATURE)
++    public static final String FEATURE_ROCKCHIP_DISPLAY = "rockchip.software.display";
++
++    /**
++     * Feature for {@link #getSystemAvailableFeatures} and
++     * {@link #hasSystemFeature}: The device includes rockchip audio settings.
++     * @hide
++     */
++    @SdkConstant(SdkConstantType.FEATURE)
++    public static final String FEATURE_ROCKCHIP_AUDIO = "rockchip.software.audio";
++
+     /**
+      * Feature for {@link #getSystemAvailableFeatures} and
+      * {@link #hasSystemFeature}: The device can record audio via a
+@@ -10118,6 +10142,24 @@ public abstract class PackageManager {
+             "isPackageStateProtected not implemented in subclass");
+     }
+ 
++    /**
++     * @return whether a given package should running with performance mode.
++     *
++     * @hide
++     */
++    public int getPackagePerformanceMode(@NonNull String packageName) {
++        throw new UnsupportedOperationException(
++            "getPackagePerformanceMode not implemented in subclass");
++    }
++
++    /**
++     * @hide
++     */
++    public void setPackagePerformanceMode(@NonNull String packageName) {
++        throw new UnsupportedOperationException(
++            "getPackagePerformanceMode not implemented in subclass");
++    }
++
+     /**
+      * Notify to the rest of the system that a new device configuration has
+      * been prepared and that it is time to refresh caches.
+@@ -10592,4 +10634,16 @@ public abstract class PackageManager {
+             throw e.rethrowFromSystemServer();
+         }
+     }
++
++    /**
++     * @hide
++     */
++    @SuppressWarnings("HiddenAbstractMethod")
++    public abstract void setPackageUiModeType(String packageName, int oldUiMode, int newUiMode);
++
++    /**
++     * @hide
++     */
++    @SuppressWarnings("HiddenAbstractMethod")
++    public abstract int getPackageUiModeType(String packageName);
+ }
+diff --git a/services/core/java/com/android/server/pm/Settings.java b/services/core/java/com/android/server/pm/Settings.java
+index cfd029346340..20574e6d49d1 100644
+--- a/services/core/java/com/android/server/pm/Settings.java
++++ b/services/core/java/com/android/server/pm/Settings.java
+@@ -143,11 +143,14 @@ import org.xmlpull.v1.XmlPullParser;
+ import org.xmlpull.v1.XmlPullParserException;
+ import org.xmlpull.v1.XmlSerializer;
+ 
++import java.io.BufferedReader;
+ import java.io.BufferedWriter;
+ import java.io.File;
+ import java.io.FileInputStream;
+ import java.io.FileNotFoundException;
+ import java.io.FileOutputStream;
++import java.io.FileReader;
++import java.io.FileWriter;
+ import java.io.IOException;
+ import java.io.InputStream;
+ import java.io.OutputStreamWriter;
+@@ -159,6 +162,7 @@ import java.util.ArrayList;
+ import java.util.Arrays;
+ import java.util.Collection;
+ import java.util.Date;
++import java.util.HashSet;
+ import java.util.Iterator;
+ import java.util.List;
+ import java.util.Map;
+@@ -375,6 +379,9 @@ public final class Settings implements Watchable, Snappable {
+     private final File mBackupStoppedPackagesFilename;
+     /** The top level directory in configfs for sdcardfs to push the package->uid,userId mappings */
+     private final File mKernelMappingFilename;
++    private final File mPrebundledPackagesFilename;
++
++    private final HashSet<String> mPrebundledPackages = new HashSet<String>();
+ 
+     /** Map from package name to settings */
+     @Watched
+@@ -508,6 +515,11 @@ public final class Settings implements Watchable, Snappable {
+     @Watched
+     private final WatchedSparseIntArray mNextAppLinkGeneration = new WatchedSparseIntArray();
+ 
++    /**
++     * List for performance mode.
++     */
++    public static final ArrayList<PackagePerformanceSetting> mPerformancePackages = new ArrayList<>();
++
+     final StringBuilder mReadMessages = new StringBuilder();
+ 
+     /**
+@@ -629,6 +641,7 @@ public final class Settings implements Watchable, Snappable {
+         mBackupStoppedPackagesFilename = null;
+         mKernelMappingFilename = null;
+         mDomainVerificationManager = null;
++        mPrebundledPackagesFilename = null;
+ 
+         registerObservers();
+         Watchable.verifyWatchedAttributes(this, mObserver);
+@@ -697,6 +710,46 @@ public final class Settings implements Watchable, Snappable {
+         mBackupSettingsFilename = new File(mSystemDir, "packages-backup.xml");
+         mPackageListFilename = new File(mSystemDir, "packages.list");
+         FileUtils.setPermissions(mPackageListFilename, 0640, SYSTEM_UID, PACKAGE_INFO_GID);
++        mPrebundledPackagesFilename = new File(mSystemDir, "prebundled-packages.list");
++
++        File packagePerformanceInfoFile = new File("/odm/etc/package_performance.xml");
++        if (!mSettingsFilename.exists()) {
++            if (packagePerformanceInfoFile.exists()) {
++                FileInputStream stream = null;
++                try {
++                    stream = new FileInputStream(packagePerformanceInfoFile);
++                    XmlPullParser parser = Xml.newPullParser();
++                    parser.setInput(stream, null);
++                    int type;
++                    do {
++                        type = parser.next();
++                        if (type == XmlPullParser.START_TAG) {
++                            String tag = parser.getName();
++                            if ("app".equals(tag)) {
++                                String pkgName = parser.getAttributeValue(null, "package");
++                                String pkgMode = parser.getAttributeValue(null, "mode");
++                                PackagePerformanceSetting setting = new PackagePerformanceSetting(pkgName, Integer.valueOf(pkgMode));
++                                mPerformancePackages.add(setting);
++                            }
++                        }
++                    } while (type != XmlPullParser.END_DOCUMENT);
++                } catch (Exception e) {
++                    Slog.w(TAG, "Failed parsing " + packagePerformanceInfoFile, e);
++                } finally {
++                    if (stream != null) {
++                        try {
++                            stream.close();
++                        } catch (Exception e) {
++                            Slog.e(TAG, "Close error: ", e);
++                        }
++                    }
++                }
++            } else {
++                Slog.w(TAG, "packagePerformanceInfoFile not exist! " + packagePerformanceInfoFile.toString());
++            }
++        } else {
++            Slog.w(TAG, "Skipped scaning performance config file.");
++        }
+ 
+         final File kernelDir = new File("/config/sdcardfs");
+         mKernelMappingFilename = kernelDir.exists() ? kernelDir : null;
+@@ -740,6 +793,7 @@ public final class Settings implements Watchable, Snappable {
+         mStoppedPackagesFilename = null;
+         mBackupStoppedPackagesFilename = null;
+         mKernelMappingFilename = null;
++        mPrebundledPackagesFilename = null;//r.mPrebundledPackagesFilename?
+ 
+         mDomainVerificationManager = r.mDomainVerificationManager;
+ 
+@@ -2530,6 +2584,17 @@ public final class Settings implements Watchable, Snappable {
+                 serializer.endTag(null, "shared-user");
+             }
+ 
++            if (mPerformancePackages.size() > 0) {
++                serializer.startTag(null, "performance-package");
++                for (int j = 0; j < mPerformancePackages.size(); j++) {
++                    serializer.startTag(null, "app");
++                    serializer.attribute(null, "package", mPerformancePackages.get(j).name);
++                    serializer.attribute(null, "mode", String.valueOf(mPerformancePackages.get(j).mode));
++                    serializer.endTag(null, "app");
++                }
++                serializer.endTag(null, "performance-package");
++            }
++
+             if (mRenamedPackages.size() > 0) {
+                 for (Map.Entry<String, String> e : mRenamedPackages.entrySet()) {
+                     serializer.startTag(null, "renamed-package");
+@@ -2591,6 +2656,60 @@ public final class Settings implements Watchable, Snappable {
+         writeIntToFile(removeUserIdFile, userId);
+     }
+ 
++    void writePrebundledPackagesLPr() {
++        if (null == mPrebundledPackagesFilename) {
++            Slog.e(PackageManagerService.TAG, "writePrebundledPackagesLPr but mPrebundledPackagesFilename is null");
++            return;
++        }
++        PrintWriter writer = null;
++        try {
++            writer = new PrintWriter(
++                    new BufferedWriter(new FileWriter(mPrebundledPackagesFilename, false)));
++            for (String packageName : mPrebundledPackages) {
++                writer.println(packageName);
++            }
++        } catch (IOException e) {
++            Slog.e(PackageManagerService.TAG, "Unable to write prebundled package list", e);
++        } finally {
++            if (writer != null) {
++                writer.close();
++            }
++        }
++    }
++
++   void readPrebundledPackagesLPr() {
++        if (null == mPrebundledPackagesFilename || !mPrebundledPackagesFilename.exists()) {
++            return;
++        }
++        BufferedReader reader = null;
++        try {
++            reader = new BufferedReader(new FileReader(mPrebundledPackagesFilename));
++            String packageName = reader.readLine();
++            while (packageName != null) {
++                if (!TextUtils.isEmpty(packageName)) {
++                    mPrebundledPackages.add(packageName);
++                }
++                packageName = reader.readLine();
++            }
++        } catch (IOException e) {
++            Slog.e(PackageManagerService.TAG, "Unable to read prebundled package list", e);
++        } finally {
++            if (reader != null) {
++                try {
++                    reader.close();
++                } catch (IOException e) {}
++            }
++        }
++    }
++
++    void markPrebundledPackageInstalledLPr(String packageName) {
++        mPrebundledPackages.add(packageName);
++    }
++
++    boolean wasPrebundledPackageInstalledLPr(String packageName) {
++        return mPrebundledPackages.contains(packageName);
++    }
++
+     void writeKernelMappingLPr() {
+         if (mKernelMappingFilename == null) return;
+ 
+@@ -3084,6 +3203,8 @@ public final class Settings implements Watchable, Snappable {
+                     if (nname != null && oname != null) {
+                         mRenamedPackages.put(nname, oname);
+                     }
++                } else if (tagName.equals("performance-package")) {
++                    readPerformancePackageLP(parser);
+                 } else if (tagName.equals("last-platform-version")) {
+                     // Upgrade from older XML schema
+                     final VersionInfo internal = findOrCreateVersion(
+@@ -4230,6 +4351,30 @@ public final class Settings implements Watchable, Snappable {
+         t.traceEnd(); // createNewUser
+     }
+ 
++    private void readPerformancePackageLP(XmlPullParser parser) throws XmlPullParserException,
++            IOException {
++        int outerDepth = parser.getDepth();
++        int type;
++        while ((type = parser.next()) != XmlPullParser.END_DOCUMENT
++                && (type != XmlPullParser.END_TAG || parser.getDepth() > outerDepth)) {
++            if (type == XmlPullParser.END_TAG || type == XmlPullParser.TEXT) {
++                continue;
++            }
++
++            String tagName = parser.getName();
++            if (tagName.equals("app")) {
++                String pkgName = parser.getAttributeValue(null, "package");
++                String pkgMode = parser.getAttributeValue(null, "mode");
++                PackagePerformanceSetting setting = new PackagePerformanceSetting(pkgName,
++                        Integer.valueOf(pkgMode));
++
++                if (pkgName != null) {
++                    mPerformancePackages.add(setting);
++                }
++            }
++        }
++    }
++
+     void removeUserLPw(int userId) {
+         Set<Entry<String, PackageSetting>> entries = mPackages.entrySet();
+         for (Entry<String, PackageSetting> entry : entries) {
+@@ -5175,6 +5320,20 @@ public final class Settings implements Watchable, Snappable {
+         }
+     }
+ 
++    static void dumpPackagePerformanceMode(PrintWriter pw, DumpState dumpState) {
++        pw.println("Package performance messages:");
++        pw.println("Use `pm add-performance-package pkg_name` to temporary enable performance mode.");
++        pw.println("Reboot will clear this temporary performance mode state.\n");
++        if (!mPerformancePackages.isEmpty()) {
++            for (int i =0; i < mPerformancePackages.size(); i++) {
++                pw.print("package: ");
++                pw.print(mPerformancePackages.get(i).name);
++                pw.print(" -> mode: ");
++                pw.println(mPerformancePackages.get(i).mode);
++            }
++        }
++    }
++
+     void dumpReadMessages(PrintWriter pw, DumpState dumpState) {
+         pw.println("Settings parse messages:");
+         pw.print(mReadMessages.toString());

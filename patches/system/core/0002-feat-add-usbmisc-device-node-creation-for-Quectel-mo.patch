@@ -1,0 +1,29 @@
+From aad83c80f3a59dec089db5fba8ac1d36992b5c16 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Sat, 11 Jul 2026 00:50:50 +0800
+Subject: [PATCH 2/6] feat: add usbmisc device node creation for Quectel modem
+ (/dev/cdc-wdm0)
+
+Change-Id: Ibbe165467a783edf5b3d4ced75bc0ee85c569bdc
+---
+ init/devices.cpp | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/init/devices.cpp b/init/devices.cpp
+index d4a3cb9d3..bf3bb3b72 100644
+--- a/init/devices.cpp
++++ b/init/devices.cpp
+@@ -550,6 +550,10 @@ void DeviceHandler::HandleUevent(const Uevent& uevent) {
+             int device_id = uevent.minor % 128 + 1;
+             devpath = StringPrintf("/dev/bus/usb/%03d/%03d", bus_id, device_id);
+         }
++#if 1 //Add by quectel for mknod /dev/cdc-wdm0
++    } else if (uevent.subsystem == "usbmisc" && !uevent.device_name.empty()) {
++        devpath = "/dev/" + uevent.device_name;
++#endif
+     } else if (StartsWith(uevent.subsystem, "usb")) {
+         // ignore other USB events
+         return;
+-- 
+2.53.0
+

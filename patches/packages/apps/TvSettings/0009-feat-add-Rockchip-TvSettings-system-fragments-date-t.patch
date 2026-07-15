@@ -1,0 +1,130 @@
+From 3edb3a6e9e162426b4d62133ce2cbc1d7400cf8e Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Sat, 11 Jul 2026 22:10:01 +0800
+Subject: [PATCH 78/78] feat: add Rockchip TvSettings system fragments
+ (date/time, inputs, device name)
+
+Change-Id: I8f2ad25d24eeaaf214d8f3db840011e560897d3b
+---
+ .../name/DeviceNameSetCustomFragment.java     |  2 +-
+ .../tv/settings/system/DateTimeFragment.java  | 11 +++++++++++
+ .../tv/settings/system/InputsFragment.java    | 19 +++++++++++++++++++
+ 3 files changed, 31 insertions(+), 1 deletion(-)
+
+diff --git a/Settings/src/com/android/tv/settings/name/DeviceNameSetCustomFragment.java b/Settings/src/com/android/tv/settings/name/DeviceNameSetCustomFragment.java
+index 65cb181fe..6954e6896 100644
+--- a/Settings/src/com/android/tv/settings/name/DeviceNameSetCustomFragment.java
++++ b/Settings/src/com/android/tv/settings/name/DeviceNameSetCustomFragment.java
+@@ -93,7 +93,7 @@ public class DeviceNameSetCustomFragment extends GuidedStepSupportFragment {
+     @Override
+     public void onResume() {
+         super.onResume();
+-        openInEditMode(mEditAction);
++        // openInEditMode(mEditAction);
+     }
+ 
+     // Overriding this method removes the unpreferable enter transition animation of this fragment.
+diff --git a/Settings/src/com/android/tv/settings/system/DateTimeFragment.java b/Settings/src/com/android/tv/settings/system/DateTimeFragment.java
+index 114fd492b..b64aff5f2 100644
+--- a/Settings/src/com/android/tv/settings/system/DateTimeFragment.java
++++ b/Settings/src/com/android/tv/settings/system/DateTimeFragment.java
+@@ -44,6 +44,10 @@ import com.android.tv.settings.SettingsPreferenceFragment;
+ 
+ import java.util.Calendar;
+ import java.util.Date;
++import android.app.time.TimeManager;
++import android.app.time.TimeZoneCapabilities;
++import android.app.time.TimeZoneCapabilitiesAndConfig;
++import static android.app.time.Capabilities.CAPABILITY_POSSESSED;
+ 
+ /**
+  * The date and time screen in TV settings.
+@@ -66,6 +70,7 @@ public class DateTimeFragment extends SettingsPreferenceFragment implements
+     private static final String HOURS_24 = "24";
+ 
+     //    private TvInputManager mTvInputManager;
++    private TimeManager mTimeManager;
+     private final Calendar mDummyDate = Calendar.getInstance();
+ 
+     private RestrictedPreferenceAdapter<Preference> mDatePref;
+@@ -177,6 +182,12 @@ public class DateTimeFragment extends SettingsPreferenceFragment implements
+ 
+         mDatePref.updatePreference(pref -> pref.setEnabled(enable));
+         mTimePref.updatePreference(pref -> pref.setEnabled(enable));
++
++        mTimeManager = (TimeManager) getActivity().getSystemService(Context.TIME_MANAGER);
++        TimeZoneCapabilitiesAndConfig capabilitiesAndConfig = mTimeManager.getTimeZoneCapabilitiesAndConfig();
++        TimeZoneCapabilities capabilities = capabilitiesAndConfig.getCapabilities();
++        final boolean setTimeZoneEnable = capabilities.getSuggestManualTimeZoneCapability() == CAPABILITY_POSSESSED;
++        mTimeZone.updatePreference(pref -> pref.setEnabled(setTimeZoneEnable));
+     }
+ 
+     @Override
+diff --git a/Settings/src/com/android/tv/settings/system/InputsFragment.java b/Settings/src/com/android/tv/settings/system/InputsFragment.java
+index 3c1552370..54cbfc9b7 100644
+--- a/Settings/src/com/android/tv/settings/system/InputsFragment.java
++++ b/Settings/src/com/android/tv/settings/system/InputsFragment.java
+@@ -23,6 +23,8 @@ import android.media.tv.TvInputInfo;
+ import android.media.tv.TvInputManager;
+ import android.os.Bundle;
+ import android.os.UserHandle;
++import android.os.SystemProperties;
++import android.provider.Settings;
+ import android.text.TextUtils;
+ 
+ import androidx.annotation.Keep;
+@@ -52,6 +54,12 @@ public class InputsFragment extends SettingsPreferenceFragment {
+     private static final String KEY_TV_AUTO_ON = "tv_auto_on";
+     private static final String ICU_PLURAL_COUNT = "count";
+ 
++    private static final String KEY_CEC_AUDIO_CONTROL_FOR_TV = "cec_audio_control";
++    private static final String KEY_CEC_AUDIO_CONTROL_FOR_AMPLIFIER = "cec_audio_amplifier_control";
++
++    private static final String PROP_CEC_AUDIO_CONTROL_FOR_TV = "persist.sys.cec_audio_control_for_tv";
++    private static final String PROP_CEC_AUDIO_AMPLIFIER_CONTROL_FOR_TV = "persist.sys.cec_audio_control_for_amplifier";
++
+     private PreferenceGroup mConnectedGroup;
+     private PreferenceGroup mStandbyGroup;
+     private PreferenceGroup mDisconnectedGroup;
+@@ -59,6 +67,8 @@ public class InputsFragment extends SettingsPreferenceFragment {
+     private TwoStatePreference mHdmiControlPref;
+     private TwoStatePreference mDeviceAutoOffPref;
+     private TwoStatePreference mTvAutoOnPref;
++    private TwoStatePreference mCecAudioControlPref;
++    private TwoStatePreference mCecAudioAmplifierControlPref;
+ 
+     private TvInputManager mTvInputManager;
+     private HdmiControlManager mHdmiControlManager;
+@@ -98,6 +108,8 @@ public class InputsFragment extends SettingsPreferenceFragment {
+         mHdmiControlPref = (TwoStatePreference) findPreference(KEY_HDMI_CONTROL);
+         mDeviceAutoOffPref = (TwoStatePreference) findPreference(KEY_DEVICE_AUTO_OFF);
+         mTvAutoOnPref = (TwoStatePreference) findPreference(KEY_TV_AUTO_ON);
++        mCecAudioControlPref = (TwoStatePreference) findPreference(KEY_CEC_AUDIO_CONTROL_FOR_TV);
++        mCecAudioAmplifierControlPref = (TwoStatePreference) findPreference(KEY_CEC_AUDIO_CONTROL_FOR_AMPLIFIER);
+     }
+ 
+     private void refresh() {
+@@ -107,6 +119,8 @@ public class InputsFragment extends SettingsPreferenceFragment {
+                 == HdmiControlManager.TV_SEND_STANDBY_ON_SLEEP_ENABLED);
+         mTvAutoOnPref.setChecked(mHdmiControlManager.getTvWakeOnOneTouchPlay()
+                 == HdmiControlManager.TV_WAKE_ON_ONE_TOUCH_PLAY_ENABLED);
++        mCecAudioControlPref.setChecked(Boolean.parseBoolean(SystemProperties.get(PROP_CEC_AUDIO_CONTROL_FOR_TV, "false")));
++        mCecAudioAmplifierControlPref.setChecked(Boolean.parseBoolean(SystemProperties.get(PROP_CEC_AUDIO_AMPLIFIER_CONTROL_FOR_TV, "false")));
+ 
+         for (TvInputInfo info : mTvInputManager.getTvInputList()) {
+             if (info.getType() == TvInputInfo.TYPE_TUNER
+@@ -198,6 +212,11 @@ public class InputsFragment extends SettingsPreferenceFragment {
+                         ? HdmiControlManager.TV_WAKE_ON_ONE_TOUCH_PLAY_ENABLED
+                         : HdmiControlManager.TV_WAKE_ON_ONE_TOUCH_PLAY_DISABLED);
+                 return true;
++            case KEY_CEC_AUDIO_CONTROL_FOR_TV:
++                SystemProperties.set(PROP_CEC_AUDIO_CONTROL_FOR_TV, String.valueOf(mCecAudioControlPref.isChecked()));
++                return true;
++            case KEY_CEC_AUDIO_CONTROL_FOR_AMPLIFIER:
++                SystemProperties.set(PROP_CEC_AUDIO_AMPLIFIER_CONTROL_FOR_TV, String.valueOf(mCecAudioAmplifierControlPref.isChecked()));
+         }
+         return super.onPreferenceTreeClick(preference);
+     }
+-- 
+2.53.0
+

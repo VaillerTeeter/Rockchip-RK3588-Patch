@@ -1,0 +1,262 @@
+From 65cfd6c2bacd0075e2d8cf8912ff97b5065df989 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 17:23:59 +0800
+Subject: [PATCH] feat: add native mouse cursor dispatch methods to
+ InputManagerService
+
+Change-Id: Iaeacd164ca54b65753b413e2a424011a2ba5039b
+
+diff --git a/services/accessibility/java/com/android/server/accessibility/magnification/FullScreenMagnificationGestureHandler.java b/services/accessibility/java/com/android/server/accessibility/magnification/FullScreenMagnificationGestureHandler.java
+index dc39b01cf6b6..67796903fbd7 100644
+--- a/services/accessibility/java/com/android/server/accessibility/magnification/FullScreenMagnificationGestureHandler.java
++++ b/services/accessibility/java/com/android/server/accessibility/magnification/FullScreenMagnificationGestureHandler.java
+@@ -1082,11 +1082,19 @@ public class FullScreenMagnificationGestureHandler extends MagnificationGestureH
+         }
+ 
+         public void register() {
+-            mContext.registerReceiver(this, new IntentFilter(Intent.ACTION_SCREEN_OFF));
++            try{
++                mContext.registerReceiver(this, new IntentFilter(Intent.ACTION_SCREEN_OFF));
++            }catch(Exception e){
++                e.printStackTrace();
++            }
+         }
+ 
+         public void unregister() {
+-            mContext.unregisterReceiver(this);
++            try{
++                mContext.unregisterReceiver(this);
++            }catch(Exception e){
++                e.printStackTrace();
++            }
+         }
+ 
+         @Override
+diff --git a/services/core/java/com/android/server/input/InputManagerService.java b/services/core/java/com/android/server/input/InputManagerService.java
+index 89e0d0510cf8..8992eb08bd13 100644
+--- a/services/core/java/com/android/server/input/InputManagerService.java
++++ b/services/core/java/com/android/server/input/InputManagerService.java
+@@ -603,6 +603,14 @@ public class InputManagerService extends IInputManager.Stub
+         }
+     }
+ 
++    public void dispatchMouse(float x, float y, int w, int h) {
++        mNative.dispatchMouse(x, y, w, h);
++    }
++
++    public void dispatchMousebyCd(float x, float y) {
++        mNative.dispatchMouseByCd(x, y);
++    }
++
+     /**
+      * Gets the current state of a key or button by key code.
+      * @param deviceId The input device id, or -1 to consult all devices.
+diff --git a/services/core/java/com/android/server/input/NativeInputManagerService.java b/services/core/java/com/android/server/input/NativeInputManagerService.java
+index 9cf80737e67d..85d5b010e143 100644
+--- a/services/core/java/com/android/server/input/NativeInputManagerService.java
++++ b/services/core/java/com/android/server/input/NativeInputManagerService.java
+@@ -190,6 +190,9 @@ public interface NativeInputManagerService {
+     /** Set the displayId on which the mouse cursor should be shown. */
+     void setPointerDisplayId(int displayId);
+ 
++    void dispatchMouse(float x, float y, int w, int h);
++    void dispatchMouseByCd(float x, float y);
++
+     /** The native implementation of InputManagerService methods. */
+     class NativeImpl implements NativeInputManagerService {
+         /** Pointer to native input manager service object, used by native code. */
+@@ -405,6 +408,10 @@ public interface NativeInputManagerService {
+         public native void cancelCurrentTouch();
+ 
+         @Override
+-        public native void setPointerDisplayId(int displayId);
++	public native void setPointerDisplayId(int displayId);
++        @Override
++	public native void dispatchMouse(float x, float y, int w, int h);
++        @Override
++	public native void dispatchMouseByCd(float x, float y);
+     }
+ }
+diff --git a/services/core/jni/com_android_server_input_InputManagerService.cpp b/services/core/jni/com_android_server_input_InputManagerService.cpp
+index 287fb8219650..582ed4111f7c 100644
+--- a/services/core/jni/com_android_server_input_InputManagerService.cpp
++++ b/services/core/jni/com_android_server_input_InputManagerService.cpp
+@@ -33,6 +33,8 @@
+ #include <android_os_MessageQueue.h>
+ #include <android_runtime/AndroidRuntime.h>
+ #include <android_runtime/Log.h>
++#include <cutils/properties.h>
++
+ #include <android_view_InputChannel.h>
+ #include <android_view_InputDevice.h>
+ #include <android_view_KeyEvent.h>
+@@ -60,6 +62,12 @@
+ #include <cinttypes>
+ #include <vector>
+ 
++#include <stddef.h>
++#include <stdlib.h>
++#include <unistd.h>
++#include <errno.h>
++#include <math.h>
++
+ #include "android_hardware_display_DisplayViewport.h"
+ #include "android_hardware_input_InputApplicationHandle.h"
+ #include "android_hardware_input_InputWindowHandle.h"
+@@ -86,6 +94,7 @@ namespace android {
+ // The scaling factor is calculated as 2 ^ (speed * exponent),
+ // where the speed ranges from -7 to + 7 and is supplied by the user.
+ static const float POINTER_SPEED_EXPONENT = 1.0f / 4;
++std::shared_ptr<PointerControllerInterface> mPointerController;
+ 
+ static struct {
+     jclass clazz;
+@@ -288,7 +297,7 @@ public:
+     void requestPointerCapture(const sp<IBinder>& windowToken, bool enabled);
+     void setCustomPointerIcon(const SpriteIcon& icon);
+     void setMotionClassifierEnabled(bool enabled);
+-
++    virtual int32_t notifyDisplayIdChanged();
+     /* --- InputReaderPolicyInterface implementation --- */
+ 
+     void getReaderConfiguration(InputReaderConfiguration* outConfig) override;
+@@ -1180,6 +1189,63 @@ TouchAffineTransformation NativeInputManager::getTouchAffineTransformation(
+     return transform;
+ }
+ 
++int32_t NativeInputManager::notifyDisplayIdChanged() REQUIRES(mLock) {
++    //sp<PointerController> controller = mLocked.pointerController.promote();
++    std::shared_ptr<PointerController> controller = mLocked.pointerController.lock();
++    int32_t mDisplayId=controller->getDisplayId();
++    uint8_t physicalPortSize=0;
++    DisplayViewport mViewport=controller->getViewportLocked();
++    //uint8_t mPhysicalPort=mViewport.physicalPort.value();
++    ALOGV("====all viewports size=%d current viewport=%s ",(int32_t)mLocked.viewports.size(),mViewport.toString().c_str());
++    for (const DisplayViewport& v : mLocked.viewports) {
++        if (v.physicalPort!=std::nullopt) {
++           physicalPortSize++;
++        }
++    }
++    ALOGV("physical port size=%d",physicalPortSize);
++    if(physicalPortSize==1){
++       ALOGV("physicalPort size =1,return display id %d",mDisplayId);
++       return mDisplayId;
++    }
++    std::vector<DisplayViewport> viewports;
++
++    for (const DisplayViewport& v : mLocked.viewports) {
++       ALOGV("viewport=%s",v.toString().c_str());
++       if(mViewport.displayId!=v.displayId){
++         viewports.push_back(v);
++       }
++    }
++    std::sort(viewports.begin(),viewports.end(),[](const DisplayViewport& a,const DisplayViewport& b){
++                               return a.displayId<b.displayId;
++                           });
++
++    if(viewports.size()==0){
++      return mDisplayId;
++    }
++    if(viewports.size()==1){
++      controller->setDisplayId(viewports.front().displayId);
++      controller->setDisplayViewport(viewports.front());
++      mDisplayId=viewports.front().displayId;																     return mDisplayId;
++    }
++    if(viewports.back().displayId<=mViewport.displayId){
++      controller->setDisplayId(viewports.front().displayId);
++      controller->setDisplayViewport(viewports.front());
++      mDisplayId=viewports.front().displayId;
++      return mDisplayId;
++    }
++    for (const DisplayViewport& v : viewports) {
++       ALOGV("viewport=%s",v.toString().c_str());
++       if(v.displayId>mViewport.displayId){
++	  controller->setDisplayId(v.displayId);
++	  controller->setDisplayViewport(v);
++	  mDisplayId=v.displayId;
++	  break;
++       }
++
++    }
++    return mDisplayId;
++}
++
+ bool NativeInputManager::filterInputEvent(const InputEvent* inputEvent, uint32_t policyFlags) {
+     ATRACE_CALL();
+     jobject inputEventObj;
+@@ -2200,6 +2266,65 @@ static void nativeSetMotionClassifierEnabled(JNIEnv* env, jobject nativeImplObj,
+     im->setMotionClassifierEnabled(enabled);
+ }
+ 
++static void android_server_InputManager_nativedispatchMouse(JNIEnv* env,jobject nativeImplObj, jfloat x,jfloat y, jint w, jint h) {
++    //NativeInputManager* im = reinterpret_cast<NativeInputManager*>(ptr);
++
++    NativeInputManager* im = getNativeInputManager(env, nativeImplObj);
++    int mID;
++    float mx, my;
++    float screenWidth, screenHeight;
++    char* mgetID = new char[PROPERTY_VALUE_MAX];
++    const char* mkeyMouseState;
++    screenWidth = (float)w;
++    screenHeight = (float)h;
++
++    property_get("sys.ID.mID", mgetID, 0);
++    mID = atoi(mgetID);
++
++    mPointerController = im->obtainPointerController(mID);
++
++    // start to dispatchMouse
++    mPointerController->setPresentation(PointerControllerInterface::Presentation::POINTER);
++    mPointerController->move(x, y);
++    mPointerController->unfade(PointerControllerInterface::Transition::IMMEDIATE);
++    mPointerController->getPosition(&mx, &my);
++
++    // if((mx<=0)||((mx>=(screenWidth-10.0f))||(my<=0)||(my>=(screenHeight-10.0f)))
++    //	x=0;y=0;
++
++    if (mx == 0) {
++        mkeyMouseState = "left";
++    } else if (mx >= (screenWidth - 5.0f)) {
++        mkeyMouseState = "right";
++    } else if (my == 0) {
++        mkeyMouseState = "up";
++    } else if (my >= (screenHeight - 5.0f)) {
++        mkeyMouseState = "down";
++    } else {
++        mkeyMouseState = "Non-boundary";
++    }
++
++    property_set("sys.keymouselimitstate", mkeyMouseState);
++}
++
++static void android_server_InputManager_nativedispatchMouseByCd(JNIEnv* env, jobject nativeImplObj, jfloat x,jfloat y) {
++    //NativeInputManager* im = reinterpret_cast<NativeInputManager*>(ptr);
++    NativeInputManager* im = getNativeInputManager(env, nativeImplObj);
++    int mID;
++    char* mgetID = new char[PROPERTY_VALUE_MAX];
++
++    property_get("sys.ID.mID", mgetID, 0);
++    mID = atoi(mgetID);
++
++    mPointerController = im->obtainPointerController(mID);
++
++    // start to dispatchMouse
++    mPointerController->setPresentation(PointerControllerInterface::Presentation::POINTER);
++    mPointerController->setPosition(x, y);
++    mPointerController->unfade(PointerControllerInterface::Transition::IMMEDIATE);
++    // mPointerController->fade(PointerControllerInterface::TRANSITION_IMMEDIATE);
++}
++
+ static jobject createInputSensorInfo(JNIEnv* env, jstring name, jstring vendor, jint version,
+                                      jint handle, jint type, jfloat maxRange, jfloat resolution,
+                                      jfloat power, jfloat minDelay, jint fifoReservedEventCount,
+@@ -2385,6 +2510,9 @@ static const JNINativeMethod gInputManagerMethods[] = {
+         {"flushSensor", "(II)Z", (void*)nativeFlushSensor},
+         {"cancelCurrentTouch", "()V", (void*)nativeCancelCurrentTouch},
+         {"setPointerDisplayId", "(I)V", (void*)nativeSetPointerDisplayId},
++        {"dispatchMouse", "(FFII)V", (void*)android_server_InputManager_nativedispatchMouse},
++        {"dispatchMouseByCd", "(FF)V",
++         (void*)android_server_InputManager_nativedispatchMouseByCd},
+ };
+ 
+ #define FIND_CLASS(var, className) \

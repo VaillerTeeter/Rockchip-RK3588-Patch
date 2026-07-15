@@ -1,0 +1,214 @@
+From 59f2c149c7997c22086e7ded411f2b78d5aee352 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 15:27:14 +0800
+Subject: [PATCH] feat: add Rockchip graphics support (BBQ naming, Mali-450
+ fence, GPU_DATA_BUFFER bypass, NO_AFBC usage)
+
+Change-Id: Icc3c709c513a391729546431c9f782a5df1cc816
+
+diff --git a/libs/gui/SurfaceControl.cpp b/libs/gui/SurfaceControl.cpp
+index 654fb336fe..a8168e3902 100644
+--- a/libs/gui/SurfaceControl.cpp
++++ b/libs/gui/SurfaceControl.cpp
+@@ -138,9 +138,11 @@ sp<Surface> SurfaceControl::generateSurfaceLocked()
+     uint32_t ignore;
+     auto flags = mCreateFlags & (ISurfaceComposerClient::eCursorWindow |
+                                  ISurfaceComposerClient::eOpaque);
+-    mBbqChild = mClient->createSurface(String8("bbq-wrapper"), 0, 0, mFormat,
++    //-----------------------rk code----------
++    mBbqChild = mClient->createSurface(String8(mDefaultBbqChildName.c_str()), 0, 0, mFormat,
+                                        flags, mHandle, {}, &ignore);
+-    mBbq = sp<BLASTBufferQueue>::make("bbq-adapter", mBbqChild, mWidth, mHeight, mFormat);
++    mBbq = sp<BLASTBufferQueue>::make(mDefaultBbqName, mBbqChild, mWidth, mHeight, mFormat);
++    //----------------------------------------
+ 
+     // This surface is always consumed by SurfaceFlinger, so the
+     // producerControlledByApp value doesn't matter; using false.
+@@ -149,6 +151,16 @@ sp<Surface> SurfaceControl::generateSurfaceLocked()
+     return mSurfaceData;
+ }
+ 
++//-----------------------rk code----------
++void SurfaceControl::setDefaultBbqName(std::string defaultName) {
++    mDefaultBbqName = defaultName;
++}
++
++void SurfaceControl::setDefaultBbqChildName(std::string defaultName) {
++    mDefaultBbqChildName = defaultName;
++}
++//----------------------------------------
++
+ sp<Surface> SurfaceControl::getSurface()
+ {
+     Mutex::Autolock _l(mLock);
+diff --git a/libs/gui/include/gui/SurfaceControl.h b/libs/gui/include/gui/SurfaceControl.h
+index b72cf8390e..1c58402af2 100644
+--- a/libs/gui/include/gui/SurfaceControl.h
++++ b/libs/gui/include/gui/SurfaceControl.h
+@@ -30,6 +30,9 @@
+ 
+ #include <gui/ISurfaceComposerClient.h>
+ #include <math/vec3.h>
++//-----------------------rk code----------
++#include <string>
++//----------------------------------------
+ 
+ namespace android {
+ 
+@@ -72,6 +75,11 @@ public:
+     static status_t writeSurfaceToParcel(
+             const sp<SurfaceControl>& control, Parcel* parcel);
+ 
++    //-----------------------rk code-----------
++    void setDefaultBbqName(std::string defaultName);
++    void setDefaultBbqChildName(std::string defaultName);
++    //-----------------------------------------
++
+     sp<Surface> getSurface();
+     sp<Surface> createSurface();
+     sp<IBinder> getHandle() const;
+@@ -128,6 +136,11 @@ private:
+     PixelFormat mFormat = PIXEL_FORMAT_NONE;
+     uint32_t mCreateFlags = 0;
+     uint64_t mFallbackFrameNumber = 100;
++
++    //-----------------------rk code----------
++    std::string mDefaultBbqName = "bbq-adapter";
++    std::string mDefaultBbqChildName = "bbq-wrapper";
++    //----------------------------------------
+ };
+ 
+ }; // namespace android
+diff --git a/libs/renderengine/Android.bp b/libs/renderengine/Android.bp
+index cb92df388b..2e2a87e8d6 100644
+--- a/libs/renderengine/Android.bp
++++ b/libs/renderengine/Android.bp
+@@ -107,9 +107,30 @@ filegroup {
+     ],
+ }
+ 
++bootstrap_go_package {
++    name: "soong-librenderengine",
++    pkgPath: "android/soong/librenderengine",
++    deps: [
++        "blueprint",
++        "blueprint-pathtools",
++        "soong",
++        "soong-android",
++        "soong-cc",
++        "soong-genrule",
++    ],
++    srcs: [
++          "Android.go",
++    ],
++    pluginFor: ["soong_build"],
++}
++
++cc_librenderengine {
++    name: "cc_librenderengine_defaults"
++}
++
+ cc_library_static {
+     name: "librenderengine",
+-    defaults: ["librenderengine_defaults"],
++    defaults: ["librenderengine_defaults", "cc_librenderengine_defaults"],
+     double_loadable: true,
+     clang: true,
+     cflags: [
+diff --git a/libs/renderengine/gl/GLESRenderEngine.cpp b/libs/renderengine/gl/GLESRenderEngine.cpp
+index 6dc01b916e..75eeddb200 100644
+--- a/libs/renderengine/gl/GLESRenderEngine.cpp
++++ b/libs/renderengine/gl/GLESRenderEngine.cpp
+@@ -1092,9 +1092,13 @@ void GLESRenderEngine::drawLayersInternal(
+     }
+ 
+     if (bufferFence.get() >= 0) {
++#if MALI_PRODUCT_ID_450 || MALI_PRODUCT_ID_400
++        {
++#else
+         // Duplicate the fence for passing to waitFence.
+         base::unique_fd bufferFenceDup(dup(bufferFence.get()));
+         if (bufferFenceDup < 0 || !waitFence(std::move(bufferFenceDup))) {
++#endif
+             ATRACE_NAME("Waiting before draw");
+             sync_wait(bufferFence.get(), -1);
+         }
+diff --git a/libs/renderengine/skia/SkiaGLRenderEngine.cpp b/libs/renderengine/skia/SkiaGLRenderEngine.cpp
+index 0caa9f2fbd..3c2181abc9 100644
+--- a/libs/renderengine/skia/SkiaGLRenderEngine.cpp
++++ b/libs/renderengine/skia/SkiaGLRenderEngine.cpp
+@@ -425,7 +425,11 @@ base::unique_fd SkiaGLRenderEngine::flush() {
+ }
+ 
+ void SkiaGLRenderEngine::waitFence(base::borrowed_fd fenceFd) {
++#if MALI_PRODUCT_ID_450 || MALI_PRODUCT_ID_400
++    if (fenceFd.get() >= 0) {
++#else
+     if (fenceFd.get() >= 0 && !waitGpuFence(fenceFd)) {
++#endif
+         ATRACE_NAME("SkiaGLRenderEngine::waitFence");
+         sync_wait(fenceFd.get(), -1);
+     }
+diff --git a/libs/ui/Gralloc2.cpp b/libs/ui/Gralloc2.cpp
+index f23f10a1a9..903bbc42e1 100644
+--- a/libs/ui/Gralloc2.cpp
++++ b/libs/ui/Gralloc2.cpp
+@@ -111,6 +111,7 @@ status_t Gralloc2Mapper::validateBufferDescriptorInfo(
+         return BAD_VALUE;
+     }
+ 
++#if 0
+     // Gralloc2 implementations never understand non-BLOB with GPU_DATA_BUFFER
+     // and do not reliably reject it.
+     if (descriptorInfo->usage & BufferUsage::GPU_DATA_BUFFER &&
+@@ -118,6 +119,7 @@ status_t Gralloc2Mapper::validateBufferDescriptorInfo(
+         ALOGE("gralloc2 does not support non-BLOB pixel formats with GPU_DATA_BUFFER usage");
+         return BAD_VALUE;
+     }
++#endif
+ 
+     return NO_ERROR;
+ }
+diff --git a/libs/ui/Gralloc4.cpp b/libs/ui/Gralloc4.cpp
+index f6ab7b2a5e..d5efb30e21 100644
+--- a/libs/ui/Gralloc4.cpp
++++ b/libs/ui/Gralloc4.cpp
+@@ -129,7 +129,7 @@ static status_t validateBufferDescriptorInfo(IMapper::BufferDescriptorInfo* desc
+             descriptorInfo->format != hardware::graphics::common::V1_2::PixelFormat::BLOB &&
+             descriptorInfo->usage & BufferUsage::GPU_DATA_BUFFER) {
+         ALOGE("non-BLOB pixel format with GPU_DATA_BUFFER usage is not supported prior to gralloc 4.1");
+-        return BAD_VALUE;
++        //return BAD_VALUE;
+     }
+ 
+     return NO_ERROR;
+diff --git a/libs/ui/GraphicBuffer.cpp b/libs/ui/GraphicBuffer.cpp
+index 3732fee7f2..39c79b49ef 100644
+--- a/libs/ui/GraphicBuffer.cpp
++++ b/libs/ui/GraphicBuffer.cpp
+@@ -165,6 +165,11 @@ status_t GraphicBuffer::reallocate(uint32_t inWidth, uint32_t inHeight,
+     return initWithSize(inWidth, inHeight, inFormat, inLayerCount, inUsage, "[Reallocation]");
+ }
+ 
++// MALI_GRALLOC_USAGE_NO_AFBC 是 arm_gralloc 扩展的 私有的 usage_bit_flag,
++// 定义在 hardware/rockchip/libgralloc/bifrost/src/mali_gralloc_usages.h 中
++#define GRALLOC_USAGE_PRIVATE_1 1ULL << 29
++#define MALI_GRALLOC_USAGE_NO_AFBC GRALLOC_USAGE_PRIVATE_1
++
+ bool GraphicBuffer::needsReallocation(uint32_t inWidth, uint32_t inHeight,
+         PixelFormat inFormat, uint32_t inLayerCount, uint64_t inUsage)
+ {
+@@ -172,7 +177,12 @@ bool GraphicBuffer::needsReallocation(uint32_t inWidth, uint32_t inHeight,
+     if (static_cast<int>(inHeight) != height) return true;
+     if (inFormat != format) return true;
+     if (inLayerCount != layerCount) return true;
+-    if ((usage & inUsage) != inUsage) return true;
++    if ((inUsage | usage) & MALI_GRALLOC_USAGE_NO_AFBC){
++        if( usage != inUsage)
++            return true;
++    }else if ((usage & inUsage) != inUsage) {
++        return true;
++    }
+     if ((usage & USAGE_PROTECTED) != (inUsage & USAGE_PROTECTED)) return true;
+     return false;
+ }

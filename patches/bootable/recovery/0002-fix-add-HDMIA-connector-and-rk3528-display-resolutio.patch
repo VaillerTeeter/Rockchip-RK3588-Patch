@@ -1,0 +1,63 @@
+From d90a4a9eef9207f51e5a3b0305dca92efb629ae7 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 11:30:48 +0800
+Subject: [PATCH 2/6] fix: add HDMIA connector and rk3528 display resolution
+ workaround
+
+Change-Id: I9dd0233e5dac66d185acad422f1646e2b6a6653a
+---
+ minui/graphics_drm.cpp | 17 ++++++++++++++++-
+ 1 file changed, 16 insertions(+), 1 deletion(-)
+
+diff --git a/minui/graphics_drm.cpp b/minui/graphics_drm.cpp
+index 6c3a5bde..8a8c158f 100644
+--- a/minui/graphics_drm.cpp
++++ b/minui/graphics_drm.cpp
+@@ -29,6 +29,7 @@
+ #include <android-base/macros.h>
+ #include <android-base/stringprintf.h>
+ #include <android-base/unique_fd.h>
++#include <android-base/properties.h>
+ #include <drm_fourcc.h>
+ #include <xf86drm.h>
+ #include <xf86drmMode.h>
+@@ -280,6 +281,7 @@ bool MinuiBackendDrm::FindAndSetMonitor(int fd, drmModeRes* resources) {
+     DRM_MODE_CONNECTOR_LVDS,
+     DRM_MODE_CONNECTOR_eDP,
+     DRM_MODE_CONNECTOR_DSI,
++    DRM_MODE_CONNECTOR_HDMIA,
+   };
+ 
+   std::vector<drmModeConnector*> drmConnectors;
+@@ -299,6 +301,11 @@ bool MinuiBackendDrm::FindAndSetMonitor(int fd, drmModeRes* resources) {
+     }
+   }
+ 
++  int is_rk3528 = 0;
++  std::string soc_platform = android::base::GetProperty("ro.board.platform", "unknown");
++  if(soc_platform == "rk3528")
++    is_rk3528 = 1;
++
+   for (int drm_index = 0; drm_index < drmConnectors.size(); drm_index++) {
+     drm[drm_index].monitor_connector = drmConnectors[drm_index];
+ 
+@@ -308,7 +315,15 @@ bool MinuiBackendDrm::FindAndSetMonitor(int fd, drmModeRes* resources) {
+              drmConnectors[drm_index]->modes[modes].hdisplay,
+              drmConnectors[drm_index]->modes[modes].vdisplay,
+              drmConnectors[drm_index]->modes[modes].vrefresh);
+-      if (drmConnectors[drm_index]->modes[modes].type & DRM_MODE_TYPE_PREFERRED) {
++      if (is_rk3528) {
++        int width;
++
++        width = drmConnectors[drm_index]->modes[modes].hdisplay;
++        if (width > 2048)
++          continue;
++      }
++
++      if (is_rk3528 || drmConnectors[drm_index]->modes[modes].type & DRM_MODE_TYPE_PREFERRED) {
+         printf("Choosing display mode #%d\n", modes);
+         drm[drm_index].selected_mode = modes;
+         break;
+-- 
+2.53.0
+

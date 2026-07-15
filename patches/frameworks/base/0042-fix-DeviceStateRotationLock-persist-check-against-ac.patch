@@ -1,0 +1,69 @@
+From a7118b96d4b3bf5930cafe0fdf9cf242584bcb28 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 17:28:35 +0800
+Subject: [PATCH] fix: DeviceStateRotationLock persist check against actual
+ stored value
+
+Change-Id: I660e7e039d173a49b70466b4d24b75942c3564a3
+
+diff --git a/packages/SettingsLib/DeviceStateRotationLock/src/com.android.settingslib.devicestate/DeviceStateRotationLockSettingsManager.java b/packages/SettingsLib/DeviceStateRotationLock/src/com.android.settingslib.devicestate/DeviceStateRotationLockSettingsManager.java
+index 76e1df1459e3..ea4ac2c928ce 100644
+--- a/packages/SettingsLib/DeviceStateRotationLock/src/com.android.settingslib.devicestate/DeviceStateRotationLockSettingsManager.java
++++ b/packages/SettingsLib/DeviceStateRotationLock/src/com.android.settingslib.devicestate/DeviceStateRotationLockSettingsManager.java
+@@ -62,7 +62,6 @@ public final class DeviceStateRotationLockSettingsManager {
+     private SparseIntArray mPostureRotationLockSettings;
+     private SparseIntArray mPostureDefaultRotationLockSettings;
+     private SparseIntArray mPostureRotationLockFallbackSettings;
+-    private String mLastSettingValue;
+     private List<SettableDeviceState> mSettableDeviceStates;
+ 
+     @VisibleForTesting
+@@ -209,10 +208,7 @@ public final class DeviceStateRotationLockSettingsManager {
+     }
+ 
+     private void initializeInMemoryMap() {
+-        String serializedSetting =
+-                mSecureSettings.getStringForUser(
+-                        Settings.Secure.DEVICE_STATE_ROTATION_LOCK,
+-                        UserHandle.USER_CURRENT);
++        String serializedSetting = getPersistedSettingValue();
+         if (TextUtils.isEmpty(serializedSetting)) {
+             // No settings saved, we should load the defaults and persist them.
+             fallbackOnDefaults();
+@@ -290,19 +286,25 @@ public final class DeviceStateRotationLockSettingsManager {
+     }
+ 
+     private void persistSettingIfChanged(String newSettingValue) {
++        String lastSettingValue = getPersistedSettingValue();
+         Log.v(TAG, "persistSettingIfChanged: "
+-                + "last=" + mLastSettingValue + ", "
++                + "last=" + lastSettingValue + ", "
+                 + "new=" + newSettingValue);
+-        if (TextUtils.equals(mLastSettingValue, newSettingValue)) {
++        if (TextUtils.equals(lastSettingValue, newSettingValue)) {
+             return;
+         }
+-        mLastSettingValue = newSettingValue;
+         mSecureSettings.putStringForUser(
+                 Settings.Secure.DEVICE_STATE_ROTATION_LOCK,
+                 /* value= */ newSettingValue,
+                 UserHandle.USER_CURRENT);
+     }
+ 
++    private String getPersistedSettingValue() {
++        return mSecureSettings.getStringForUser(
++                Settings.Secure.DEVICE_STATE_ROTATION_LOCK,
++                UserHandle.USER_CURRENT);
++    }
++
+     private void loadDefaults() {
+         mSettableDeviceStates = new ArrayList<>(mPostureRotationLockDefaults.length);
+         mPostureDefaultRotationLockSettings = new SparseIntArray(
+@@ -351,7 +353,6 @@ public final class DeviceStateRotationLockSettingsManager {
+         pw.println("mDeviceStateRotationLockSettings: " + mPostureRotationLockSettings);
+         pw.println("mPostureRotationLockFallbackSettings: " + mPostureRotationLockFallbackSettings);
+         pw.println("mSettableDeviceStates: " + mSettableDeviceStates);
+-        pw.println("mLastSettingValue: " + mLastSettingValue);
+         pw.decreaseIndent();
+     }
+ 

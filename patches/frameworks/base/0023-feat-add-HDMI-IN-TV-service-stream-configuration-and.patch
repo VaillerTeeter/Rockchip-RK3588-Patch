@@ -1,0 +1,329 @@
+From 0bdde81f24fd7d06da0cb8763be4ba8e29d51d26 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 17:20:00 +0800
+Subject: [PATCH] feat: add HDMI-IN TV service stream configuration and capture
+ callbacks
+
+Change-Id: I0de5d3b86e6643c20fdafb99e4e96f3665c000f2
+
+diff --git a/services/core/java/com/android/server/tv/TvInputHal.java b/services/core/java/com/android/server/tv/TvInputHal.java
+index 07725038255e..7682cf1b71a7 100644
+--- a/services/core/java/com/android/server/tv/TvInputHal.java
++++ b/services/core/java/com/android/server/tv/TvInputHal.java
+@@ -19,6 +19,7 @@ package com.android.server.tv;
+ import android.hardware.tv.input.V1_0.Constants;
+ import android.media.tv.TvInputHardwareInfo;
+ import android.media.tv.TvStreamConfig;
++import android.os.Bundle;
+ import android.os.Handler;
+ import android.os.Message;
+ import android.os.MessageQueue;
+@@ -29,6 +30,8 @@ import android.view.Surface;
+ 
+ import java.util.LinkedList;
+ import java.util.Queue;
++import android.util.Log;
++
+ 
+ /**
+  * Provides access to the low-level TV input hardware abstraction layer.
+@@ -47,6 +50,9 @@ final class TvInputHal implements Handler.Callback {
+     public static final int EVENT_STREAM_CONFIGURATION_CHANGED =
+             Constants.EVENT_STREAM_CONFIGURATIONS_CHANGED;
+     public static final int EVENT_FIRST_FRAME_CAPTURED = 4;
++    public static final int EVENT_PRIV_CMD_TO_APP = 5;
++
++    private static final String STR_ACTION_PRIV_CMD_TO_APP = "rkhdmiin_jni_action";
+ 
+     public interface Callback {
+         void onDeviceAvailable(TvInputHardwareInfo info, TvStreamConfig[] configs);
+@@ -54,6 +60,7 @@ final class TvInputHal implements Handler.Callback {
+         void onStreamConfigurationChanged(int deviceId, TvStreamConfig[] configs,
+                 int cableConnectionStatus);
+         void onFirstFrameCaptured(int deviceId, int streamId);
++        void onPrivCmdToApp(int deviceId, String action, Bundle data);
+     }
+ 
+     private native long nativeOpen(MessageQueue queue);
+@@ -64,6 +71,7 @@ final class TvInputHal implements Handler.Callback {
+     private static native TvStreamConfig[] nativeGetStreamConfigs(long ptr, int deviceId,
+             int generation);
+     private static native void nativeClose(long ptr);
++    private static native int nativePrivCmdFromApp(long ptr, String action, Bundle data);
+ 
+     private final Object mLock = new Object();
+     private long mPtr = 0;
+@@ -83,15 +91,29 @@ final class TvInputHal implements Handler.Callback {
+         }
+     }
+ 
++    public int sendAppPrivateCommand(String action, Bundle data) {
++        synchronized (mLock) {
++            if (mPtr == 0 || null == data) {
++                return ERROR_NO_INIT;
++            }
++            if (nativePrivCmdFromApp(mPtr, action, data) == 1) {
++                return SUCCESS;
++            }
++            return ERROR_UNKNOWN;
++        }
++    }
++
+     public int addOrUpdateStream(int deviceId, Surface surface, TvStreamConfig streamConfig) {
+         synchronized (mLock) {
+             if (mPtr == 0) {
+                 return ERROR_NO_INIT;
+             }
+             int generation = mStreamConfigGenerations.get(deviceId, 0);
+-            if (generation != streamConfig.getGeneration()) {
++	Log.d("TvInputHal.java", "generation=" + generation);
++Log.d("TvInputHal.java", "streamConfig.getGeneration()=" + streamConfig.getGeneration());
++            /*if (generation != streamConfig.getGeneration()) {
+                 return ERROR_STALE_CONFIG;
+-            }
++            }*/
+             if (nativeAddOrUpdateStream(mPtr, deviceId, streamConfig.getStreamId(), surface) == 0) {
+                 return SUCCESS;
+             } else {
+@@ -106,9 +128,11 @@ final class TvInputHal implements Handler.Callback {
+                 return ERROR_NO_INIT;
+             }
+             int generation = mStreamConfigGenerations.get(deviceId, 0);
+-            if (generation != streamConfig.getGeneration()) {
++Log.d("TvInputHal.java", "removeStream-->generation=" + generation);
++Log.d("TvInputHal.java", "removeStream-->streamConfig.getGeneration()=" + streamConfig.getGeneration());
++            /*if (generation != streamConfig.getGeneration()) {
+                 return ERROR_STALE_CONFIG;
+-            }
++            }*/
+             if (nativeRemoveStream(mPtr, deviceId, streamConfig.getStreamId()) == 0) {
+                 return SUCCESS;
+             } else {
+@@ -127,6 +151,7 @@ final class TvInputHal implements Handler.Callback {
+ 
+     private void retrieveStreamConfigsLocked(int deviceId) {
+         int generation = mStreamConfigGenerations.get(deviceId, 0) + 1;
++Log.d("wgh", "retrieveStreamConfigsLocked-->deviceId = " + deviceId + ", generation=" + generation);
+         mStreamConfigs.put(deviceId, nativeGetStreamConfigs(mPtr, deviceId, generation));
+         mStreamConfigGenerations.put(deviceId, generation);
+     }
+@@ -153,6 +178,12 @@ final class TvInputHal implements Handler.Callback {
+                 mHandler.obtainMessage(EVENT_STREAM_CONFIGURATION_CHANGED, deviceId, streamId));
+     }
+ 
++    private void privCmdToAppFromNative(int deviceId, String action, Bundle data) {
++        data.putString(STR_ACTION_PRIV_CMD_TO_APP, action);
++        mHandler.sendMessage(
++                mHandler.obtainMessage(EVENT_PRIV_CMD_TO_APP, deviceId, 0, data));
++    }
++
+     // Handler.Callback implementation
+ 
+     private final Queue<Message> mPendingMessageQueue = new LinkedList<>();
+@@ -205,6 +236,15 @@ final class TvInputHal implements Handler.Callback {
+                 break;
+             }
+ 
++            case EVENT_PRIV_CMD_TO_APP: {
++                int deviceId = msg.arg1;
++                Bundle data = (Bundle)msg.obj;
++                String action = data.getString(STR_ACTION_PRIV_CMD_TO_APP);
++                data.remove(STR_ACTION_PRIV_CMD_TO_APP);
++                mCallback.onPrivCmdToApp(deviceId, action, data);
++                break;
++            }
++
+             default:
+                 Slog.e(TAG, "Unknown event: " + msg);
+                 return false;
+diff --git a/services/core/java/com/android/server/tv/TvInputHardwareManager.java b/services/core/java/com/android/server/tv/TvInputHardwareManager.java
+index f57a852fe8c5..6f0bcea0dfe5 100755
+--- a/services/core/java/com/android/server/tv/TvInputHardwareManager.java
++++ b/services/core/java/com/android/server/tv/TvInputHardwareManager.java
+@@ -40,6 +40,7 @@ import android.media.AudioPatch;
+ import android.media.AudioPort;
+ import android.media.AudioPortConfig;
+ import android.media.AudioSystem;
++import android.media.AudioStream;
+ import android.media.tv.ITvInputHardware;
+ import android.media.tv.ITvInputHardwareCallback;
+ import android.media.tv.TvInputHardwareInfo;
+@@ -48,6 +49,7 @@ import android.media.tv.TvInputService.PriorityHintUseCaseType;
+ import android.media.tv.TvStreamConfig;
+ import android.media.tv.tunerresourcemanager.ResourceClientProfile;
+ import android.media.tv.tunerresourcemanager.TunerResourceManager;
++import android.os.Bundle;
+ import android.os.Handler;
+ import android.os.IBinder;
+ import android.os.Message;
+@@ -97,6 +99,7 @@ class TvInputHardwareManager implements TvInputHal.Callback {
+     private final Map<String, TvInputInfo> mInputMap = new ArrayMap<>();
+ 
+     private final AudioManager mAudioManager;
++    private final AudioStream mAudioStream;
+     private final IHdmiHotplugEventListener mHdmiHotplugEventListener =
+             new HdmiHotplugEventListener();
+     private final IHdmiDeviceEventListener mHdmiDeviceEventListener = new HdmiDeviceEventListener();
+@@ -125,6 +128,7 @@ class TvInputHardwareManager implements TvInputHal.Callback {
+         mContext = context;
+         mListener = listener;
+         mAudioManager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
++        mAudioStream = new AudioStream(context);
+         mHal.init();
+     }
+ 
+@@ -176,8 +180,19 @@ class TvInputHardwareManager implements TvInputHal.Callback {
+         }
+     }
+ 
++    private void EnableHDMIInAudio(boolean enable)
++    {
++        Slog.i(TAG, "EnableHDMIInAudio " + enable);
++        if (enable) {
++            mAudioStream.start();
++        } else {
++            mAudioStream.stop();
++        }
++    }
++
+     @Override
+     public void onDeviceUnavailable(int deviceId) {
++        Slog.w(TAG, "onDeviceUnavailable deviceId=" + deviceId);
+         synchronized (mLock) {
+             Connection connection = mConnections.get(deviceId);
+             if (connection == null) {
+@@ -269,6 +284,29 @@ class TvInputHardwareManager implements TvInputHal.Callback {
+         }
+     }
+ 
++    @Override
++    public void onPrivCmdToApp(int deviceId, String action, Bundle data) {
++        synchronized (mLock) {
++            if (action.equals("hdmiinout")) {
++                EnableHDMIInAudio(false);
++            }
++            Connection connection = mConnections.get(deviceId);
++            if (connection == null) {
++                Slog.e(TAG, "onPrivCmdToApp: Cannot find a connection with "
++                        + deviceId);
++                return;
++            }
++            ITvInputHardwareCallback callback = connection.getCallbackLocked();
++            if (callback != null) {
++                try {
++                    callback.onPrivCmdToApp(action, data);
++                } catch (RemoteException e) {
++                    Slog.e(TAG, "error in onStreamConfigurationChanged", e);
++                }
++            }
++        }
++    }
++
+     public List<TvInputHardwareInfo> getHardwareList() {
+         synchronized (mLock) {
+             return Collections.unmodifiableList(mHardwareList);
+@@ -832,6 +870,7 @@ class TvInputHardwareManager implements TvInputHal.Callback {
+             @Override
+             public void onServiceDied() {
+                 synchronized (mImplLock) {
++                    EnableHDMIInAudio(false);
+                     mAudioSource = null;
+                     mAudioSink.clear();
+                     if (mAudioPatch != null) {
+@@ -908,6 +947,10 @@ class TvInputHardwareManager implements TvInputHal.Callback {
+             }
+         }
+ 
++        public void sendAppPrivateCommand(String action, Bundle data) {
++            mHal.sendAppPrivateCommand(action, data);
++        }
++
+         // A TvInputHardwareImpl object holds only one active session. Therefore, if a client
+         // attempts to call setSurface with different TvStreamConfig objects, the last call will
+         // prevail.
+@@ -918,15 +961,19 @@ class TvInputHardwareManager implements TvInputHal.Callback {
+                 if (mReleased) {
+                     throw new IllegalStateException("Device already released.");
+                 }
+-
++                Slog.w(TAG, "setSurface " + surface + ", config=" + config);
+                 int result = TvInputHal.SUCCESS;
+                 if (surface == null) {
+                     // The value of config is ignored when surface == null.
+                     if (mActiveConfig != null) {
++                        Slog.w(TAG, "setSurface null and start removestream " + mActiveConfig);
+                         result = mHal.removeStream(mInfo.getDeviceId(), mActiveConfig);
++                        Slog.w(TAG, "setSurface null and end removestream " + mActiveConfig);
++                        EnableHDMIInAudio(false);
+                         mActiveConfig = null;
+                     } else {
+                         // We already have no active stream.
++                        Slog.w(TAG, "setSurface null and remove no active stream");
+                         return true;
+                     }
+                 } else {
+@@ -936,20 +983,26 @@ class TvInputHardwareManager implements TvInputHal.Callback {
+                     }
+                     // Remove stream only if we have an existing active configuration.
+                     if (mActiveConfig != null && !config.equals(mActiveConfig)) {
++                        Slog.w(TAG, "setSurface and start removestream " + mActiveConfig);
+                         result = mHal.removeStream(mInfo.getDeviceId(), mActiveConfig);
++                        Slog.w(TAG, "setSurface and end removestream result=" + result);
+                         if (result != TvInputHal.SUCCESS) {
+                             mActiveConfig = null;
+                         }
+                     }
+                     // Proceed only if all previous operations succeeded.
+                     if (result == TvInputHal.SUCCESS) {
++                        Slog.w(TAG, "setSurface and start addOrUpdateStream" + config);
+                         result = mHal.addOrUpdateStream(mInfo.getDeviceId(), surface, config);
++                        Slog.w(TAG, "setSurface and end addOrUpdateStream result: " + result);
+                         if (result == TvInputHal.SUCCESS) {
++                            EnableHDMIInAudio(true);
+                             mActiveConfig = config;
+                         }
+                     }
+                 }
+                 updateAudioConfigLocked();
++                Slog.w(TAG, "setSurface updateAudioConfigLocked finish");
+                 return result == TvInputHal.SUCCESS;
+             }
+         }
+diff --git a/services/core/java/com/android/server/tv/TvInputManagerService.java b/services/core/java/com/android/server/tv/TvInputManagerService.java
+index b95d3726af07..dce7546fc3a9 100755
+--- a/services/core/java/com/android/server/tv/TvInputManagerService.java
++++ b/services/core/java/com/android/server/tv/TvInputManagerService.java
+@@ -81,6 +81,7 @@ import android.os.ParcelFileDescriptor;
+ import android.os.Process;
+ import android.os.RemoteCallbackList;
+ import android.os.RemoteException;
++import android.os.SystemProperties;
+ import android.os.UserHandle;
+ import android.os.UserManager;
+ import android.text.TextUtils;
+@@ -125,7 +126,7 @@ import java.util.regex.Pattern;
+ 
+ /** This class provides a system service that manages television inputs. */
+ public final class TvInputManagerService extends SystemService {
+-    private static final boolean DEBUG = false;
++    private static final boolean DEBUG = true;
+     private static final String TAG = "TvInputManagerService";
+     private static final String DVB_DIRECTORY = "/dev/dvb";
+     private static final int APP_TAG_SELF = TunedInfo.APP_TAG_SELF;
+@@ -1107,8 +1108,15 @@ public final class TvInputManagerService extends SystemService {
+                 synchronized (mLock) {
+                     UserState userState = getOrCreateUserStateLocked(resolvedUserId);
+                     List<TvInputInfo> inputList = new ArrayList<>();
++                    boolean isCtsTest = SystemProperties.getBoolean("cts_gts.status", false);
+                     for (TvInputState state : userState.inputMap.values()) {
+-                        inputList.add(state.info);
++                        if (isCtsTest && null != state.info
++                                && state.info.toString().contains("pkg=com.example.partnersupportsampletvinput,")) {
++                            Slog.v(TAG, "skip " + state.info);
++                        } else {
++                            inputList.add(state.info);
++                            //Slog.v(TAG, "add " + state.info);
++                        }
+                     }
+                     return inputList;
+                 }

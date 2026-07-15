@@ -1,0 +1,596 @@
+From 98ce5123e131d4641628eff434d7c193fcba5f21 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Sat, 11 Jul 2026 02:55:54 +0800
+Subject: [PATCH 27/27] feat: add Rockchip camera utility and miscellaneous
+ extensions
+
+Change-Id: I069fd4873bac2fdfbe1aa6ce344015b75ffbd628
+---
+ .../camera/SetActivitiesCameraReceiver.java   |  12 +-
+ src/com/android/camera/TextureViewHelper.java |  23 ++-
+ src/com/android/camera/Thumbnail.java         |  10 +-
+ .../camera/app/FilmstripBottomPanel.java      |   4 +
+ .../android/camera/app/FirstRunDialog.java    |  26 ++-
+ .../camera/app/LegacyLocationProvider.java    |   1 +
+ .../camera/app/OrientationManagerImpl.java    |   7 +-
+ .../camera/tinyplanet/TinyPlanetFragment.java |  11 +-
+ src/com/android/camera/util/ApiHelper.java    |   2 +-
+ src/com/android/camera/util/CameraUtil.java   | 184 +++++++++++++++++-
+ 10 files changed, 243 insertions(+), 37 deletions(-)
+
+diff --git a/src/com/android/camera/SetActivitiesCameraReceiver.java b/src/com/android/camera/SetActivitiesCameraReceiver.java
+index 347e82b9f..49581b952 100644
+--- a/src/com/android/camera/SetActivitiesCameraReceiver.java
++++ b/src/com/android/camera/SetActivitiesCameraReceiver.java
+@@ -38,22 +38,22 @@ public class SetActivitiesCameraReceiver extends BroadcastReceiver {
+     public void onReceive(Context context, Intent intent) {
+         // Disable camera-related activities if there is no camera.
+         int component_state = (CHECK_BACK_CAMERA_ONLY
+-            ? hasBackCamera(context) : hasCamera(context))
+-            ? PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+-            : PackageManager.COMPONENT_ENABLED_STATE_DISABLED;
++                ? hasBackCamera(context) : hasCamera(context))
++                ? PackageManager.COMPONENT_ENABLED_STATE_ENABLED
++                : PackageManager.COMPONENT_ENABLED_STATE_DISABLED;
+ 
+         Log.i(TAG, "component state is " + component_state);
+         for (int i = 0; i < ACTIVITIES.length; i++) {
+             setComponent(context, ACTIVITIES[i],
+-                component_state);
++                    component_state);
+         }
+     }
+ 
+     private boolean hasCamera(Context context) {
+         PackageManager pm = context.getPackageManager();
+         return pm.hasSystemFeature(PackageManager.FEATURE_CAMERA)
+-            || pm.hasSystemFeature(PackageManager.FEATURE_CAMERA_FRONT)
+-            || pm.hasSystemFeature(PackageManager.FEATURE_CAMERA_EXTERNAL);
++                || pm.hasSystemFeature(PackageManager.FEATURE_CAMERA_FRONT)
++                || pm.hasSystemFeature(PackageManager.FEATURE_CAMERA_EXTERNAL);
+     }
+ 
+     private boolean hasBackCamera(Context context) {
+diff --git a/src/com/android/camera/TextureViewHelper.java b/src/com/android/camera/TextureViewHelper.java
+index 42c41e102..6a8bc53a5 100644
+--- a/src/com/android/camera/TextureViewHelper.java
++++ b/src/com/android/camera/TextureViewHelper.java
+@@ -229,16 +229,18 @@ public class TextureViewHelper implements TextureView.SurfaceTextureListener,
+      */
+     private void updatePreviewArea(Matrix matrix) {
+         mPreviewArea.set(0, 0, mWidth, mHeight);
+-        matrix.mapRect(mPreviewArea);
++//        matrix.mapRect(mPreviewArea);
+         onPreviewAreaChanged(mPreviewArea);
+     }
+ 
+     public void setOnLayoutChangeListener(OnLayoutChangeListener listener) {
+         mOnLayoutChangeListener = listener;
++        mPreview.addOnLayoutChangeListener(this);
+     }
+ 
+     public void setSurfaceTextureListener(TextureView.SurfaceTextureListener listener) {
+         mSurfaceTextureListener = listener;
++        mPreview.setSurfaceTextureListener(this);
+     }
+ 
+     /**
+@@ -419,7 +421,17 @@ public class TextureViewHelper implements TextureView.SurfaceTextureListener,
+         int width = (int) textureArea.width() / downsample;
+         int height = (int) textureArea.height() / downsample;
+         Bitmap preview = mPreview.getBitmap(width, height);
+-        return Bitmap.createBitmap(preview, 0, 0, width, height, mPreview.getTransform(null), true);
++        try {
++            Bitmap b1 = Bitmap.createBitmap(preview, 0, 0, width, height, mPreview.getTransform(null), true);
++            if (b1 != preview) {
++                preview.recycle();
++                preview = b1;
++            }
++        } catch (OutOfMemoryError e) {
++            // We have no memory to rotate. Return the original bitmap.
++            System.gc();
++        }
++        return preview;//Bitmap.createBitmap(preview, 0, 0, width, height, mPreview.getTransform(null), true);
+     }
+ 
+     /**
+@@ -495,4 +507,11 @@ public class TextureViewHelper implements TextureView.SurfaceTextureListener,
+         }
+ 
+     }
++
++    public void pause() {
++        if (mPreview != null) {
++            mPreview.removeOnLayoutChangeListener(this);
++            mPreview.setSurfaceTextureListener(null);
++        }
++    }
+ }
+diff --git a/src/com/android/camera/Thumbnail.java b/src/com/android/camera/Thumbnail.java
+index f5db39294..638314d07 100644
+--- a/src/com/android/camera/Thumbnail.java
++++ b/src/com/android/camera/Thumbnail.java
+@@ -20,6 +20,8 @@ import android.graphics.Bitmap;
+ import android.media.MediaMetadataRetriever;
+ 
+ import java.io.FileDescriptor;
++
++import com.android.camera.debug.Log;
+ import java.io.IOException;
+ 
+ public class Thumbnail {
+@@ -33,6 +35,7 @@ public class Thumbnail {
+ 
+     private static Bitmap createVideoThumbnailBitmap(String filePath, FileDescriptor fd,
+             int targetWidth) {
++        Log.d(new Log.Tag("Thumbnail"), "MediaMetadataRetriever createVideoThumbnailBitmap");
+         Bitmap bitmap = null;
+         MediaMetadataRetriever retriever = new MediaMetadataRetriever();
+         try {
+@@ -62,8 +65,13 @@ public class Thumbnail {
+             float scale = (float) targetWidth / width;
+             int w = Math.round(scale * width);
+             int h = Math.round(scale * height);
+-            bitmap = Bitmap.createScaledBitmap(bitmap, w, h, true);
++            Bitmap b1 = Bitmap.createScaledBitmap(bitmap, w, h, true);
++            if (b1 != bitmap) {
++                bitmap.recycle();
++                bitmap = b1;
++            }
+         }
++        Log.d(new Log.Tag("Thumbnail"), "MediaMetadataRetriever createVideoThumbnailBitmap end");
+         return bitmap;
+     }
+ }
+diff --git a/src/com/android/camera/app/FilmstripBottomPanel.java b/src/com/android/camera/app/FilmstripBottomPanel.java
+index 018476c18..cdc239716 100644
+--- a/src/com/android/camera/app/FilmstripBottomPanel.java
++++ b/src/com/android/camera/app/FilmstripBottomPanel.java
+@@ -66,6 +66,10 @@ class FilmstripBottomPanel implements CameraAppUI.BottomPanel {
+         setupProgressUi();
+     }
+ 
++    public ViewGroup getLayout() {
++        return mLayout;
++    }
++
+     @Override
+     public void setListener(Listener listener) {
+         mListener = listener;
+diff --git a/src/com/android/camera/app/FirstRunDialog.java b/src/com/android/camera/app/FirstRunDialog.java
+index fa419fd44..e088ef495 100644
+--- a/src/com/android/camera/app/FirstRunDialog.java
++++ b/src/com/android/camera/app/FirstRunDialog.java
+@@ -44,9 +44,7 @@ public class FirstRunDialog {
+ 
+     public interface FirstRunDialogListener {
+         public void onFirstRunStateReady();
+-
+         public void onFirstRunDialogCancelled();
+-
+         public void onCameraAccessException();
+     }
+ 
+@@ -85,14 +83,15 @@ public class FirstRunDialog {
+ 
+     /**
+      * Constructs a first run dialog.
++     *
+      */
+     public FirstRunDialog(
+-            AppController appController,
+-            Context activityContext,
+-            ResolutionSetting resolutionSetting,
+-            SettingsManager settingManager,
+-            OneCameraManager hardwareManager,
+-            FirstRunDialogListener listener) {
++          AppController appController,
++          Context activityContext,
++          ResolutionSetting resolutionSetting,
++          SettingsManager settingManager,
++          OneCameraManager hardwareManager,
++          FirstRunDialogListener listener) {
+         mAppController = appController;
+         mContext = activityContext;
+         mResolutionSetting = resolutionSetting;
+@@ -216,15 +215,12 @@ public class FirstRunDialog {
+                 Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+             return;
+         }
+-
+-        Activity activity = (Activity) mContext;
+-        activity.requestPermissions(
+-                new String[]{Manifest.permission.ACCESS_COARSE_LOCATION,
+-                        Manifest.permission.ACCESS_FINE_LOCATION},
++            Activity activity = (Activity) mContext;
++            activity.requestPermissions(
++                new String[] {Manifest.permission.ACCESS_COARSE_LOCATION},
+                 PERMISSION_REQUEST_CODE);
+-        mSettingsManager.set(SettingsManager.SCOPE_GLOBAL,
++            mSettingsManager.set(SettingsManager.SCOPE_GLOBAL,
+                 Keys.KEY_HAS_SEEN_PERMISSIONS_DIALOGS, true);
+-
+     }
+ 
+     /**
+diff --git a/src/com/android/camera/app/LegacyLocationProvider.java b/src/com/android/camera/app/LegacyLocationProvider.java
+index 3ba2be352..06a12804d 100644
+--- a/src/com/android/camera/app/LegacyLocationProvider.java
++++ b/src/com/android/camera/app/LegacyLocationProvider.java
+@@ -77,6 +77,7 @@ public class LegacyLocationProvider implements LocationProvider {
+         Log.d(TAG, "disconnect");
+         // The onPause() call to stopReceivingLocationUpdates is sufficient to unregister the
+         // Network/GPS listener.
++        recordLocation(false);
+     }
+ 
+     private void startReceivingLocationUpdates() {
+diff --git a/src/com/android/camera/app/OrientationManagerImpl.java b/src/com/android/camera/app/OrientationManagerImpl.java
+index c45873611..3260cf793 100644
+--- a/src/com/android/camera/app/OrientationManagerImpl.java
++++ b/src/com/android/camera/app/OrientationManagerImpl.java
+@@ -93,6 +93,7 @@ public class OrientationManagerImpl implements OrientationManager {
+ 
+     public void pause() {
+         mOrientationListener.disable();
++        mLastDeviceOrientation = DeviceOrientation.CLOCKWISE_0;
+     }
+ 
+     @Override
+@@ -148,7 +149,7 @@ public class OrientationManagerImpl implements OrientationManager {
+ 
+     @Override
+     public void lockOrientation() {
+-        if (mOrientationLocked || mRotationLockedSetting) {
++        if (mOrientationLocked || mRotationLockedSetting || !CameraUtil.AUTO_ROTATE_SENSOR) {
+             return;
+         }
+         mOrientationLocked = true;
+@@ -161,7 +162,7 @@ public class OrientationManagerImpl implements OrientationManager {
+ 
+     @Override
+     public void unlockOrientation() {
+-        if (!mOrientationLocked || mRotationLockedSetting) {
++        if (!mOrientationLocked || mRotationLockedSetting || !CameraUtil.AUTO_ROTATE_SENSOR) {
+             return;
+         }
+         mOrientationLocked = false;
+@@ -209,6 +210,8 @@ public class OrientationManagerImpl implements OrientationManager {
+                 return;
+             }
+ 
++            if (!CameraUtil.AUTO_ROTATE_SENSOR)
++                CameraUtil.mRawOrientation = orientation;
+             final DeviceOrientation roundedDeviceOrientation =
+                     roundOrientation(mLastDeviceOrientation, orientation);
+             if (roundedDeviceOrientation == mLastDeviceOrientation) {
+diff --git a/src/com/android/camera/tinyplanet/TinyPlanetFragment.java b/src/com/android/camera/tinyplanet/TinyPlanetFragment.java
+index 7ce574cbc..931aee357 100644
+--- a/src/com/android/camera/tinyplanet/TinyPlanetFragment.java
++++ b/src/com/android/camera/tinyplanet/TinyPlanetFragment.java
+@@ -271,7 +271,11 @@ public class TinyPlanetFragment extends DialogFragment implements PreviewSizeLis
+ 
+         if (xmp != null) {
+             int size = previewSize ? getDisplaySize() : sourceBitmap.getWidth();
+-            sourceBitmap = createPaddedBitmap(sourceBitmap, xmp, size);
++            Bitmap b1 = createPaddedBitmap(sourceBitmap, xmp, size);
++            if (b1 != sourceBitmap) {
++                sourceBitmap.recycle();
++                sourceBitmap = b1;
++            }
+         }
+         return sourceBitmap;
+     }
+@@ -360,6 +364,11 @@ public class TinyPlanetFragment extends DialogFragment implements PreviewSizeLis
+ 
+         ByteArrayOutputStream jpeg = new ByteArrayOutputStream();
+         resultBitmap.compress(CompressFormat.JPEG, 100, jpeg);
++
++        // Free the resultBitmap memory as we don't need it and we need memory
++        // for the JPEG bytes.
++        resultBitmap.recycle();
++        resultBitmap = null;
+         return new TinyPlanetImage(addExif(jpeg.toByteArray()), outputSize);
+     }
+ 
+diff --git a/src/com/android/camera/util/ApiHelper.java b/src/com/android/camera/util/ApiHelper.java
+index d04e52c66..adb11a163 100644
+--- a/src/com/android/camera/util/ApiHelper.java
++++ b/src/com/android/camera/util/ApiHelper.java
+@@ -58,7 +58,7 @@ public class ApiHelper {
+ 
+     public static final boolean HAS_HIDEYBARS = isKitKatOrHigher();
+ 
+-    // Don't use renderscript. See b/18435492.
++    // Don't use renderscript for x86 K, L is OK. See b/18435492
+     public static final boolean HAS_RENDERSCRIPT = false;
+ 
+     public static final boolean IS_NEXUS_4 = "mako".equalsIgnoreCase(Build.DEVICE);
+diff --git a/src/com/android/camera/util/CameraUtil.java b/src/com/android/camera/util/CameraUtil.java
+index b6e11b88a..6bba99dc6 100644
+--- a/src/com/android/camera/util/CameraUtil.java
++++ b/src/com/android/camera/util/CameraUtil.java
+@@ -25,6 +25,8 @@ import android.content.ContentResolver;
+ import android.content.Context;
+ import android.content.DialogInterface;
+ import android.content.Intent;
++import android.content.pm.ActivityInfo;
++import android.content.res.Configuration;
+ import android.content.res.TypedArray;
+ import android.graphics.Bitmap;
+ import android.graphics.BitmapFactory;
+@@ -33,6 +35,7 @@ import android.graphics.Point;
+ import android.graphics.PointF;
+ import android.graphics.Rect;
+ import android.graphics.RectF;
++import android.hardware.Camera.Parameters;
+ import android.hardware.camera2.CameraCharacteristics;
+ import android.hardware.camera2.CameraMetadata;
+ import android.location.Location;
+@@ -50,8 +53,11 @@ import android.widget.Toast;
+ import com.android.camera.CameraActivity;
+ import com.android.camera.CameraDisabledException;
+ import com.android.camera.FatalErrorHandler;
++import com.android.camera.app.OrientationManager;
++import com.android.camera.debug.DebugPropertyHelper;
+ import com.android.camera.debug.Log;
+ import com.android.camera2.R;
++import com.android.ex.camera2.portability.CameraAgent;
+ import com.android.ex.camera2.portability.CameraCapabilities;
+ import com.android.ex.camera2.portability.CameraSettings;
+ 
+@@ -177,6 +183,7 @@ public class CameraUtil {
+                 }
+             } catch (OutOfMemoryError ex) {
+                 // We have no memory to rotate. Return the original bitmap.
++                System.gc();
+             }
+         }
+         return b;
+@@ -282,6 +289,14 @@ public class CameraUtil {
+         }
+     }
+ 
++    public static AlertDialog mCameraErrorDialog;
++    public static void dismissErrorDialog() {
++        if (mCameraErrorDialog != null && mCameraErrorDialog.isShowing()) {
++            mCameraErrorDialog.dismiss();
++            mCameraErrorDialog = null;
++        }
++    }
++
+     /**
+      * Shows custom error dialog. Designed specifically
+      * for the scenario where the camera cannot be attached.
+@@ -317,14 +332,14 @@ public class CameraUtil {
+         // before attempting to attach a dialog to the window manager.
+         if (!activity.isFinishing()) {
+             Log.e(TAG, "Show fatal error dialog");
+-            new AlertDialog.Builder(activity)
++            mCameraErrorDialog = new AlertDialog.Builder(activity)
+                     .setCancelable(false)
+                     .setTitle(R.string.camera_error_title)
+                     .setMessage(dialogMsgId)
+                     .setNegativeButton(R.string.dialog_report, reportButtonListener)
+                     .setPositiveButton(R.string.dialog_dismiss, buttonListener)
+-                    .setIcon(out.resourceId)
+-                    .show();
++                    .setIcon(out.resourceId).create();
++            mCameraErrorDialog.show();
+         }
+     }
+ 
+@@ -467,6 +482,21 @@ public class CameraUtil {
+         return 0;
+     }
+ 
++    public static int roundOrientation(int orientation, int orientationHistory) {
++        boolean changeOrientation = false;
++        if (orientationHistory == OrientationEventListener.ORIENTATION_UNKNOWN) {
++            changeOrientation = true;
++        } else {
++            int dist = Math.abs(orientation - orientationHistory);
++            dist = Math.min(dist, 360 - dist);
++            changeOrientation = (dist >= 45 + ORIENTATION_HYSTERESIS);
++        }
++        if (changeOrientation) {
++            return ((orientation + 45) / 90 * 90) % 360;
++        }
++        return orientationHistory;
++    }
++
+     private static Size getDefaultDisplaySize(Activity context) {
+         WindowManager windowManager = AndroidServices.instance().provideWindowManager(context);
+         Point res = new Point();
+@@ -504,7 +534,7 @@ public class CameraUtil {
+         // Use a very small tolerance because we want an exact match. HTC 4:3
+         // ratios is over .01 from true 4:3, so this value must be above .01,
+         // see b/18241645.
+-        final double aspectRatioTolerance = 0.02;
++        final double aspectRatioTolerance = 0.03;
+ 
+         return getOptimalPreviewSizeIndex(sizes, targetRatio, aspectRatioTolerance, context);
+     }
+@@ -555,7 +585,7 @@ public class CameraUtil {
+             }
+ 
+             double heightDiff = Math.abs(size.getHeight() - targetHeight);
+-            if (heightDiff < minDiff) {
++            if (heightDiff <= minDiff) {
+                 optimalSizeIndex = i;
+                 minDiff = heightDiff;
+             } else if (heightDiff == minDiff) {
+@@ -751,9 +781,9 @@ public class CameraUtil {
+     }
+ 
+     public static void broadcastNewPicture(Context context, Uri uri) {
+-        context.sendBroadcast(new Intent(ACTION_NEW_PICTURE, uri));
++        context.sendBroadcast(new Intent(ACTION_NEW_PICTURE, uri).setFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION));
+         // Keep compatibility
+-        context.sendBroadcast(new Intent("com.android.camera.NEW_PICTURE", uri));
++        context.sendBroadcast(new Intent("com.android.camera.NEW_PICTURE", uri).setFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION));
+     }
+ 
+     public static void fadeIn(View view, float startAlpha, float endAlpha, long duration) {
+@@ -1096,6 +1126,29 @@ public class CameraUtil {
+         }
+     }
+ 
++    public static void showOnMap(Activity activity, com.android.camera.data.Location location) {
++        try {
++            // We don't use "geo:latitude,longitude" because it only centers
++            // the MapView to the specified location, but we need a marker
++            // for further operations (routing to/from).
++            // The q=(lat, lng) syntax is suggested by geo-team.
++            String uri = String.format(Locale.ENGLISH, "http://maps.google.com/maps?f=q&q=(%f,%f)",
++                    location.getLatitude(), location.getLongitude());
++            ComponentName compName = new ComponentName(MAPS_PACKAGE_NAME,
++                    MAPS_CLASS_NAME);
++            Intent mapsIntent = new Intent(Intent.ACTION_VIEW,
++                    Uri.parse(uri)).setComponent(compName);
++            mapsIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_DOCUMENT);
++            activity.startActivity(mapsIntent);
++        } catch (ActivityNotFoundException e) {
++            // Use the "geo intent" if no GMM is installed
++            Log.e(TAG, "GMM activity not found!", e);
++            String url = String.format(Locale.ENGLISH, "geo:%f,%f", location.getLatitude(), location.getLongitude());
++            Intent mapsIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
++            activity.startActivity(mapsIntent);
++        }
++    }
++
+     /**
+      * Dumps the stack trace.
+      *
+@@ -1292,8 +1345,8 @@ public class CameraUtil {
+         if (deviceOrientationDegrees == OrientationEventListener.ORIENTATION_UNKNOWN) {
+             return 0;
+         }
+-        boolean isFrontCamera = characteristics.get(CameraCharacteristics.LENS_FACING) ==
+-                CameraMetadata.LENS_FACING_FRONT;
++        boolean isFrontCamera = characteristics.get(CameraCharacteristics.LENS_FACING) !=
++                CameraMetadata.LENS_FACING_BACK;
+         int sensorOrientation = characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION);
+         return getImageRotation(sensorOrientation, deviceOrientationDegrees, isFrontCamera);
+     }
+@@ -1318,4 +1371,117 @@ public class CameraUtil {
+         }
+         return (sensorOrientation + deviceOrientation) % 360;
+     }
++
++    public static Parameters getParameters(CameraAgent.CameraProxy camera) {
++        if (camera != null) {
++            Parameters parameters = null;
++            while (parameters == null) {
++                try {
++                    parameters = camera.getParameters();
++                    if (parameters != null) return parameters;
++                } catch (Exception e) {
++                    Log.e(TAG, "getParameters error:" + e);
++                }
++            }
++        }
++        return null;
++    }
++
++    public final static boolean AUTO_ROTATE_SENSOR = DebugPropertyHelper.isPreviewAutoRotate();
++    public static int mDisplayRotation;
++    public static int mOrientation;
++    public static int mRawOrientation;
++    public static int mLastUIRotatedRawOrientation;
++    public static int mLastOrientation = OrientationEventListener.ORIENTATION_UNKNOWN;
++    public static int mUIRotated;
++    public static int mScreenOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT;
++    public static boolean mIsPortrait = true;
++    public static void calculateCurrentScreenOrientation(int oldOrientation,
++            int newOrientation, Activity activity) {
++        Log.d(TAG, "current mDisplayRotation = " + mDisplayRotation
++                + ",mOrientation = " + mOrientation
++                + ",mUIRotated = " + mUIRotated
++                + ",mScreenOrientation = " + mScreenOrientation
++                + ",mIsPortrait = " + mIsPortrait);
++        int displayRotation = getDisplayRotation(activity);
++        // Display rotation >= 180 means we need to use the REVERSE landscape/portrait
++        boolean standard = displayRotation < 180;
++        int screenOrientation;
++        if (activity.getResources().getConfiguration().orientation
++                == Configuration.ORIENTATION_LANDSCAPE) {
++            screenOrientation = standard
++                    ? ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
++                            : ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE;
++        } else {
++            if (displayRotation == 90 || displayRotation == 270) {
++                // If displayRotation = 90 or 270 then we are on a landscape
++                // device. On landscape devices, portrait is a 90 degree
++                // clockwise rotation from landscape, so we need
++                // to flip which portrait we pick as display rotation is counter clockwise
++                standard = !standard;
++            }
++            screenOrientation = standard
++                    ? ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
++                            : ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT;
++        }
++
++        int rotated = ((newOrientation - displayRotation) + 360) % 360;
++        if (rotated == 180) {
++            if (screenOrientation == ActivityInfo.SCREEN_ORIENTATION_PORTRAIT)
++                screenOrientation = ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT;
++            else if (screenOrientation == ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT)
++                screenOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT;
++            else if (screenOrientation == ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE)
++                screenOrientation = ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE;
++            else if (screenOrientation == ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE)
++                screenOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE;
++        }
++        if (rotated == 90) {
++            if (screenOrientation == ActivityInfo.SCREEN_ORIENTATION_PORTRAIT)
++                screenOrientation = ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE;
++            else if (screenOrientation == ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT)
++                screenOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE;
++            else if (screenOrientation == ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE)
++                screenOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT;
++            else if (screenOrientation == ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE)
++                screenOrientation = ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT;
++        }
++        if (rotated == 270) {
++            if (screenOrientation == ActivityInfo.SCREEN_ORIENTATION_PORTRAIT)
++                screenOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE;
++            else if (screenOrientation == ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT)
++                screenOrientation = ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE;
++            else if (screenOrientation == ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE)
++                screenOrientation = ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT;
++            else if (screenOrientation == ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE)
++                screenOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT;
++        }
++        mDisplayRotation = displayRotation;
++        mOrientation = newOrientation;
++        if (newOrientation == 0 && oldOrientation == 270)
++            newOrientation = 360;
++        else if (newOrientation == 270 && oldOrientation == 0)
++            oldOrientation = 360;
++        mUIRotated += (newOrientation - oldOrientation);
++        mScreenOrientation = screenOrientation;
++        mIsPortrait = (screenOrientation == ActivityInfo.SCREEN_ORIENTATION_PORTRAIT ||
++                screenOrientation == ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT) ? true : false;
++        Log.d(TAG, "calculate mDisplayRotation = " + mDisplayRotation
++                + ",mOrientation = " + mOrientation
++                + ",mUIRotated = " + mUIRotated
++                + ",mScreenOrientation = " + mScreenOrientation
++                + ",mIsPortrait = " + mIsPortrait);
++    }
++
++    public static void cleanOrientationParameters() {
++        mDisplayRotation = 0;
++        mOrientation = 0;
++        mRawOrientation = 0;
++        mLastUIRotatedRawOrientation = 0;
++        mLastOrientation = OrientationEventListener.ORIENTATION_UNKNOWN;
++        mUIRotated = 0;
++        mScreenOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT;
++        mIsPortrait = true;
++    }
++
+ }
+-- 
+2.53.0
+

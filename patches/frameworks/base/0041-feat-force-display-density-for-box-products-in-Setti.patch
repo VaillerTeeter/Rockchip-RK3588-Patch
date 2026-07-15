@@ -1,0 +1,21 @@
+From 3626fcd9179321c2e8137e349b4d6bdc7c715662 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 17:28:23 +0800
+Subject: [PATCH] feat: force display density for box products in
+ SettingsProvider
+
+Change-Id: I1a210e21ac26e02b4fe79da7302fd79b6fe1a235
+
+diff --git a/packages/SettingsProvider/src/com/android/providers/settings/DatabaseHelper.java b/packages/SettingsProvider/src/com/android/providers/settings/DatabaseHelper.java
+index b851232ace82..f29ec89a76b1 100644
+--- a/packages/SettingsProvider/src/com/android/providers/settings/DatabaseHelper.java
++++ b/packages/SettingsProvider/src/com/android/providers/settings/DatabaseHelper.java
+@@ -2320,6 +2320,8 @@ class DatabaseHelper extends SQLiteOpenHelper {
+             // persistent system property instead.
+             //loadSetting(stmt, Settings.Secure.ADB_ENABLED, 0);
+ 
++            if ("box".equals(SystemProperties.get("ro.target.product")))
++                 loadSetting(stmt, Settings.Secure.DISPLAY_DENSITY_FORCED,SystemProperties.get("ro.sf.lcd_density"));
+             // Allow mock locations default, based on build
+             loadSetting(stmt, Settings.Secure.ALLOW_MOCK_LOCATION,
+                     "1".equals(SystemProperties.get("ro.allow.mock.location")) ? 1 : 0);

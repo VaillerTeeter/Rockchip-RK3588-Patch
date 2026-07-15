@@ -1,0 +1,205 @@
+From 2adde40ca58c50b26c81a8b108e6d3013fb7b325 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 17:22:55 +0800
+Subject: [PATCH] feat: add injectKeyEvent/injectPointerEvent, skip
+ FallbackHome, custom bootanim exit for box
+
+Change-Id: I7ed726c0241a97f37e4a332af678cc6e049b174f
+
+diff --git a/services/core/java/com/android/server/wm/ActivityRecord.java b/services/core/java/com/android/server/wm/ActivityRecord.java
+index d872ada1fd0c..2366b262c45e 100644
+--- a/services/core/java/com/android/server/wm/ActivityRecord.java
++++ b/services/core/java/com/android/server/wm/ActivityRecord.java
+@@ -340,6 +340,10 @@ import android.window.SplashScreenView.SplashScreenViewParcelable;
+ import android.window.TaskSnapshot;
+ import android.window.TransitionInfo.AnimationOptions;
+ import android.window.WindowContainerToken;
++import android.os.SystemProperties;
++import android.os.Parcel;
++import android.os.SystemService;
++import android.os.ServiceManager;
+ 
+ import com.android.internal.R;
+ import com.android.internal.annotations.GuardedBy;
+@@ -1612,7 +1616,7 @@ final class ActivityRecord extends WindowToken implements WindowManagerService.A
+                 newParent.setResumedActivity(this, "onParentChanged");
+                 mImeInsetsFrozenUntilStartInput = false;
+             }
+-            mLetterboxUiController.onActivityParentChanged(newParent);
++            mLetterboxUiController.updateInheritedLetterbox();
+         }
+ 
+         if (rootTask != null && rootTask.topRunningActivity() == this) {
+@@ -6667,8 +6671,44 @@ final class ActivityRecord extends WindowToken implements WindowManagerService.A
+         }
+     }
+ 
++    private void stopBootanim() {
++        boolean wallpaperEnabled = mAtmService.mContext.getResources().getBoolean(
++            com.android.internal.R.bool.config_enableWallpaperService);
++        if(wallpaperEnabled){
++            Log.d(TAG,"----Launcher drawn done,not keyguradk,has wallpaper,ummmmmm----");
++            try {
++                    Thread.sleep(1000);
++            } catch (Exception e) {
++            }
++        }
++        Log.d(TAG,"----launcher drawn done,exit bootanim----");
++        SystemProperties.set("service.bootanim.exit", "1");
++        //SystemService.stop("bootanim");
++        try {
++            IBinder surfaceFlinger = ServiceManager.getService("SurfaceFlinger");
++            if (surfaceFlinger != null) {
++                Slog.i(TAG_WM, "******* TELLING SURFACE FLINGER WE ARE BOOTED!");
++                Parcel data = Parcel.obtain();
++                data.writeInterfaceToken("android.ui.ISurfaceComposer");
++                surfaceFlinger.transact(IBinder.FIRST_CALL_TRANSACTION, // BOOT_FINISHED
++                    data, null, 0);
++                data.recycle();
++            }
++        } catch (RemoteException ex) {
++            Slog.e(TAG_WM, "Boot completed: SurfaceFlinger is dead!");
++        }
++    }
++
+     /** Called when the windows associated app window container are drawn. */
+     private void onWindowsDrawn(long timestampNs) {
++        //Launcher is drawn completed,box can exit bootanim
++        if ("box".equals(SystemProperties.get("ro.target.product"))){
++            if(shortComponentName!=null && !shortComponentName.contains(".FallbackHome")
++                && !"1".equals(SystemProperties.get("service.bootanim.exit"))){
++                    stopBootanim();
++            }
++        }
++
+         final TransitionInfoSnapshot info = mTaskSupervisor
+                 .getActivityMetricsLogger().notifyWindowsDrawn(this, timestampNs);
+         final boolean validInfo = info != null;
+@@ -8417,6 +8457,16 @@ final class ActivityRecord extends WindowToken implements WindowManagerService.A
+         return inTransitionSelfOrParent();
+     }
+ 
++    boolean isDisplaySleepingAndSwapping() {
++        for (int i = mDisplayContent.mAllSleepTokens.size() - 1; i >= 0; i--) {
++            RootWindowContainer.SleepToken sleepToken = mDisplayContent.mAllSleepTokens.get(i);
++            if (sleepToken.isDisplaySwapping()) {
++                return true;
++            }
++        }
++        return false;
++    }
++
+     /**
+      * Whether this activity is letterboxed for fixed orientation. If letterboxed due to fixed
+      * orientation then aspect ratio restrictions are also already respected.
+diff --git a/services/core/java/com/android/server/wm/WindowManagerService.java b/services/core/java/com/android/server/wm/WindowManagerService.java
+index 706989069e4b..6a75d8a8368a 100644
+--- a/services/core/java/com/android/server/wm/WindowManagerService.java
++++ b/services/core/java/com/android/server/wm/WindowManagerService.java
+@@ -368,6 +368,16 @@ public class WindowManagerService extends IWindowManager.Stub
+      */
+     static final int MAX_ANIMATION_DURATION = 10 * 1000;
+ 
++    /** The time for mouse input injection
++     *
++     */
++    static final int INJECTION_TIMEOUT_MILLIS = 30 * 1000;
++
++    /** Amount of time (in milliseconds) to animate the fade-in-out transition for
++     * compatible windows.
++     */
++    static final int DEFAULT_FADE_IN_OUT_DURATION = 400;
++
+     /** Amount of time (in milliseconds) to delay before declaring a window freeze timeout. */
+     static final int WINDOW_FREEZE_TIMEOUT_DURATION = 2000;
+ 
+@@ -1885,7 +1895,7 @@ public class WindowManagerService extends IWindowManager.Stub
+ 
+             boolean needToSendNewConfiguration =
+                     win.isVisibleRequestedOrAdding() && displayContent.updateOrientation();
+-            if (win.providesDisplayDecorInsets()) {
++            if (win.providesNonDecorInsets()) {
+                 needToSendNewConfiguration |= displayPolicy.updateDecorInsetsInfo();
+             }
+             if (needToSendNewConfiguration) {
+@@ -2358,7 +2368,7 @@ public class WindowManagerService extends IWindowManager.Stub
+                         & WindowManager.LayoutParams.SYSTEM_UI_VISIBILITY_CHANGED) != 0) {
+                     win.mLayoutNeeded = true;
+                 }
+-                if (layoutChanged && win.providesDisplayDecorInsets()) {
++                if (layoutChanged && win.providesNonDecorInsets()) {
+                     configChanged = displayPolicy.updateDecorInsetsInfo();
+                 }
+                 if (win.mActivityRecord != null && ((flagChanges & FLAG_SHOW_WHEN_LOCKED) != 0
+@@ -3771,6 +3781,8 @@ public class WindowManagerService extends IWindowManager.Stub
+                 }
+             }
+ 
++        //box:skip FallbackHome to fix 2-3s black screen before launcher.
++        if (!"box".equals(SystemProperties.get("ro.target.product"))) {
+             if (!mBootAnimationStopped) {
+                 Trace.asyncTraceBegin(TRACE_TAG_WINDOW_MANAGER, "Stop bootanim", 0);
+                 // stop boot animation
+@@ -3798,6 +3810,7 @@ public class WindowManagerService extends IWindowManager.Stub
+             } catch (RemoteException ex) {
+                 ProtoLog.e(WM_ERROR, "Boot completed: SurfaceFlinger is dead!");
+             }
++        }
+ 
+             EventLogTags.writeWmBootAnimationDone(SystemClock.uptimeMillis());
+             Trace.asyncTraceEnd(TRACE_TAG_WINDOW_MANAGER, "Stop bootanim", 0);
+@@ -5100,6 +5113,54 @@ public class WindowManagerService extends IWindowManager.Stub
+     final InputManagerCallback mInputManagerCallback = new InputManagerCallback(this);
+     private boolean mEventDispatchingEnabled;
+ 
++    public void dispatchMouse(float x, float y, int w, int h) {
++            mInputManager.dispatchMouse(x,y,w,h);
++    }
++
++    public void dispatchMouseByCd(float x, float y) {
++            mInputManager.dispatchMousebyCd(x,y);
++    }
++
++    public boolean injectKeyEvent(KeyEvent ev, boolean sync) {
++            int action = ev.getAction();
++            int code = ev.getKeyCode();
++            int repeatCount = ev.getRepeatCount();
++            int metaState = ev.getMetaState();
++            int deviceId = ev.getDeviceId();
++            int scancode = ev.getScanCode();
++            int source = ev.getSource();
++            int flags = ev.getFlags();
++            long downTime = ev.getDownTime();
++            long eventTime = ev.getEventTime();
++
++            if (source == InputDevice.SOURCE_UNKNOWN) {
++                source = InputDevice.SOURCE_KEYBOARD;
++            }
++
++            if (eventTime == 0) {
++                eventTime = SystemClock.uptimeMillis();
++            }
++
++            if (downTime == 0) {
++                downTime = eventTime;
++            }
++
++            KeyEvent newEvent = new KeyEvent(downTime, eventTime, action, code, repeatCount, metaState,
++                       deviceId, scancode, flags | KeyEvent.FLAG_FROM_SYSTEM, source);
++
++            final boolean result = mInputManager.injectInputEvent(newEvent,sync ? 2:1);
++            return result;
++    }
++
++    public boolean injectPointerEvent(MotionEvent ev, boolean sync) {
++            MotionEvent newEvent = MotionEvent.obtain(ev);
++            if ((newEvent.getSource() & InputDevice.SOURCE_CLASS_POINTER) == 0) {
++                    newEvent.setSource(InputDevice.SOURCE_TOUCHSCREEN);
++            }
++            final boolean result = mInputManager.injectInputEvent(newEvent,sync ? 2:1);
++            return result;
++    }
++
+     @Override
+     public void setEventDispatching(boolean enabled) {
+         if (!checkCallingPermission(MANAGE_APP_TOKENS, "setEventDispatching()")) {

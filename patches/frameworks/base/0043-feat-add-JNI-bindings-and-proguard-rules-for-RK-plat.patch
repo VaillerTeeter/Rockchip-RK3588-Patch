@@ -1,0 +1,176 @@
+From b01047b2cd757fa9991822be8d58970f768e10f2 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 17:29:06 +0800
+Subject: [PATCH] feat: add JNI bindings and proguard rules for RK platform
+ services
+
+Change-Id: Ic4193439bf0fb2469323f25d35476108db13e7e3
+
+diff --git a/services/core/java/com/android/server/PinnerService.java b/services/core/java/com/android/server/PinnerService.java
+index c5eb25b9981e..5431d2f80e97 100644
+--- a/services/core/java/com/android/server/PinnerService.java
++++ b/services/core/java/com/android/server/PinnerService.java
+@@ -43,6 +43,7 @@ import android.os.Build;
+ import android.os.Handler;
+ import android.os.Looper;
+ import android.os.Message;
++import android.os.Process;
+ import android.os.RemoteException;
+ import android.os.ResultReceiver;
+ import android.os.ShellCallback;
+@@ -297,6 +298,33 @@ public final class PinnerService extends SystemService {
+      * Handler for on start pinning message
+      */
+     private void handlePinOnStart() {
++        // Pin files or not
++        try {
++            ActivityManager.MemoryInfo memInfo = new ActivityManager.MemoryInfo();
++            mAm.getMemoryInfo(memInfo);
++            int memory_to_pin = SystemProperties.getInt("persist.pinner_service.mem", 2048);
++            long totalMemory = memInfo.totalMem;
++            Slog.i(TAG, "Current memory is " + totalMemory);
++            Slog.i(TAG, "persist.pinner_service.mem is " + memory_to_pin + "MB");
++            if (totalMemory < memory_to_pin * 1024L * 1024) {
++                Slog.w(TAG, "Just pin core file due memory is low: persist.pinner_service.mem=" + memory_to_pin);
++                String corePin = Process.is64Bit() ?
++                    "/system/framework/arm64/boot-framework.vdex":
++                    "/system/framework/arm/boot-framework.vdex";
++                PinnedFile pf = pinFile(corePin,
++                                        Integer.MAX_VALUE,
++                                        /*attemptPinIntrospection=*/false);
++                if (pf == null) {
++                    Slog.e(TAG, "Failed to pin file = " + corePin);
++                }
++                synchronized (this) {
++                    mPinnedFiles.add(pf);
++                }
++                return;
++            }
++        } catch (Exception e) {
++            Slog.e(TAG, "Failed to get meminfo from device.");
++        }
+         // Files to pin come from the overlay and can be specified per-device config
+         String[] filesToPin = mContext.getResources().getStringArray(
+             com.android.internal.R.array.config_defaultPinnerServiceFiles);
+diff --git a/services/core/java/com/android/server/StorageManagerService.java b/services/core/java/com/android/server/StorageManagerService.java
+index 8a429331f766..e25a712322a4 100644
+--- a/services/core/java/com/android/server/StorageManagerService.java
++++ b/services/core/java/com/android/server/StorageManagerService.java
+@@ -1620,6 +1620,11 @@ class StorageManagerService extends IStorageManager.Stub
+                 vol.mountFlags |= VolumeInfo.MOUNT_FLAG_VISIBLE_FOR_WRITE;
+             }
+ 
++            if ("false".equals(SystemProperties.get("cts_gts.status", "false")) &&
++                "true".equals(SystemProperties.get("ro.vendor.udisk.visible"))) {
++                Log.d(TAG,"-----for all public volume is visible-----");
++                vol.mountFlags |= VolumeInfo.MOUNT_FLAG_VISIBLE_FOR_WRITE;
++            }
+             vol.mountUserId = mCurrentUserId;
+             mHandler.obtainMessage(H_VOLUME_MOUNT, vol).sendToTarget();
+ 
+diff --git a/services/core/java/com/android/server/am/ActivityManagerService.java b/services/core/java/com/android/server/am/ActivityManagerService.java
+index ba0aaa1b7d8c..9cfe4064a5b4 100644
+--- a/services/core/java/com/android/server/am/ActivityManagerService.java
++++ b/services/core/java/com/android/server/am/ActivityManagerService.java
+@@ -13548,6 +13548,7 @@ public class ActivityManagerService extends IActivityManager.Stub
+                 || Intent.ACTION_SHOW_KEYBOARD_SHORTCUTS.equals(action)
+                 || Intent.ACTION_MASTER_CLEAR.equals(action)
+                 || Intent.ACTION_FACTORY_RESET.equals(action)
++                || Intent.ACTION_HDMIIN_RK_PRIV_CMD.equals(action)
+                 || AppWidgetManager.ACTION_APPWIDGET_CONFIGURE.equals(action)
+                 || AppWidgetManager.ACTION_APPWIDGET_UPDATE.equals(action)
+                 || TelephonyManager.ACTION_REQUEST_OMADM_CONFIGURATION_UPDATE.equals(action)
+diff --git a/services/core/java/com/android/server/uri/UriGrantsManagerService.java b/services/core/java/com/android/server/uri/UriGrantsManagerService.java
+index 6aa06e8ee068..79ffa18d3606 100644
+--- a/services/core/java/com/android/server/uri/UriGrantsManagerService.java
++++ b/services/core/java/com/android/server/uri/UriGrantsManagerService.java
+@@ -1099,6 +1099,8 @@ public class UriGrantsManagerService extends IUriGrantsManager.Stub implements
+         final int callingAppId = UserHandle.getAppId(callingUid);
+         if ((callingAppId == SYSTEM_UID) || (callingAppId == ROOT_UID)) {
+             if ("com.android.settings.files".equals(grantUri.uri.getAuthority())
++                    || "com.android.rk.fileprovider".equals(grantUri.uri.getAuthority())
++                    || "com.rockchips.mediacenter.fileprovider".equals(grantUri.uri.getAuthority())
+                     || "com.android.settings.module_licenses".equals(grantUri.uri.getAuthority())) {
+                 // Exempted authority for
+                 // 1. cropping user photos and sharing a generated license html
+diff --git a/services/core/jni/Android.bp b/services/core/jni/Android.bp
+index 0d49f5fffb4b..4073a9c6cb3d 100644
+--- a/services/core/jni/Android.bp
++++ b/services/core/jni/Android.bp
+@@ -68,6 +68,10 @@ cc_library_static {
+         "com_android_server_pm_PackageManagerShellCommandDataLoader.cpp",
+         "com_android_server_sensor_SensorService.cpp",
+         "com_android_server_wm_TaskFpsCallbackController.cpp",
++        "com_android_server_rkdisplay_RkDisplayModes.cpp",
++        "com_android_server_audio_RkAudioSetting.cpp",
++        "rkbox/rklog.cpp",
++        "com_android_server_RKBoxService.cpp",
+         "onload.cpp",
+         ":lib_cachedAppOptimizer_native",
+         ":lib_gameManagerService_native",
+@@ -80,10 +84,13 @@ cc_library_static {
+         "frameworks/native/libs/ui/include",
+         "system/gatekeeper/include",
+         "system/memory/libmeminfo/include",
++        "hardware/rockchip/libhardware_rockchip/include/",
++        "vendor/rockchip/hardware/interfaces",
+     ],
+ 
+     header_libs: [
+         "bionic_libc_platform_headers",
++        "libhardware_rockchip_headers",
+     ],
+ }
+ 
+@@ -185,7 +192,10 @@ cc_defaults {
+         "android.system.suspend.control-V1-cpp",
+         "android.system.suspend.control.internal-cpp",
+         "android.system.suspend-V1-ndk",
++        "rockchip.hardware.outputmanager@1.0",
+         "service.incremental",
++        "rockchip.hardware.tv.input@1.0",
++        "librksoundsetting",
+     ],
+ 
+     static_libs: [
+diff --git a/services/core/jni/onload.cpp b/services/core/jni/onload.cpp
+index 0cd949457cd1..6f88c2a26ee1 100644
+--- a/services/core/jni/onload.cpp
++++ b/services/core/jni/onload.cpp
+@@ -64,6 +64,11 @@ int register_android_server_sensor_SensorService(JavaVM* vm, JNIEnv* env);
+ int register_android_server_companion_virtual_InputController(JNIEnv* env);
+ int register_android_server_app_GameManagerService(JNIEnv* env);
+ int register_com_android_server_wm_TaskFpsCallbackController(JNIEnv* env);
++int register_com_android_server_rkdisplay_RkDisplayModes(JNIEnv* env);
++int register_com_android_server_audio_RkAudioSetting(JNIEnv* env);
++ //-----rk-code-----
++int register_com_android_server_RKBoxManagementService(JNIEnv* env);
++ //-----------------
+ };
+ 
+ using namespace android;
+@@ -120,5 +125,10 @@ extern "C" jint JNI_OnLoad(JavaVM* vm, void* /* reserved */)
+     register_android_server_companion_virtual_InputController(env);
+     register_android_server_app_GameManagerService(env);
+     register_com_android_server_wm_TaskFpsCallbackController(env);
++    register_com_android_server_rkdisplay_RkDisplayModes(env);
++    register_com_android_server_audio_RkAudioSetting(env);
++    //-----rk-code-----
++    register_com_android_server_RKBoxManagementService(env);
++    //-----------------
+     return JNI_VERSION_1_4;
+ }
+diff --git a/services/proguard.flags b/services/proguard.flags
+index c648f7d3ac45..f8a32eae58fb 100644
+--- a/services/proguard.flags
++++ b/services/proguard.flags
+@@ -79,6 +79,9 @@
+ -keep,allowoptimization,allowaccessmodification class com.android.server.broadcastradio.hal1.Tuner { *; }
+ -keep,allowoptimization,allowaccessmodification class com.android.server.broadcastradio.hal1.TunerCallback { *; }
+ -keep,allowoptimization,allowaccessmodification class com.android.server.location.gnss.GnssConfiguration$HalInterfaceVersion { *; }
++-keep,allowoptimization,allowaccessmodification class com.android.server.rkdisplay.RkDisplayModes$RkPhysicalDisplayInfo { *; }
++-keep,allowoptimization,allowaccessmodification class com.android.server.rkdisplay.RkDisplayModes$RkColorCapacityInfo { *; }
++-keep,allowoptimization,allowaccessmodification class com.android.server.rkdisplay.RkDisplayModes$RkConnectorInfo { *; }
+ -keep,allowoptimization,allowaccessmodification class com.android.server.location.gnss.GnssPowerStats { *; }
+ -keep,allowoptimization,allowaccessmodification class com.android.server.location.gnss.hal.GnssNative { *; }
+ -keep,allowoptimization,allowaccessmodification class com.android.server.pm.PackageManagerShellCommandDataLoader { *; }

@@ -1,0 +1,105 @@
+From 8bd59e45c986e37f0e0216e8334463920d65d3c2 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Sat, 11 Jul 2026 22:04:24 +0800
+Subject: [PATCH 76/78] feat: add Rockchip TvSettings device fragments and misc
+ tweaks
+
+Change-Id: I381109eae8909412858ad28c750191e28697e099
+---
+ .../tv/settings/PreferenceControllerFragment.java     |  6 ++++++
+ .../tv/settings/accessories/AccessoryUtils.java       |  5 ++++-
+ .../settings/accounts/AddAccountWithTypeActivity.java |  2 +-
+ .../tv/settings/device/DevicePrefFragment.java        |  1 +
+ .../device/display/daydream/DaydreamFragment.java     | 11 ++++++++++-
+ 5 files changed, 22 insertions(+), 3 deletions(-)
+
+diff --git a/Settings/src/com/android/tv/settings/PreferenceControllerFragment.java b/Settings/src/com/android/tv/settings/PreferenceControllerFragment.java
+index 21b8b56a4..3658442f9 100644
+--- a/Settings/src/com/android/tv/settings/PreferenceControllerFragment.java
++++ b/Settings/src/com/android/tv/settings/PreferenceControllerFragment.java
+@@ -155,4 +155,10 @@ public abstract class PreferenceControllerFragment extends SettingsPreferenceFra
+      */
+     protected abstract List<AbstractPreferenceController> onCreatePreferenceControllers(
+             Context context);
++
++    protected void clearPreferenceControllers() {
++        if (mPreferenceControllers != null && mPreferenceControllers.size() > 0) {
++            mPreferenceControllers.clear();
++        }
++    }
+ }
+diff --git a/Settings/src/com/android/tv/settings/accessories/AccessoryUtils.java b/Settings/src/com/android/tv/settings/accessories/AccessoryUtils.java
+index 560e91ecd..b1f4acacd 100644
+--- a/Settings/src/com/android/tv/settings/accessories/AccessoryUtils.java
++++ b/Settings/src/com/android/tv/settings/accessories/AccessoryUtils.java
+@@ -161,9 +161,12 @@ final class AccessoryUtils {
+ 
+     @Nullable
+     static String getHtmlEscapedDeviceName(@Nullable BluetoothDevice bluetoothDevice) {
+-        if (bluetoothDevice == null || bluetoothDevice.getName() == null) {
++        if (bluetoothDevice == null) {
+             return null;
+         }
++        else if(bluetoothDevice.getName() == null ) {
++           return Html.escapeHtml(bluetoothDevice.getAddress());
++        }
+         return Html.escapeHtml(bluetoothDevice.getName());
+     }
+ 
+diff --git a/Settings/src/com/android/tv/settings/accounts/AddAccountWithTypeActivity.java b/Settings/src/com/android/tv/settings/accounts/AddAccountWithTypeActivity.java
+index 623ce359b..817463478 100644
+--- a/Settings/src/com/android/tv/settings/accounts/AddAccountWithTypeActivity.java
++++ b/Settings/src/com/android/tv/settings/accounts/AddAccountWithTypeActivity.java
+@@ -46,7 +46,7 @@ public class AddAccountWithTypeActivity extends FragmentActivity {
+     private static final int REQUEST_CHOOSE_ACCOUNT_TYPE = 0;
+     private static final int REQUEST_ADD_ACCOUNT = 1;
+     private static final String CHOOSE_ACCOUNT_TYPE_ACTION =
+-            "com.google.android.gms.common.account.CHOOSE_ACCOUNT_TYPE";
++            "com.google.android.gms.common.account.CHOOSE_ACCOUNT";
+ 
+     private final AccountManagerCallback<Bundle> mCallback = new AccountManagerCallback<Bundle>() {
+         @Override
+diff --git a/Settings/src/com/android/tv/settings/device/DevicePrefFragment.java b/Settings/src/com/android/tv/settings/device/DevicePrefFragment.java
+index 7b8db10b0..94e802bd0 100644
+--- a/Settings/src/com/android/tv/settings/device/DevicePrefFragment.java
++++ b/Settings/src/com/android/tv/settings/device/DevicePrefFragment.java
+@@ -164,6 +164,7 @@ public class DevicePrefFragment extends SettingsPreferenceFragment implements
+             }
+         }
+         mAudioManager = getContext().getSystemService(AudioManager.class);
++        mInputSettingNeeded = true;
+         super.onCreate(savedInstanceState);
+     }
+ 
+diff --git a/Settings/src/com/android/tv/settings/device/display/daydream/DaydreamFragment.java b/Settings/src/com/android/tv/settings/device/display/daydream/DaydreamFragment.java
+index 45318c894..e5ab21cf5 100644
+--- a/Settings/src/com/android/tv/settings/device/display/daydream/DaydreamFragment.java
++++ b/Settings/src/com/android/tv/settings/device/display/daydream/DaydreamFragment.java
+@@ -138,6 +138,9 @@ public class DaydreamFragment extends SettingsPreferenceFragment
+         final ListPreference dreamTimePref = (ListPreference) findPreference(KEY_DREAM_TIME);
+         if (dreamTimePref != null) {
+             dreamTimePref.setValue(Integer.toString(getDreamTime()));
++            if (getDreamTime() == Integer.MAX_VALUE) {
++                dreamTimePref.setSummary("Never");
++            }
+             dreamTimePref.setOnPreferenceChangeListener(this);
+             mDreamTimePref = RestrictedPreferenceAdapter.adapt(dreamTimePref, userRestriction);
+         }
+@@ -248,7 +251,13 @@ public class DaydreamFragment extends SettingsPreferenceFragment
+         refreshActiveDreamPref();
+         if (mDreamTimePref != null) {
+             mDreamTimePref.updatePreference(
+-                    dreamTimePref -> dreamTimePref.setValue(Integer.toString(getDreamTime())));
++                    dreamTimePref -> {
++                        dreamTimePref.setValue(Integer.toString(getDreamTime()));
++                        if (getDreamTime() == Integer.MAX_VALUE) {
++                            dreamTimePref.setSummary("Never");
++                        }
++                    });
++
+         }
+ 
+         final Preference dreamNowPref = findPreference(KEY_DREAM_NOW);
+-- 
+2.53.0
+

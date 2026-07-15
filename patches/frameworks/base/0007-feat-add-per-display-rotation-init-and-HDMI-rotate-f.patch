@@ -1,0 +1,237 @@
+From 2afaf8406616ae51120b88e9e0775dd70c10a49b Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 17:22:26 +0800
+Subject: [PATCH] feat: add per-display rotation init and HDMI rotate flag for
+ Rockchip platforms
+
+Change-Id: Ie4db9659e79c999b9acb23ae68bd9549f4dd181e
+
+diff --git a/services/core/java/com/android/server/display/DisplayPowerController.java b/services/core/java/com/android/server/display/DisplayPowerController.java
+index 47e880a3fce2..b0ca63b54bfa 100644
+--- a/services/core/java/com/android/server/display/DisplayPowerController.java
++++ b/services/core/java/com/android/server/display/DisplayPowerController.java
+@@ -597,7 +597,9 @@ final class DisplayPowerController implements AutomaticBrightnessController.Call
+         mSkipScreenOnBrightnessRamp = resources.getBoolean(
+                 com.android.internal.R.bool.config_skipScreenOnBrightnessRamp);
+ 
+-        mHbmController = createHbmControllerLocked();
++        float minBrightness = pm.getBrightnessConstraint(
++                PowerManager.BRIGHTNESS_CONSTRAINT_TYPE_MINIMUM);
++        mHbmController = createHbmControllerLocked(minBrightness, -1);
+ 
+         mBrightnessThrottler = createBrightnessThrottlerLocked();
+ 
+@@ -1973,7 +1975,7 @@ final class DisplayPowerController implements AutomaticBrightnessController.Call
+         mHandler.post(mOnBrightnessChangeRunnable);
+     }
+ 
+-    private HighBrightnessModeController createHbmControllerLocked() {
++    private HighBrightnessModeController createHbmControllerLocked(float minBrightness, float maxBrightness) {
+         final DisplayDevice device = mLogicalDisplay.getPrimaryDisplayDeviceLocked();
+         final DisplayDeviceConfig ddConfig = device.getDisplayDeviceConfig();
+         final IBinder displayToken =
+@@ -1984,7 +1986,8 @@ final class DisplayPowerController implements AutomaticBrightnessController.Call
+                 ddConfig != null ? ddConfig.getHighBrightnessModeData() : null;
+         final DisplayDeviceInfo info = device.getDisplayDeviceInfoLocked();
+         return new HighBrightnessModeController(mHandler, info.width, info.height, displayToken,
+-                displayUniqueId, PowerManager.BRIGHTNESS_MIN, PowerManager.BRIGHTNESS_MAX, hbmData,
++                displayUniqueId, minBrightness > 0 ? minBrightness : PowerManager.BRIGHTNESS_MIN,
++                maxBrightness > 0 ? maxBrightness : PowerManager.BRIGHTNESS_MAX, hbmData,
+                 new HighBrightnessModeController.HdrBrightnessDeviceConfig() {
+                     @Override
+                     public float getHdrBrightnessFromSdr(float sdrBrightness) {
+@@ -2094,14 +2097,14 @@ final class DisplayPowerController implements AutomaticBrightnessController.Call
+                 && !mScreenOffBecauseOfProximity) {
+             setReportedScreenState(REPORTED_TO_POLICY_SCREEN_OFF);
+             unblockScreenOn();
+-            mWindowManagerPolicy.screenTurnedOff(mDisplayId);
++            mWindowManagerPolicy.screenTurnedOff(mDisplayId, mIsInTransition);
+         } else if (!isOff
+                 && mReportedScreenStateToPolicy == REPORTED_TO_POLICY_SCREEN_TURNING_OFF) {
+ 
+             // We told policy already that screen was turning off, but now we changed our minds.
+             // Complete the full state transition on -> turningOff -> off.
+             unblockScreenOff();
+-            mWindowManagerPolicy.screenTurnedOff(mDisplayId);
++            mWindowManagerPolicy.screenTurnedOff(mDisplayId, mIsInTransition);
+             setReportedScreenState(REPORTED_TO_POLICY_SCREEN_OFF);
+         }
+         if (!isOff
+@@ -2708,7 +2711,8 @@ final class DisplayPowerController implements AutomaticBrightnessController.Call
+      * @return True if the display state is ready to update
+      */
+     private boolean readyToUpdateDisplayState() {
+-        return mDisplayId == Display.DEFAULT_DISPLAY || mBootCompleted;
++        //return mDisplayId == Display.DEFAULT_DISPLAY || mBootCompleted;
++	return true;
+     }
+ 
+     public void dump(final PrintWriter pw) {
+diff --git a/services/core/java/com/android/server/display/LocalDisplayAdapter.java b/services/core/java/com/android/server/display/LocalDisplayAdapter.java
+index 58a182a61e44..36f1b39819f4 100644
+--- a/services/core/java/com/android/server/display/LocalDisplayAdapter.java
++++ b/services/core/java/com/android/server/display/LocalDisplayAdapter.java
+@@ -669,6 +669,16 @@ final class LocalDisplayAdapter extends DisplayAdapter {
+                                 com.android.internal.R.bool.config_localDisplaysMirrorContent)) {
+                         mInfo.flags |= DisplayDeviceInfo.FLAG_OWN_CONTENT_ONLY;
+                     }
++                    if (SystemProperties.get("ro.board.platform").equals("rk356x")||SystemProperties.get("ro.board.platform").equals("rk3588")) {
++                        String property="persist.sys.rotation.einit-" + mPhysicalDisplayId;
++                        int rotation = SystemProperties.getInt(property, 0);
++                        Slog.d(TAG, "mPhysicalDisplayId" + mPhysicalDisplayId + " set rotation " + rotation);
++                        mInfo.rotation = rotation;
++
++                    } else {
++                        int rotation = SystemProperties.getInt("persist.sys.rotation.einit", 0);
++                        mInfo.rotation = rotation;
++                    }
+ 
+                     if (isDisplayPrivate(physicalAddress)) {
+                         mInfo.flags |= DisplayDeviceInfo.FLAG_PRIVATE;
+@@ -702,6 +712,9 @@ final class LocalDisplayAdapter extends DisplayAdapter {
+                     mInfo.type = Display.TYPE_EXTERNAL;
+                     mInfo.touch = DisplayDeviceInfo.TOUCH_EXTERNAL;
+                     mInfo.flags |= DisplayDeviceInfo.FLAG_PRESENTATION;
++                    if (SystemProperties.getBoolean("persist.demo.hdmirotates", false)) {
++                        mInfo.flags |= DisplayDeviceInfo.FLAG_ROTATES_WITH_CONTENT;
++                    }
+                     mInfo.name = getContext().getResources().getString(
+                             com.android.internal.R.string.display_manager_hdmi_display_name);
+                 }
+diff --git a/services/core/java/com/android/server/display/LogicalDisplay.java b/services/core/java/com/android/server/display/LogicalDisplay.java
+index 178278e7fd2f..8e3364299abb 100644
+--- a/services/core/java/com/android/server/display/LogicalDisplay.java
++++ b/services/core/java/com/android/server/display/LogicalDisplay.java
+@@ -23,6 +23,7 @@ import android.annotation.Nullable;
+ import android.graphics.Point;
+ import android.graphics.Rect;
+ import android.hardware.display.DisplayManagerInternal;
++import android.os.SystemProperties;
+ import android.util.ArraySet;
+ import android.util.SparseArray;
+ import android.view.Display;
+@@ -408,7 +409,30 @@ final class LogicalDisplay {
+             mBaseDisplayInfo.brightnessDefault = deviceInfo.brightnessDefault;
+             mBaseDisplayInfo.roundedCorners = deviceInfo.roundedCorners;
+             mBaseDisplayInfo.installOrientation = deviceInfo.installOrientation;
+-            mPrimaryDisplayDeviceInfo = deviceInfo;
++
++            if(SystemProperties.get("ro.board.platform").equals("rk356x")||SystemProperties.get("ro.board.platform").equals("rk3588")) {
++                if (deviceInfo.type == Display.TYPE_EXTERNAL) {
++                    int mPhysicalDisplayId = Integer.valueOf(deviceInfo.uniqueId.split(":")[1]);
++                    String property = "persist.sys.rotation.einit-" + mPhysicalDisplayId;
++                    if (SystemProperties.getInt(property, 0) % 2 != 0) {
++                        mBaseDisplayInfo.appWidth = deviceInfo.height;
++                        mBaseDisplayInfo.appHeight = deviceInfo.width;
++                        mBaseDisplayInfo.logicalWidth = deviceInfo.height;
++                        mBaseDisplayInfo.logicalHeight = deviceInfo.width;
++                    }
++                }
++            }else{
++                if(deviceInfo.type==Display.TYPE_EXTERNAL) {
++                    if (SystemProperties.getInt("persist.sys.rotation.einit", 0) % 2 != 0) {
++                        mBaseDisplayInfo.appWidth = deviceInfo.height;
++                        mBaseDisplayInfo.appHeight = deviceInfo.width;
++                        mBaseDisplayInfo.logicalWidth = deviceInfo.height;
++                        mBaseDisplayInfo.logicalHeight = deviceInfo.width;
++                    }
++                }
++            }
++
++	    mPrimaryDisplayDeviceInfo = deviceInfo;
+             mInfo.set(null);
+         }
+     }
+@@ -593,6 +617,30 @@ final class LogicalDisplay {
+             mTempDisplayRect.offset(-mDisplayOffsetY, mDisplayOffsetX);
+         }
+ 
++        if (SystemProperties.get("ro.board.platform").equals("rk356x")||SystemProperties.get("ro.board.platform").equals("rk3588")) {
++            if (displayDeviceInfo.type == Display.TYPE_EXTERNAL) {
++                int mPhysicalDisplayId = Integer.valueOf(device.getDisplayDeviceInfoLocked().uniqueId.split(":")[1]);
++                String property="persist.sys.rotation.efull-"+mPhysicalDisplayId;
++                if (SystemProperties.getBoolean(property, false)) {
++                    mTempDisplayRect.top = 0;
++                    mTempDisplayRect.left = 0;
++                    mTempDisplayRect.right = physWidth;
++                    mTempDisplayRect.bottom = physHeight;
++                }
++            }
++        } else {
++            if (device.getDisplayDeviceInfoLocked().type == Display.TYPE_EXTERNAL) {
++                if (SystemProperties.getBoolean("persist.sys.rotation.efull", false)) {
++                    mTempDisplayRect.top = 0;
++                    mTempDisplayRect.left = 0;
++                    mTempDisplayRect.right = physWidth;
++                    mTempDisplayRect.bottom = physHeight;
++                }
++            }
++        }
++
++
++
+         mDisplayPosition.set(mTempDisplayRect.left, mTempDisplayRect.top);
+         device.setProjectionLocked(t, orientation, mTempLayerStackRect, mTempDisplayRect);
+     }
+diff --git a/services/core/java/com/android/server/wm/DisplayRotation.java b/services/core/java/com/android/server/wm/DisplayRotation.java
+index 0a1e29ace045..40a43d26ac22 100644
+--- a/services/core/java/com/android/server/wm/DisplayRotation.java
++++ b/services/core/java/com/android/server/wm/DisplayRotation.java
+@@ -123,6 +123,7 @@ public class DisplayRotation {
+ 
+     public final boolean isDefaultDisplay;
+     private final boolean mSupportAutoRotation;
++    private final boolean mAllowRotationResolver;
+     private final int mLidOpenRotation;
+     private final int mCarDockRotation;
+     private final int mDeskDockRotation;
+@@ -265,6 +266,8 @@ public class DisplayRotation {
+ 
+         mSupportAutoRotation =
+                 mContext.getResources().getBoolean(R.bool.config_supportAutoRotation);
++        mAllowRotationResolver =
++                mContext.getResources().getBoolean(R.bool.config_allowRotationResolver);
+         mLidOpenRotation = readRotation(R.integer.config_lidOpenRotation);
+         mCarDockRotation = readRotation(R.integer.config_carDockRotation);
+         mDeskDockRotation = readRotation(R.integer.config_deskDockRotation);
+@@ -401,6 +404,13 @@ public class DisplayRotation {
+         }
+         mDemoRotationLock = SystemProperties.getBoolean("persist.demo.rotationlock", false);
+ 
++        if("true".equals(SystemProperties.get("ro.vendor.hdmirotationlock"))){
++            Slog.d(TAG,"force set hdmi rotation-----");
++            int rotation=Integer.valueOf(SystemProperties.get("ro.surface_flinger.primary_display_orientation","ORIENTATION_0").split("_")[1])/90;
++            mDemoHdmiRotation=(4-rotation)%4;
++            mDemoHdmiRotationLock=true;
++         }
++
+         // It's physically impossible to rotate the car's screen.
+         final boolean isCar = mContext.getPackageManager().hasSystemFeature(
+                 PackageManager.FEATURE_AUTOMOTIVE);
+@@ -913,6 +923,16 @@ public class DisplayRotation {
+     }
+ 
+     void freezeRotation(int rotation) {
++        if (mDeviceStateController.shouldReverseRotationDirectionAroundZAxis()) {
++            // Flipping 270 and 90 has the same effect as changing the direction which rotation is
++            // applied.
++            if (rotation == Surface.ROTATION_90) {
++                rotation = Surface.ROTATION_270;
++            } else if (rotation == Surface.ROTATION_270) {
++                rotation = Surface.ROTATION_90;
++            }
++        }
++
+         rotation = (rotation == -1) ? mRotation : rotation;
+         setUserRotation(WindowManagerPolicy.USER_ROTATION_LOCKED, rotation);
+     }
+@@ -1992,7 +2012,8 @@ public class DisplayRotation {
+ 
+         @Override
+         public boolean isRotationResolverEnabled() {
+-            return mUserRotationMode == WindowManagerPolicy.USER_ROTATION_FREE
++            return mAllowRotationResolver
++                    && mUserRotationMode == WindowManagerPolicy.USER_ROTATION_FREE
+                     && mCameraRotationMode == CAMERA_ROTATION_ENABLED
+                     && !mService.mPowerManager.isPowerSaveMode();
+         }

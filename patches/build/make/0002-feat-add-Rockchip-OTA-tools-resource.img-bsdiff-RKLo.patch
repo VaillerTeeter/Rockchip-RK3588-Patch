@@ -1,0 +1,89 @@
+From 238d6607a5eb4eefc7f2884909cfc6d3a438030d Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 13:18:06 +0800
+Subject: [PATCH 2/3] feat: add Rockchip OTA tools (resource.img, bsdiff,
+ RKLoader, loader zip)
+
+Change-Id: I89c79223d3cf80a51c60c76b5d89898988bc1e59
+---
+ tools/releasetools/common.py             | 12 ++++++++++--
+ tools/releasetools/edify_generator.py    |  5 +++++
+ tools/releasetools/package_loader_zip.py | 20 ++++++++++++++++++++
+ 3 files changed, 35 insertions(+), 2 deletions(-)
+ create mode 100755 tools/releasetools/package_loader_zip.py
+
+diff --git a/tools/releasetools/common.py b/tools/releasetools/common.py
+index ec49b0d36..423b26cf1 100644
+--- a/tools/releasetools/common.py
++++ b/tools/releasetools/common.py
+@@ -1589,7 +1589,15 @@ def _BuildBootableImage(image_name, sourcedir, fs_config_file, info_dict=None,
+   if kernel_path is not None:
+     cmd.extend(["--kernel", kernel_path])
+ 
+-  fn = os.path.join(sourcedir, "second")
++  if partition_name == "recovery":
++    fn = os.path.join(sourcedir, "resource.img")
++  else:
++    header_version = info_dict.get("booot_header_version")
++    header_version = int(header_version)
++    if header_version < 3:
++      fn = os.path.join(sourcedir, "resource.img")
++    else:
++      fn = os.path.join(sourcedir, "second")
+   if os.access(fn, os.F_OK):
+     cmd.append("--second")
+     cmd.append(fn)
+@@ -3017,7 +3025,7 @@ DIFF_PROGRAM_BY_EXT = {
+     ".zip": ["imgdiff", "-z"],
+     ".jar": ["imgdiff", "-z"],
+     ".apk": ["imgdiff", "-z"],
+-    ".img": "imgdiff",
++    ".img": "bsdiff",
+ }
+ 
+ 
+diff --git a/tools/releasetools/edify_generator.py b/tools/releasetools/edify_generator.py
+index 033c02e60..13919e87f 100644
+--- a/tools/releasetools/edify_generator.py
++++ b/tools/releasetools/edify_generator.py
+@@ -403,6 +403,11 @@ class EdifyGenerator(object):
+         raise ValueError(
+             "don't know how to write \"%s\" partitions" % p.fs_type)
+ 
++  def WriteRawLoaderImage(self):
++    """update loader"""
++    self.script.append('package_extract_file("RKLoader.bin", "/tmp/RKLoader.bin");')
++    self.script.append('write_raw_loader_image() || abort("update loader failed.");')
++
+   def AppendExtra(self, extra):
+     """Append text verbatim to the output script."""
+     self.script.append(extra)
+diff --git a/tools/releasetools/package_loader_zip.py b/tools/releasetools/package_loader_zip.py
+new file mode 100755
+index 000000000..af8fa1679
+--- /dev/null
++++ b/tools/releasetools/package_loader_zip.py
+@@ -0,0 +1,20 @@
++import sys
++import  os
++import zipfile
++
++def pack_loader():
++    if (len(sys.argv) != 3) :
++        print("Usage: package_loader_zip.py [RKLoader.bin] [update_unsign.zip]")
++        return
++    if ((sys.argv[1] == "-h") or (sys.argv[1] == "--h")):
++        print("Usage: package_loader_zip.py [RKLoader.bin] [update_unsign.zip]")
++        return
++    print("arvg[1]=%s argv[2]=%s \n" % (sys.argv[1], sys.argv[2]))
++    output_zip = zipfile.ZipFile(sys.argv[2], "w", compression=zipfile.ZIP_DEFLATED)
++    output_zip.write(sys.argv[1],"RKLoader.bin")
++    output_zip.close()
++    print("Success!")
++
++
++if __name__ == '__main__':
++    pack_loader()
+-- 
+2.53.0
+

@@ -1,0 +1,623 @@
+From 2f610a91414d21769c89fd3f4ab6fbcf724fd17a Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Sat, 11 Jul 2026 02:54:55 +0800
+Subject: [PATCH 21/27] feat: add ModeListView, ModeOptions, and mode switching
+ UI for Rockchip camera
+
+Change-Id: I1b2fdde7f896b3e0967ad891b8bb05b7b54830e7
+---
+ src/com/android/camera/ui/ModeListView.java   | 121 ++++++++++++++++--
+ .../android/camera/ui/ModeSelectorItem.java   |   4 +
+ .../android/camera/ui/ModeTransitionView.java |  17 ++-
+ .../android/camera/widget/ModeOptions.java    |  90 ++++++++++++-
+ .../camera/widget/ModeOptionsOverlay.java     |  91 ++++++++++++-
+ 5 files changed, 309 insertions(+), 14 deletions(-)
+
+diff --git a/src/com/android/camera/ui/ModeListView.java b/src/com/android/camera/ui/ModeListView.java
+index 9692e49d5..605e2cad2 100644
+--- a/src/com/android/camera/ui/ModeListView.java
++++ b/src/com/android/camera/ui/ModeListView.java
+@@ -23,6 +23,7 @@ import android.animation.ObjectAnimator;
+ import android.animation.TimeInterpolator;
+ import android.animation.ValueAnimator;
+ import android.content.Context;
++import android.content.pm.ActivityInfo;
+ import android.graphics.Bitmap;
+ import android.graphics.Canvas;
+ import android.graphics.Paint;
+@@ -37,6 +38,7 @@ import android.view.GestureDetector;
+ import android.view.LayoutInflater;
+ import android.view.MotionEvent;
+ import android.view.View;
++import android.view.View.MeasureSpec;
+ import android.widget.FrameLayout;
+ import android.widget.LinearLayout;
+ 
+@@ -46,6 +48,7 @@ import com.android.camera.debug.Log;
+ import com.android.camera.util.AndroidServices;
+ import com.android.camera.util.CameraUtil;
+ import com.android.camera.util.Gusterpolator;
++import com.android.camera.util.SystemProperties;
+ import com.android.camera.stats.UsageStatistics;
+ import com.android.camera.widget.AnimationEffects;
+ import com.android.camera.widget.SettingsCling;
+@@ -707,7 +710,8 @@ public class ModeListView extends FrameLayout
+                 mSettingsButton.setLayerType(View.LAYER_TYPE_NONE, null);
+             }
+ 
+-            mSettingsButton.setVisibility(VISIBLE);
++            if (!mSecureCamera)
++                mSettingsButton.setVisibility(VISIBLE);
+             // If successfully finish hiding shimmy, then we should go back to
+             // fully hidden state.
+             if (success) {
+@@ -867,21 +871,42 @@ public class ModeListView extends FrameLayout
+             int[] location = new int[2];
+             // Gets icon's center position in relative to the window.
+             selectedItem.getIconCenterLocationInWindow(location);
++            if (!CameraUtil.AUTO_ROTATE_SENSOR) {
++                if (CameraUtil.mScreenOrientation
++                        == ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE) {
++                    int tmp = location[0];
++                    location[0] = location[1];
++                    location[1] = mHeight - tmp + selectedItem.getMinVisibleWidth();
++                } else if (CameraUtil.mScreenOrientation
++                        == ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT) {
++                    location[0] = mWidth - location[0] + selectedItem.getMinVisibleWidth();
++                    location[1] = mHeight - location[1] + selectedItem.getMinVisibleWidth();
++                } else if (CameraUtil.mScreenOrientation
++                        == ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE) {
++                    int tmp = location[0];
++                    location[0] = mWidth - location[1] + selectedItem.getMinVisibleWidth();
++                    location[1] = tmp;
++                }
++            }
+             int iconX = location[0];
+             int iconY = location[1];
+             // Gets current view's top left position relative to the window.
+             getLocationInWindow(location);
+             // Calculate icon location relative to this view
++            if (!CameraUtil.AUTO_ROTATE_SENSOR) {
++                location[0] = 0;
++                location[1] = 0;
++            }
+             iconX -= location[0];
+             iconY -= location[1];
+ 
+             effect.setAnimationStartingPosition(iconX, iconY);
+             effect.setModeSpecificColor(selectedItem.getHighlightColor());
+-            if (mScreenShotProvider != null) {
++            if (mScreenShotProvider != null && CameraUtil.AUTO_ROTATE_SENSOR) {
+                 effect.setBackground(mScreenShotProvider
+                         .getPreviewFrame(PREVIEW_DOWN_SAMPLE_FACTOR),
+                         mCaptureLayoutHelper.getPreviewRect());
+-                effect.setBackgroundOverlay(mScreenShotProvider.getPreviewOverlayAndControls());
++                effect.setBackgroundOverlay(mScreenShotProvider.getScreenShot(PREVIEW_DOWN_SAMPLE_FACTOR));
+             }
+             mCurrentAnimationEffects = effect;
+             effect.startFadeoutAnimation(null, selectedItem, iconX, iconY, modeId);
+@@ -1200,6 +1225,7 @@ public class ModeListView extends FrameLayout
+         // Inflate the mode selector items and add them to a linear layout
+         LayoutInflater inflater = AndroidServices.instance().provideLayoutInflater();
+         mListView = (LinearLayout) findViewById(R.id.mode_list);
++        mListView.removeAllViews();
+         for (int i = 0; i < mTotalModes; i++) {
+             final ModeSelectorItem selectorItem =
+                     (ModeSelectorItem) inflater.inflate(R.layout.mode_selector, null);
+@@ -1245,6 +1271,14 @@ public class ModeListView extends FrameLayout
+         resetModeSelectors();
+     }
+ 
++    /**
++     *
++     * @return
++     */
++    public LinearLayout getListView(){
++        return mListView;
++    }
++
+     /**
+      * Maps between the UI mode selector index to the actual mode id.
+      *
+@@ -1381,11 +1415,15 @@ public class ModeListView extends FrameLayout
+         // Center mode drawer in the portion of camera preview that is not covered by
+         // bottom bar.
+         RectF uncoveredPreviewArea = mCaptureLayoutHelper.getUncoveredPreviewRect();
+-        // Align left:
+-        mListView.setTranslationX(uncoveredPreviewArea.left);
+-        // Align center vertical:
+-        mListView.setTranslationY(uncoveredPreviewArea.centerY()
+-                - mListView.getMeasuredHeight() / 2);
++        if (CameraUtil.AUTO_ROTATE_SENSOR) {
++            // Align left:
++            mListView.setTranslationX(uncoveredPreviewArea.left);
++            // Align center vertical:
++            mListView.setTranslationY(uncoveredPreviewArea.centerY()
++                    - mListView.getMeasuredHeight() / 2);
++        } else {
++            updateUIByOrientation();
++        }
+ 
+         updateSettingsButtonLayout(uncoveredPreviewArea);
+     }
+@@ -1396,12 +1434,36 @@ public class ModeListView extends FrameLayout
+             mSettingsButton.setTranslationX(uncoveredPreviewArea.right - mSettingsButtonMargin
+                     - mSettingsButton.getMeasuredWidth());
+             mSettingsButton.setTranslationY(uncoveredPreviewArea.top + mSettingsButtonMargin);
++            if (!CameraUtil.AUTO_ROTATE_SENSOR) {
++                if (CameraUtil.mScreenOrientation
++                        == ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE) {
++                    mSettingsButton.setTranslationX(uncoveredPreviewArea.bottom - mSettingsButtonMargin
++                            - mSettingsButton.getMeasuredWidth());
++                    mSettingsButton.setTranslationY(mHeight - uncoveredPreviewArea.left - mSettingsButtonMargin
++                            - mSettingsButton.getMeasuredHeight());
++                } else if (CameraUtil.mScreenOrientation
++                        == ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE) {
++                    mSettingsButton.setTranslationX(mWidth - uncoveredPreviewArea.top - mSettingsButtonMargin
++                            - mSettingsButton.getMeasuredWidth());
++                    mSettingsButton.setTranslationY(uncoveredPreviewArea.right - mSettingsButtonMargin
++                            - mSettingsButton.getMeasuredHeight());
++                }
++            }
+         } else {
+             // Align to the bottom right.
+             mSettingsButton.setTranslationX(uncoveredPreviewArea.right - mSettingsButtonMargin
+                     - mSettingsButton.getMeasuredWidth());
+             mSettingsButton.setTranslationY(uncoveredPreviewArea.bottom - mSettingsButtonMargin
+                     - mSettingsButton.getMeasuredHeight());
++            if (!CameraUtil.AUTO_ROTATE_SENSOR) {
++                if (CameraUtil.mScreenOrientation
++                        == ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT) {
++                    mSettingsButton.setTranslationX(mWidth - uncoveredPreviewArea.left - mSettingsButtonMargin
++                            - mSettingsButton.getMeasuredWidth());
++                    mSettingsButton.setTranslationY(mHeight - uncoveredPreviewArea.top - mSettingsButtonMargin
++                            - mSettingsButton.getMeasuredHeight());
++                }
++            }
+         }
+         if (mSettingsCling != null) {
+             mSettingsCling.updatePosition(mSettingsButton);
+@@ -1451,7 +1513,7 @@ public class ModeListView extends FrameLayout
+      * and will not show even if this method is called to show it.
+      */
+     private void showSettingsClingIfEnabled(boolean show) {
+-        if (mSettingsCling != null) {
++        if (mSettingsCling != null && !mSecureCamera) {
+             int visibility = show ? VISIBLE : INVISIBLE;
+             mSettingsCling.setVisibility(visibility);
+         }
+@@ -2210,4 +2272,45 @@ public class ModeListView extends FrameLayout
+             }
+         }
+     }
++
++    private boolean mSecureCamera;
++    public void setSecureCamera(boolean secure) {
++        mSecureCamera = secure;
++    }
++
++    private void updateUIByOrientation() {
++        if (mCaptureLayoutHelper == null) {
++            Log.e(TAG, "Capture layout helper needs to be set first.");
++            return;
++        }
++        // Center mode drawer in the portion of camera preview that is not covered by
++        // bottom bar.
++        RectF uncoveredPreviewArea = mCaptureLayoutHelper.getUncoveredPreviewRect();
++        if (CameraUtil.mScreenOrientation == ActivityInfo.SCREEN_ORIENTATION_PORTRAIT) {
++            // Align left:
++            mListView.setTranslationX(uncoveredPreviewArea.left);
++            // Align center vertical:
++            mListView.setTranslationY(uncoveredPreviewArea.centerY()
++                    - mListView.getMeasuredHeight() / 2);
++        } else if (CameraUtil.mScreenOrientation == ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT) {
++            // Align left:
++            mListView.setTranslationX(uncoveredPreviewArea.left);
++            // Align center vertical:
++            mListView.setTranslationY(uncoveredPreviewArea.centerY()
++                    - mListView.getMeasuredHeight() / 2);
++        } else if (CameraUtil.mScreenOrientation == ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE) {
++            // Align left:
++            mListView.setTranslationX(uncoveredPreviewArea.top);
++            // Align center vertical:
++            mListView.setTranslationY(uncoveredPreviewArea.centerX()
++                    - mListView.getMeasuredHeight() / 2);
++        } else if (CameraUtil.mScreenOrientation == ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE) {
++            // Align left:
++            RectF bottomBarRecF = mCaptureLayoutHelper.getBottomBarRect();
++            mListView.setTranslationX(getMeasuredWidth() - bottomBarRecF.bottom);
++            // Align center vertical:
++            mListView.setTranslationY(uncoveredPreviewArea.centerX()
++                    - mListView.getMeasuredHeight() / 2);
++        }
++    }
+ }
+diff --git a/src/com/android/camera/ui/ModeSelectorItem.java b/src/com/android/camera/ui/ModeSelectorItem.java
+index 6ce70fcc5..217b8a719 100644
+--- a/src/com/android/camera/ui/ModeSelectorItem.java
++++ b/src/com/android/camera/ui/ModeSelectorItem.java
+@@ -242,6 +242,10 @@ class ModeSelectorItem extends FrameLayout {
+         loc[1] += mMinVisibleWidth / 2;
+     }
+ 
++    public int getMinVisibleWidth() {
++        return mMinVisibleWidth;
++    }
++
+     /**
+      * Sets the mode id of the current item.
+      *
+diff --git a/src/com/android/camera/ui/ModeTransitionView.java b/src/com/android/camera/ui/ModeTransitionView.java
+index 5ad041cf9..17c676438 100644
+--- a/src/com/android/camera/ui/ModeTransitionView.java
++++ b/src/com/android/camera/ui/ModeTransitionView.java
+@@ -37,6 +37,7 @@ import android.view.View;
+ 
+ import com.android.camera.app.CameraAppUI;
+ import com.android.camera.debug.Log;
++import com.android.camera.util.CameraUtil;
+ import com.android.camera.util.Gusterpolator;
+ import com.android.camera2.R;
+ 
+@@ -187,7 +188,13 @@ public class ModeTransitionView extends View {
+             return;
+         }
+         super.onDraw(canvas);
+-        mIconDrawable.draw(canvas);
++        if (!CameraUtil.AUTO_ROTATE_SENSOR) {
++            canvas.save();
++            canvas.rotate(mRotation, getMeasuredWidth()/2.0f, getMeasuredHeight()/2.0f);
++            mIconDrawable.draw(canvas);
++            canvas.restore();
++        } else
++            mIconDrawable.draw(canvas);
+     }
+ 
+     @Override
+@@ -577,5 +584,13 @@ public class ModeTransitionView extends View {
+         setVisibility(GONE);
+         mAnimationType = IDLE;
+     }
++
++    private float mRotation;
++    @Override
++    public void setRotation(float rotation) {
++        // TODO Auto-generated method stub
++        mRotation = rotation;
++        postInvalidate();
++    }
+ }
+ 
+diff --git a/src/com/android/camera/widget/ModeOptions.java b/src/com/android/camera/widget/ModeOptions.java
+index ee863cb2c..db8ec7cd2 100644
+--- a/src/com/android/camera/widget/ModeOptions.java
++++ b/src/com/android/camera/widget/ModeOptions.java
+@@ -33,22 +33,30 @@ import android.widget.FrameLayout;
+ import android.widget.ImageButton;
+ 
+ import com.android.camera.MultiToggleImageButton;
++import com.android.camera.debug.Log;
+ import com.android.camera.ui.RadioOptions;
+ import com.android.camera.ui.TopRightWeightedLayout;
++import com.android.camera.util.CameraUtil;
+ import com.android.camera.util.Gusterpolator;
+ import com.android.camera2.R;
+ 
+ import java.util.ArrayList;
+ 
+ public class ModeOptions extends FrameLayout {
++    private final Log.Tag TAG = new Log.Tag("ModeOptions");
+     private int mBackgroundColor;
+     private final Paint mPaint = new Paint();
+     private boolean mIsHiddenOrHiding;
++    private boolean mShouldShowModeOptionsToggle;
+     private RectF mAnimateFrom = new RectF();
+     private View mViewToShowHide;
++    private View mViewToOverlay;
+     private TopRightWeightedLayout mModeOptionsButtons;
+     private RadioOptions mModeOptionsPano;
+     private RadioOptions mModeOptionsExposure;
++    private RadioOptions mModeOptionsWhiteBalance;
++
++    private ModeOptionsScreenEffects mModeOptionsScreenEffects;
+ 
+     private AnimatorSet mVisibleAnimator;
+     private AnimatorSet mHiddenAnimator;
+@@ -68,6 +76,8 @@ public class ModeOptions extends FrameLayout {
+     private boolean mIsPortrait;
+     private float mRadius = 0f;
+ 
++    private boolean mShowScreenEffectsModeOptions;
++
+     /**
+      * A class implementing this interface will receive callback events from
+      * mode options.
+@@ -115,16 +125,68 @@ public class ModeOptions extends FrameLayout {
+         mViewToShowHide = v;
+     }
+ 
++    public void setViewToOverlay(View v) {
++        mViewToOverlay = v;
++    }
++
++    private boolean isOtherViewOverlay() {
++        if (mViewToOverlay != null){
++            View parent = (View) mViewToOverlay.getParent();
++            if (parent != null && parent.getVisibility() == View.VISIBLE)
++                return true;
++        }
++        return false;
++    }
++
++    public void setScreenEffectsView(ModeOptionsScreenEffects options) {
++        mModeOptionsScreenEffects = options;
++    }
++
++    public void setScreenEffectOptionsEnabled(boolean enable) {
++        mShowScreenEffectsModeOptions = enable;
++    }
++
+     @Override
+     public void onFinishInflate() {
+         mIsHiddenOrHiding = true;
++        mShouldShowModeOptionsToggle = true;
+         mBackgroundColor = getResources().getColor(R.color.mode_options_background);
+         mPaint.setAntiAlias(true);
+         mPaint.setColor(mBackgroundColor);
+         mModeOptionsButtons = (TopRightWeightedLayout) findViewById(R.id.mode_options_buttons);
+         mModeOptionsPano = (RadioOptions) findViewById(R.id.mode_options_pano);
+         mModeOptionsExposure = (RadioOptions) findViewById(R.id.mode_options_exposure);
++        mModeOptionsWhiteBalance = (RadioOptions) findViewById(R.id.mode_options_whitebalance);
+         mMainBar = mActiveBar = mModeOptionsButtons;
++
++        ImageButton exposureButton = (ImageButton) findViewById(R.id.exposure_button);
++        exposureButton.setOnClickListener(new View.OnClickListener() {
++            @Override
++            public void onClick(View v) {
++                if (mShowScreenEffectsModeOptions) {
++                    if (mModeOptionsScreenEffects != null) {
++                        if (mModeOptionsScreenEffects.getVisibility() != View.VISIBLE)
++                            mModeOptionsScreenEffects.animateVisible();
++                        else
++                            mModeOptionsScreenEffects.animateHidden();
++                    }
++                } else {
++                    mActiveBar = mModeOptionsExposure;
++                    mMainBar.setVisibility(View.INVISIBLE);
++                    mActiveBar.setVisibility(View.VISIBLE);
++                }
++            }
++        });
++
++        ImageButton whiteBalanceButton = (ImageButton) findViewById(R.id.wb_button);
++        whiteBalanceButton.setOnClickListener(new View.OnClickListener() {
++            @Override
++            public void onClick(View v) {
++                mActiveBar = mModeOptionsWhiteBalance;
++                mMainBar.setVisibility(View.INVISIBLE);
++                mActiveBar.setVisibility(View.VISIBLE);
++            }
++        });
+     }
+ 
+     public void showExposureOptions() {
+@@ -170,9 +232,11 @@ public class ModeOptions extends FrameLayout {
+             if (mActiveBar != null && mActiveBar != mMainBar) {
+                 mActiveBar.setVisibility(INVISIBLE);
+             }
+-            if (mViewToShowHide != null) {
++            if (mViewToShowHide != null && mShouldShowModeOptionsToggle
++                    && !isOtherViewOverlay()) {
+                 mViewToShowHide.setVisibility(VISIBLE);
+             }
++            mShouldShowModeOptionsToggle = true;
+             mIsHiddenOrHiding = true;
+         }
+     }
+@@ -336,7 +400,10 @@ public class ModeOptions extends FrameLayout {
+                 @Override
+                 public void onAnimationEnd(Animator animation) {
+                     if (mViewToShowHide != null) {
+-                        mViewToShowHide.setVisibility(View.VISIBLE);
++                        if (mShouldShowModeOptionsToggle && !isOtherViewOverlay()) {
++                            mViewToShowHide.setVisibility(View.VISIBLE);
++                        }
++                        mShouldShowModeOptionsToggle = true;
+                         mDrawCircle = false;
+                         mFill = false;
+                         invalidate();
+@@ -401,4 +468,23 @@ public class ModeOptions extends FrameLayout {
+         }
+         mIsHiddenOrHiding = true;
+     }
++
++    public void animateHidden(boolean showToggle) {
++        if (!mIsHiddenOrHiding) {
++            mVisibleAnimator.cancel();
++            mHiddenAnimator.end();
++            mShouldShowModeOptionsToggle = showToggle;
++            mHiddenAnimator.start();
++        }
++        mIsHiddenOrHiding = true;
++    }
++
++    public void updateUIByOrientation() {
++        for (int i = 0; i < mModeOptionsButtons.getChildCount(); i++)
++            mModeOptionsButtons.getChildAt(i).setRotation(CameraUtil.mUIRotated);
++        for (int i = 0; i < mModeOptionsExposure.getChildCount(); i++)
++            mModeOptionsExposure.getChildAt(i).setRotation(CameraUtil.mUIRotated);
++        for (int i = 0; i < mModeOptionsWhiteBalance.getChildCount(); i++)
++            mModeOptionsWhiteBalance.getChildAt(i).setRotation(CameraUtil.mUIRotated);
++    }
+ }
+\ No newline at end of file
+diff --git a/src/com/android/camera/widget/ModeOptionsOverlay.java b/src/com/android/camera/widget/ModeOptionsOverlay.java
+index 21ef493fa..bf16f2490 100644
+--- a/src/com/android/camera/widget/ModeOptionsOverlay.java
++++ b/src/com/android/camera/widget/ModeOptionsOverlay.java
+@@ -27,12 +27,14 @@ import android.view.ViewGroup;
+ import android.widget.FrameLayout;
+ import android.widget.ImageView;
+ import android.widget.LinearLayout;
++import android.widget.SeekBar;
+ 
+ import com.android.camera.CaptureLayoutHelper;
+ import com.android.camera.ShutterButton;
+ import com.android.camera.debug.Log;
+ import com.android.camera.ui.PreviewOverlay;
+ import com.android.camera.ui.TouchCoordinate;
++import com.android.camera.util.CameraUtil;
+ import com.android.camera2.R;
+ 
+ /**
+@@ -56,6 +58,10 @@ public class ModeOptionsOverlay extends FrameLayout
+     private ImageView mThreeDots;
+     private CaptureLayoutHelper mCaptureLayoutHelper = null;
+ 
++    private ModeOptionsScreenEffects mModeOptionsScreenEffects;
++
++    private SeekBar mManualFocusBar;
++
+     public ModeOptionsOverlay(Context context, AttributeSet attrs) {
+         super(context, attrs);
+     }
+@@ -119,7 +125,14 @@ public class ModeOptionsOverlay extends FrameLayout
+         });
+         mModeOptions.setViewToShowHide(mModeOptionsToggle);
+ 
++        mModeOptionsScreenEffects = (ModeOptionsScreenEffects) findViewById(R.id.mode_options_screen);
++        mModeOptions.setScreenEffectsView(mModeOptionsScreenEffects);
++
+         mThreeDots = (ImageView) findViewById(R.id.three_dots);
++
++        mManualFocusBar = (SeekBar) findViewById(R.id.manual_focus);
++        mModeOptions.setViewToOverlay(mManualFocusBar);
++        checkOrientation(getResources().getConfiguration().orientation);
+     }
+ 
+     @Override
+@@ -144,7 +157,23 @@ public class ModeOptionsOverlay extends FrameLayout
+ 
+     @Override
+     public void onShutterButtonLongPressed() {
+-        // noop
++        // TODO Auto-generated method stub
++        closeModeOptions();
++    }
++
++    @Override
++    public void onShutterButtonLongClickRelease() {
++        // TODO Auto-generated method stub
++
++    }
++
++    public boolean onBackPressed() {
++        if (mModeOptions.getVisibility() == View.VISIBLE ||
++                mModeOptionsScreenEffects.getVisibility() == View.VISIBLE) {
++            closeModeOptions();
++            return true;
++        }
++        return false;
+     }
+ 
+     /**
+@@ -154,6 +183,20 @@ public class ModeOptionsOverlay extends FrameLayout
+      */
+     public void closeModeOptions() {
+         mModeOptions.animateHidden();
++        mModeOptionsScreenEffects.animateHidden();
++    }
++
++    public void closeModeOptions(boolean showToggle) {
++        mModeOptions.animateHidden(showToggle);
++        mModeOptionsScreenEffects.animateHidden();
++    }
++
++    public void closeManualFocusBar() {
++        if (mManualFocusBar != null) {
++            View parent = (View) mManualFocusBar.getParent();
++            if (parent != null && parent.getVisibility() == View.VISIBLE)
++                mManualFocusBar.setVisibility(View.GONE);
++        }
+     }
+ 
+     @Override
+@@ -181,7 +224,7 @@ public class ModeOptionsOverlay extends FrameLayout
+      * Set the layout gravity of the child layout to be bottom or top right
+      * depending on orientation.
+      */
+-    private void checkOrientation(int orientation) {
++    public void checkOrientation(int orientation) {
+         final boolean isPortrait = (Configuration.ORIENTATION_PORTRAIT == orientation);
+ 
+         final int modeOptionsDimension = (int) getResources()
+@@ -192,6 +235,12 @@ public class ModeOptionsOverlay extends FrameLayout
+         FrameLayout.LayoutParams modeOptionsToggleParams
+             = (FrameLayout.LayoutParams) mModeOptionsToggle.getLayoutParams();
+ 
++        LinearLayout manualFocusParent = (LinearLayout) mManualFocusBar.getParent();
++        FrameLayout.LayoutParams manualFocusParentParams
++            = (FrameLayout.LayoutParams) manualFocusParent.getLayoutParams();
++        LinearLayout.LayoutParams manulFocusParams
++            = (LinearLayout.LayoutParams) mManualFocusBar.getLayoutParams();
++
+         if (isPortrait) {
+             modeOptionsParams.height = modeOptionsDimension;
+             modeOptionsParams.width = ViewGroup.LayoutParams.MATCH_PARENT;
+@@ -200,6 +249,22 @@ public class ModeOptionsOverlay extends FrameLayout
+             modeOptionsToggleParams.gravity = BOTTOM_RIGHT;
+ 
+             mThreeDots.setImageResource(R.drawable.ic_options_port);
++
++            manualFocusParent.setOrientation(LinearLayout.HORIZONTAL);
++            int left = (int) getResources().getDimension(R.dimen.manual_focus_seek_padding);
++            int top = 0;
++            int right = (int) getResources().getDimension(R.dimen.manual_focus_seek_padding);
++            int bottom = 0;
++            manualFocusParent.setPadding(left, top, right, bottom);
++            manualFocusParent.setBackgroundResource(R.drawable.ic_manual_focus_tip_horizontal);
++            manualFocusParentParams.height = modeOptionsDimension;
++            manualFocusParentParams.width = ViewGroup.LayoutParams.MATCH_PARENT;
++            manualFocusParentParams.gravity = Gravity.BOTTOM;
++
++            manulFocusParams.width = ViewGroup.LayoutParams.MATCH_PARENT;
++            manulFocusParams.height = ViewGroup.LayoutParams.WRAP_CONTENT;
++
++            mManualFocusBar.setBackgroundResource(R.drawable.ic_manual_focus_progress_horizontal);
+         } else {
+             modeOptionsParams.width = modeOptionsDimension;
+             modeOptionsParams.height = ViewGroup.LayoutParams.MATCH_PARENT;
+@@ -208,8 +273,30 @@ public class ModeOptionsOverlay extends FrameLayout
+             modeOptionsToggleParams.gravity = TOP_RIGHT;
+ 
+             mThreeDots.setImageResource(R.drawable.ic_options_land);
++
++            manualFocusParent.setOrientation(LinearLayout.VERTICAL);
++            int left = 0;
++            int top = (int) getResources().getDimension(R.dimen.manual_focus_seek_padding);
++            int right = 0;
++            int bottom = (int) getResources().getDimension(R.dimen.manual_focus_seek_padding);
++            manualFocusParent.setPadding(left, top, right, bottom);
++            manualFocusParent.setBackgroundResource(R.drawable.ic_manual_focus_tip_vertical);
++            manualFocusParentParams.height = ViewGroup.LayoutParams.MATCH_PARENT;
++            manualFocusParentParams.width = modeOptionsDimension;
++            manualFocusParentParams.gravity = Gravity.RIGHT;
++
++            manulFocusParams.width = ViewGroup.LayoutParams.WRAP_CONTENT;
++            manulFocusParams.height = ViewGroup.LayoutParams.MATCH_PARENT;
++
++            mManualFocusBar.setBackgroundResource(R.drawable.ic_manual_focus_progress_vertical);
+         }
+ 
+         requestLayout();
+     }
++
++    public void updateUIByOrientation() {
++        mModeOptionsScreenEffects.setRotation(CameraUtil.mUIRotated);
++        mModeOptions.updateUIByOrientation();
++    }
++
+ }
+-- 
+2.53.0
+

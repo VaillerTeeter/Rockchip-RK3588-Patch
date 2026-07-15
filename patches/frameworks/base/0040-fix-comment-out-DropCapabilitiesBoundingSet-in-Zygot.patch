@@ -1,0 +1,27 @@
+From c19e57c021bbd6f064c3d61cf48a0c8ce5edeebc Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 17:28:14 +0800
+Subject: [PATCH] fix: comment out DropCapabilitiesBoundingSet in Zygote
+
+Change-Id: Iee025436e56cca3bcae6bae5e6b2ce58ef41c347
+
+diff --git a/core/jni/com_android_internal_os_Zygote.cpp b/core/jni/com_android_internal_os_Zygote.cpp
+index c8b85c314aca..1567ceb8f327 100644
+--- a/core/jni/com_android_internal_os_Zygote.cpp
++++ b/core/jni/com_android_internal_os_Zygote.cpp
+@@ -658,6 +658,7 @@ static void EnableKeepCapabilities(fail_fn_t fail_fn) {
+ }
+ 
+ static void DropCapabilitiesBoundingSet(fail_fn_t fail_fn) {
++/*
+   for (int i = 0; prctl(PR_CAPBSET_READ, i, 0, 0, 0) >= 0; i++) {;
+     if (prctl(PR_CAPBSET_DROP, i, 0, 0, 0) == -1) {
+       if (errno == EINVAL) {
+@@ -668,6 +669,7 @@ static void DropCapabilitiesBoundingSet(fail_fn_t fail_fn) {
+       }
+     }
+   }
++*/
+ }
+ 
+ static void SetInheritable(uint64_t inheritable, fail_fn_t fail_fn) {

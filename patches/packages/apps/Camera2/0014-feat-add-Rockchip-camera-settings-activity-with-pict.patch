@@ -1,0 +1,945 @@
+From ef8026c6791bb86aab851fa762f2757d1f3a8a25 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Sat, 11 Jul 2026 02:17:33 +0800
+Subject: [PATCH 15/27] feat: add Rockchip camera settings activity with
+ picture size cacher, resolution keys, and permissions-aware settings UI
+
+Change-Id: Ia3c34f115f9b0d7565cd3286f74d17b017037bf8
+---
+ .../android/camera/settings/AppUpgrader.java  |  14 +
+ .../settings/CameraPictureSizesCacher.java    |  31 ++
+ .../settings/CameraSettingsActivity.java      | 272 +++++++++++++++++-
+ src/com/android/camera/settings/Keys.java     | 262 +++++++++++++++++
+ .../camera/settings/ResolutionSetting.java    |   1 +
+ .../camera/settings/ResolutionUtil.java       |   5 +-
+ .../camera/settings/SettingObserver.java      |   4 +
+ .../camera/settings/SettingsManager.java      |   1 +
+ .../android/camera/settings/SettingsUtil.java |   3 +
+ 9 files changed, 588 insertions(+), 5 deletions(-)
+
+diff --git a/src/com/android/camera/settings/AppUpgrader.java b/src/com/android/camera/settings/AppUpgrader.java
+index 930c3e24d..fd0c3128d 100644
+--- a/src/com/android/camera/settings/AppUpgrader.java
++++ b/src/com/android/camera/settings/AppUpgrader.java
+@@ -198,6 +198,20 @@ public class AppUpgrader extends SettingsUpgrader {
+                     Keys.KEY_EXPOSURE_COMPENSATION_ENABLED, manualExposureCompensationEnabled);
+         }
+ 
++        if (defaultPreferences.contains(Keys.KEY_WHITEBALANCE_ENABLED)) {
++            boolean manualWhiteBalanceEnabled = removeBoolean(defaultPreferences,
++                    Keys.KEY_WHITEBALANCE_ENABLED);
++            settingsManager.set(SettingsManager.SCOPE_GLOBAL,
++                    Keys.KEY_WHITEBALANCE_ENABLED, manualWhiteBalanceEnabled);
++        }
++
++        if (defaultPreferences.contains(Keys.KEY_CAMERA_SOUND)) {
++            boolean cameraSoundEnabled = removeBoolean(defaultPreferences,
++                    Keys.KEY_CAMERA_SOUND);
++            settingsManager.set(SettingsManager.SCOPE_GLOBAL,
++                    Keys.KEY_CAMERA_SOUND, cameraSoundEnabled);
++        }
++
+         // Hint: boolean -> String, from default.
+         if (defaultPreferences.contains(Keys.KEY_CAMERA_FIRST_USE_HINT_SHOWN)) {
+             boolean hint = removeBoolean(defaultPreferences, Keys.KEY_CAMERA_FIRST_USE_HINT_SHOWN);
+diff --git a/src/com/android/camera/settings/CameraPictureSizesCacher.java b/src/com/android/camera/settings/CameraPictureSizesCacher.java
+index 9cdca20bf..6e406d72b 100644
+--- a/src/com/android/camera/settings/CameraPictureSizesCacher.java
++++ b/src/com/android/camera/settings/CameraPictureSizesCacher.java
+@@ -34,6 +34,7 @@ import java.util.List;
+ public class CameraPictureSizesCacher {
+     private static final String PICTURE_SIZES_BUILD_KEY = "CachedSupportedPictureSizes_Build_Camera";
+     private static final String PICTURE_SIZES_SIZES_KEY = "CachedSupportedPictureSizes_Sizes_Camera";
++    public static final String FACEDETECTION_MAX_SIZES_KEY = "CachedSupportedMaxNumFaceDetection_Camera";
+ 
+     /**
+      * Opportunistically update the picture sizes cache, if needed.
+@@ -83,14 +84,17 @@ public class CameraPictureSizesCacher {
+         if (thisCamera != null) {
+             String key_build = PICTURE_SIZES_BUILD_KEY + cameraId;
+             String key_sizes = PICTURE_SIZES_SIZES_KEY + cameraId;
++            String key_faces = FACEDETECTION_MAX_SIZES_KEY + cameraId;
+             SharedPreferences defaultPrefs = PreferenceManager.getDefaultSharedPreferences(context);
+ 
+             List<Size> sizes = Size.buildListFromCameraSizes(thisCamera.getParameters()
+                     .getSupportedPictureSizes());
++            int maxNumDetectionFaces = thisCamera.getParameters().getMaxNumDetectedFaces();
+             thisCamera.release();
+             SharedPreferences.Editor editor = defaultPrefs.edit();
+             editor.putString(key_build, Build.DISPLAY);
+             editor.putString(key_sizes, Size.listToString(sizes));
++            editor.putInt(key_faces, maxNumDetectionFaces);
+             editor.apply();
+             return sizes;
+         }
+@@ -120,4 +124,31 @@ public class CameraPictureSizesCacher {
+         }
+         return Optional.absent();
+     }
++
++    public static void updateMaxDetectionFacesForCamera(Context context, int cameraId, int maxFaces) {
++        String key_build = PICTURE_SIZES_BUILD_KEY + cameraId;
++        SharedPreferences defaultPrefs = PreferenceManager.getDefaultSharedPreferences(context);
++        String thisCameraCachedBuild = defaultPrefs.getString(key_build, null);
++        // Write to cache.
++        if (thisCameraCachedBuild == null) {
++            String key_faces = FACEDETECTION_MAX_SIZES_KEY + cameraId;
++            SharedPreferences.Editor editor = defaultPrefs.edit();
++            editor.putString(key_build, Build.DISPLAY);
++            editor.putInt(key_faces, maxFaces);
++            editor.apply();
++        }
++    }
++
++    public static boolean isFaceDetectionSupported(int cameraId, Context context) {
++        String key_build = PICTURE_SIZES_BUILD_KEY + cameraId;
++        String key_faces = FACEDETECTION_MAX_SIZES_KEY + cameraId;
++        SharedPreferences defaultPrefs = PreferenceManager.getDefaultSharedPreferences(context);
++        // Return cached value for cameraId and current build, if available.
++        String thisCameraCachedBuild = defaultPrefs.getString(key_build, null);
++        if (thisCameraCachedBuild != null && thisCameraCachedBuild.equals(Build.DISPLAY)) {
++            int maxFaces = defaultPrefs.getInt(key_faces, 0);
++            return maxFaces > 0;
++        }
++        return false;
++    }
+ }
+diff --git a/src/com/android/camera/settings/CameraSettingsActivity.java b/src/com/android/camera/settings/CameraSettingsActivity.java
+index 6c76e961c..ab2923ce5 100644
+--- a/src/com/android/camera/settings/CameraSettingsActivity.java
++++ b/src/com/android/camera/settings/CameraSettingsActivity.java
+@@ -19,12 +19,18 @@ package com.android.camera.settings;
+ import android.Manifest;
+ import android.app.ActionBar;
+ import android.app.Activity;
++import android.content.BroadcastReceiver;
+ import android.content.Context;
++import android.content.DialogInterface;
+ import android.content.Intent;
++import android.content.IntentFilter;
+ import android.content.pm.PackageManager;
+ import android.content.SharedPreferences;
+ import android.content.SharedPreferences.OnSharedPreferenceChangeListener;
++import android.graphics.ImageFormat;
++import android.hardware.Camera;
+ import android.os.Bundle;
++import android.os.Environment;
+ import android.preference.ListPreference;
+ import android.preference.Preference;
+ import android.preference.Preference.OnPreferenceClickListener;
+@@ -33,12 +39,18 @@ import android.preference.PreferenceGroup;
+ import android.preference.PreferenceScreen;
+ import androidx.fragment.app.FragmentActivity;
+ import android.view.MenuItem;
++import android.widget.Toast;
+ 
+ import com.android.camera.FatalErrorHandler;
+ import com.android.camera.FatalErrorHandlerImpl;
++import com.android.camera.Storage;
++import com.android.camera.app.CameraServicesImpl;
++import com.android.camera.debug.DebugPropertyHelper;
+ import com.android.camera.debug.Log;
+ import com.android.camera.device.CameraId;
++import com.android.camera.exif.Rational;
+ import com.android.camera.one.OneCamera.Facing;
++import com.android.camera.one.OneCamera;
+ import com.android.camera.one.OneCameraAccessException;
+ import com.android.camera.one.OneCameraCharacteristics;
+ import com.android.camera.one.OneCameraException;
+@@ -53,6 +65,7 @@ import com.android.camera2.R;
+ import com.android.ex.camera2.portability.CameraAgentFactory;
+ import com.android.ex.camera2.portability.CameraDeviceInfo;
+ 
++import java.io.File;
+ import java.text.DecimalFormat;
+ import java.util.ArrayList;
+ import java.util.List;
+@@ -72,6 +85,8 @@ public class CameraSettingsActivity extends FragmentActivity {
+     public static final String PREF_SCREEN_EXTRA = "pref_screen_extra";
+     public static final String HIDE_ADVANCED_SCREEN = "hide_advanced";
+     private static final int PERMISSION_REQUEST_CODE = 1;
++    public static final String HIDE_EX_SCREEN = "hide_ex";
++    public static final String HIDE_WB_SCREEN = "hide_wb";
+     private OneCameraManager mOneCameraManager;
+ 
+     @Override
+@@ -80,6 +95,8 @@ public class CameraSettingsActivity extends FragmentActivity {
+ 
+         FatalErrorHandler fatalErrorHandler = new FatalErrorHandlerImpl(this);
+         boolean hideAdvancedScreen = false;
++        boolean hideExposureScreen = false;
++        boolean hideWbScreen = false;
+ 
+         try {
+             mOneCameraManager = OneCameraModule.provideOneCameraManager();
+@@ -104,12 +121,27 @@ public class CameraSettingsActivity extends FragmentActivity {
+             boolean isExposureCompensationSupportedByBackCamera = (backCameraId != null) &&
+                     (mOneCameraManager.getOneCameraCharacteristics(backCameraId)
+                             .isExposureCompensationSupported());
++            boolean isWbSupportedByFrontCamera = (frontCameraId != null) &&
++                    (mOneCameraManager.getOneCameraCharacteristics(frontCameraId)
++                            .isWhiteBalanceSupported());
++            boolean isWbSupportedByBackCamera = (backCameraId != null) &&
++                    (mOneCameraManager.getOneCameraCharacteristics(backCameraId)
++                            .isWhiteBalanceSupported());
++
+ 
+             // Hides the option if neither front and back camera support exposure compensation.
+             if (!isExposureCompensationSupportedByFrontCamera &&
+-                    !isExposureCompensationSupportedByBackCamera) {
++                    !isExposureCompensationSupportedByBackCamera
++                    && !isWbSupportedByBackCamera && !isWbSupportedByFrontCamera) {
+                 hideAdvancedScreen = true;
+             }
++
++            if (!isExposureCompensationSupportedByFrontCamera
++                    && !isExposureCompensationSupportedByBackCamera)
++                hideExposureScreen = true;
++
++            if (!isWbSupportedByBackCamera && !isWbSupportedByFrontCamera)
++                hideWbScreen = true;
+         } catch (OneCameraAccessException e) {
+             fatalErrorHandler.onGenericCameraAccessFailure();
+         }
+@@ -123,6 +155,8 @@ public class CameraSettingsActivity extends FragmentActivity {
+         Bundle bundle = new Bundle(1);
+         bundle.putString(PREF_SCREEN_EXTRA, prefKey);
+         bundle.putBoolean(HIDE_ADVANCED_SCREEN, hideAdvancedScreen);
++        bundle.putBoolean(HIDE_EX_SCREEN, hideExposureScreen);
++        bundle.putBoolean(HIDE_WB_SCREEN, hideWbScreen);
+         dialog.setArguments(bundle);
+         getFragmentManager().beginTransaction().replace(android.R.id.content, dialog).commit();
+     }
+@@ -142,17 +176,35 @@ public class CameraSettingsActivity extends FragmentActivity {
+ 
+         public static final String PREF_CATEGORY_RESOLUTION = "pref_category_resolution";
+         public static final String PREF_CATEGORY_ADVANCED = "pref_category_advanced";
++        public static final String PREF_LAUNCH_HELP = "pref_launch_help";
++        public static final String PREF_RESTORE_SETTINGS = "pref_restore_settings";
+         private static final Log.Tag TAG = new Log.Tag("SettingsFragment");
+         private static DecimalFormat sMegaPixelFormat = new DecimalFormat("##0.0");
+         private String[] mCamcorderProfileNames;
+         private CameraDeviceInfo mInfos;
+         private String mPrefKey;
+         private boolean mHideAdvancedScreen;
++        private boolean mHideExScreen;
++        private boolean mHideWbScreen;
+         private boolean mGetSubPrefAsRoot = true;
+ 
+         // Selected resolutions for the different cameras and sizes.
+         private PictureSizes mPictureSizes;
+ 
++        private SettingsManager mSettingsManager;
++        private ManagedSwitchPreference mCameraSound;
++        private ManagedSwitchPreference mLocation;
++        private ManagedSwitchPreference mPreviewFullSize;
++        private ManagedSwitchPreference mFaceDetection;
++
++        private String[] mAntiBandingNames;
++        private boolean mFaceDetectionSupported;
++
++        private String SDCARD;
++        private String FLASH;
++
++        private OneCameraManager mOneCameraManager;
++
+         @Override
+         public void onCreate(Bundle savedInstanceState) {
+             super.onCreate(savedInstanceState);
+@@ -160,9 +212,33 @@ public class CameraSettingsActivity extends FragmentActivity {
+             if (arguments != null) {
+                 mPrefKey = arguments.getString(PREF_SCREEN_EXTRA);
+                 mHideAdvancedScreen = arguments.getBoolean(HIDE_ADVANCED_SCREEN);
++                mHideExScreen = arguments.getBoolean(HIDE_EX_SCREEN);
++                mHideWbScreen = arguments.getBoolean(HIDE_WB_SCREEN);
+             }
+             Context context = this.getActivity().getApplicationContext();
++            mInfos = CameraAgentFactory
++                    .getAndroidCameraAgent(context, CameraAgentFactory.CameraApi.API_1)
++                    .getCameraDeviceInfo();
++            loadSizes();
++
++            mCamcorderProfileNames = getResources().getStringArray(R.array.camcorder_profile_names);
++            mAntiBandingNames = getResources().getStringArray(R.array.pref_antibanding_names);
++
++            SDCARD = getActivity().getResources()
++                    .getString(R.string.pref_media_save_path_external_sd);
++            FLASH = getActivity().getResources()
++                    .getString(R.string.pref_media_save_path_flash);
++
+             addPreferencesFromResource(R.xml.camera_preferences);
++
++            // Put in the summaries for the currently set values.
++            final PreferenceScreen resolutionScreen =
++                    (PreferenceScreen) findPreference(PREF_CATEGORY_RESOLUTION);
++            fillEntriesAndSummaries(resolutionScreen);
++            //setEntries(findPreference(Keys.KEY_ANTIBANDING));
++            //setSummary(findPreference(Keys.KEY_ANTIBANDING));
++            setSummary(findPreference(Keys.KEY_MEDIA_SAVE_PATH));
++
+             PreferenceScreen advancedScreen =
+                     (PreferenceScreen) findPreference(PREF_CATEGORY_ADVANCED);
+ 
+@@ -170,7 +246,22 @@ public class CameraSettingsActivity extends FragmentActivity {
+             if (mHideAdvancedScreen) {
+                 PreferenceScreen root = (PreferenceScreen) findPreference("prefscreen_top");
+                 root.removePreference(advancedScreen);
++            } else {
++                if (mHideExScreen)
++                    advancedScreen.removePreference(findPreference(Keys.KEY_EXPOSURE_COMPENSATION_ENABLED));
++                if (mHideWbScreen)
++                    advancedScreen.removePreference(findPreference(Keys.KEY_WHITEBALANCE_ENABLED));
++            }
++
++            FatalErrorHandler fatalErrorHandler = new FatalErrorHandlerImpl(this.getActivity());
++            try {
++                mOneCameraManager = OneCameraModule.provideOneCameraManager();
++            } catch (OneCameraException e) {
++                // Log error and continue. Modules requiring OneCamera should check
++                // and handle if null by showing error dialog or other treatment.
++                fatalErrorHandler.onGenericCameraAccessFailure();
+             }
++            mSettingsManager = CameraServicesImpl.instance().getSettingsManager();
+ 
+             // Allow the Helper to edit the full preference hierarchy, not the
+             // sub tree we may show as root. See {@link #getPreferenceScreen()}.
+@@ -178,11 +269,16 @@ public class CameraSettingsActivity extends FragmentActivity {
+             CameraSettingsActivityHelper.addAdditionalPreferences(this, context);
+             mGetSubPrefAsRoot = true;
+ 
+-            mCamcorderProfileNames = getResources().getStringArray(R.array.camcorder_profile_names);
++            /*mCamcorderProfileNames = getResources().getStringArray(R.array.camcorder_profile_names);
++            mAntiBandingNames = getResources().getStringArray(R.array.pref_antibanding_names);
+             mInfos = CameraAgentFactory
+                     .getAndroidCameraAgent(context, CameraAgentFactory.CameraApi.API_1)
+                     .getCameraDeviceInfo();
+-            CameraAgentFactory.recycle(CameraAgentFactory.CameraApi.API_1);
++
++            SDCARD = getActivity().getResources()
++                    .getString(R.string.pref_media_save_path_external_sd);
++            FLASH = getActivity().getResources()
++                    .getString(R.string.pref_media_save_path_flash);*/
+         }
+ 
+         @Override
+@@ -206,10 +302,34 @@ public class CameraSettingsActivity extends FragmentActivity {
+             // device.
+             setVisibilities();
+ 
++            final MyDialogPreference restoreSettings =
++                    (MyDialogPreference) findPreference(PREF_RESTORE_SETTINGS);
++            restoreSettings.setPositiveButtonListener(new DialogInterface.OnClickListener() {
++
++                @Override
++                public void onClick(DialogInterface dialog, int which) {
++                    // TODO Auto-generated method stub
++                    Keys.setToDefaults(mSettingsManager, getActivity().getApplicationContext());
++                    setDefaultPicturesize(mOneCameraManager.findFirstCameraFacing(Facing.BACK), OneCamera.Facing.BACK);
++                    setDefaultPicturesize(mOneCameraManager.findFirstCameraFacing(Facing.FRONT), OneCamera.Facing.FRONT);
++                    restoreUI();
++                }
++            });
++            mCameraSound = (ManagedSwitchPreference) findPreference(Keys.KEY_CAMERA_SOUND);
++            mLocation = (ManagedSwitchPreference) findPreference(Keys.KEY_RECORD_LOCATION);
++            //mPreviewFullSize = (ManagedSwitchPreference) findPreference(Keys.KEY_PREVIEW_FULL_SIZE_ENABLE);
++            mFaceDetection = (ManagedSwitchPreference) findPreference(Keys.KEY_FACE_DETECTION_ENABLED);
++            if (!mFaceDetectionSupported && mFaceDetection != null) {
++                getPreferenceScreen().removePreference(mFaceDetection);
++            }
++
+             // Put in the summaries for the currently set values.
+             final PreferenceScreen resolutionScreen =
+                     (PreferenceScreen) findPreference(PREF_CATEGORY_RESOLUTION);
+             fillEntriesAndSummaries(resolutionScreen);
++            //setEntries(findPreference(Keys.KEY_ANTIBANDING));
++            //setSummary(findPreference(Keys.KEY_ANTIBANDING));
++            setSummary(findPreference(Keys.KEY_MEDIA_SAVE_PATH));
+             setPreferenceScreenIntent(resolutionScreen);
+ 
+             final PreferenceScreen advancedScreen =
+@@ -219,8 +339,62 @@ public class CameraSettingsActivity extends FragmentActivity {
+                 setPreferenceScreenIntent(advancedScreen);
+             }
+ 
++            /*Preference helpPref = findPreference(PREF_LAUNCH_HELP);
++            helpPref.setOnPreferenceClickListener(
++                    new OnPreferenceClickListener() {
++                        @Override
++                        public boolean onPreferenceClick(Preference preference) {
++                            new GoogleHelpHelper(activity).launchGoogleHelp();
++                            return true;
++                        }
++                    });*/
+             getPreferenceScreen().getSharedPreferences()
+                     .registerOnSharedPreferenceChangeListener(this);
++
++            registerMediaMountListener();
++        }
++
++        private void restoreUI() {
++            mCameraSound.setChecked(true);
++            mLocation.setChecked(false);
++            //mPreviewFullSize.setChecked(DebugPropertyHelper.isPreviewFullSizeOn());
++            if (mFaceDetectionSupported && mFaceDetection != null)
++                mFaceDetection.setChecked(true);
++			restoreMediaSavePath();
++        }
++
++        private void setDefaultPicturesize(CameraId cameraId, Facing cameraFacing) {
++            if (cameraId == null) return;
++            final String pictureSizeSettingKey = cameraFacing == OneCamera.Facing.FRONT ?
++                    Keys.KEY_PICTURE_SIZE_FRONT : Keys.KEY_PICTURE_SIZE_BACK;
++            final Rational aspectRatio = ResolutionUtil.ASPECT_RATIO_4x3;
++
++            FatalErrorHandler fatalErrorHandler = new FatalErrorHandlerImpl(this.getActivity());
++            try {
++                OneCameraCharacteristics cameraCharacteristics =
++                        mOneCameraManager.getOneCameraCharacteristics(cameraId);
++
++                final List<Size> supportedPictureSizes =
++                        ResolutionUtil.filterDisallowedListedSizes(
++                                cameraCharacteristics.getSupportedPictureSizes(ImageFormat.JPEG),
++                                "");
++                final Size fallbackPictureSize =
++                        ResolutionUtil.getLargestPictureSize(aspectRatio, supportedPictureSizes);
++                mSettingsManager.set(
++                        SettingsManager.SCOPE_GLOBAL,
++                        pictureSizeSettingKey,
++                        SettingsUtil.sizeToSettingString(fallbackPictureSize));
++                Log.d(TAG, "cameraId" + cameraId.getValue() + " setDefaultPicturesize = " + fallbackPictureSize);
++            } catch (OneCameraAccessException e) {
++                fatalErrorHandler.onGenericCameraAccessFailure();
++            }
++        }
++
++        @Override
++        public void onDestroy() {
++            // TODO Auto-generated method stub
++            super.onDestroy();
++            mSettingsManager = null;
+         }
+ 
+         /**
+@@ -343,6 +517,7 @@ public class CameraSettingsActivity extends FragmentActivity {
+             super.onPause();
+             getPreferenceScreen().getSharedPreferences()
+                     .unregisterOnSharedPreferenceChangeListener(this);
++            unregisterMediaMountListener();
+         }
+ 
+         @Override
+@@ -356,7 +531,7 @@ public class CameraSettingsActivity extends FragmentActivity {
+                     requestPermissions(
+                             new String[] {Manifest.permission.ACCESS_COARSE_LOCATION,
+                                     Manifest.permission.ACCESS_FINE_LOCATION},
+-                            PERMISSION_REQUEST_CODE);
++                        PERMISSION_REQUEST_CODE);
+                 }
+             }
+         }
+@@ -379,6 +554,8 @@ public class CameraSettingsActivity extends FragmentActivity {
+                 setEntriesForSelection(mPictureSizes.videoQualitiesBack.orNull(), listPreference);
+             } else if (listPreference.getKey().equals(Keys.KEY_VIDEO_QUALITY_FRONT)) {
+                 setEntriesForSelection(mPictureSizes.videoQualitiesFront.orNull(), listPreference);
++            } else if (listPreference.getKey().equals(Keys.KEY_ANTIBANDING)) {
++                listPreference.setEntries(mAntiBandingNames);
+             }
+         }
+ 
+@@ -402,6 +579,23 @@ public class CameraSettingsActivity extends FragmentActivity {
+                 setSummaryForSelection(mPictureSizes.videoQualitiesBack.orNull(), listPreference);
+             } else if (listPreference.getKey().equals(Keys.KEY_VIDEO_QUALITY_FRONT)) {
+                 setSummaryForSelection(mPictureSizes.videoQualitiesFront.orNull(), listPreference);
++            } else if (listPreference.getKey().equals(Keys.KEY_MEDIA_SAVE_PATH)) {
++                /*listPreference.setSummary(listPreference.getEntry());
++                String value = listPreference.getValue();
++                if (FLASH.equals(value))
++                    Storage.DIRECTORY = Storage.DEFAULT_DIRECTORY;
++                else if (SDCARD.equals(value)) {
++                    String state = Environment.getStorageState(new File(Storage.EXTENAL_SD));
++                    Log.i(TAG,"getSecondVolumeStorageState = " + state);
++                    if (!Environment.MEDIA_MOUNTED.equalsIgnoreCase(state)) {
++                        mSettingsManager.setToDefault(SettingsManager.SCOPE_GLOBAL, Keys.KEY_MEDIA_SAVE_PATH);
++                        restoreMediaSavePath();
++                        Toast.makeText(getActivity(), R.string.external_sd_unmounted, Toast.LENGTH_SHORT).show();
++                    } else {
++                        Storage.DIRECTORY = Storage.EXTERNAL_DIRECTORY;
++                    }
++                }
++                Log.i(TAG, "setSummary Storage.DIRECTORY = " + Storage.DIRECTORY);*/
+             } else {
+                 listPreference.setSummary(listPreference.getEntry());
+             }
+@@ -504,6 +698,25 @@ public class CameraSettingsActivity extends FragmentActivity {
+             PictureSizeLoader loader = new PictureSizeLoader(getActivity().getApplicationContext());
+             mPictureSizes = loader.computePictureSizes();
+             loader.release();
++
++            // Back camera.
++            boolean backCameraSupportFaceDetection = false;
++            int backCameraId = SettingsUtil.getCameraId(mInfos, SettingsUtil.CAMERA_FACING_BACK);
++            if (backCameraId >= 0) {
++                backCameraSupportFaceDetection = CameraPictureSizesCacher.isFaceDetectionSupported(backCameraId,
++                        this.getActivity().getApplicationContext());
++            }
++            // Front camera.
++            boolean frontCameraSupportFaceDetection = false;
++            int frontCameraId = SettingsUtil.getCameraId(mInfos, SettingsUtil.CAMERA_FACING_FRONT);
++            if (frontCameraId >= 0) {
++                frontCameraSupportFaceDetection = CameraPictureSizesCacher.isFaceDetectionSupported(frontCameraId,
++                        this.getActivity().getApplicationContext());
++            }
++            if (backCameraSupportFaceDetection || frontCameraSupportFaceDetection)
++                mFaceDetectionSupported = true;
++            else
++                mFaceDetectionSupported = false;
+         }
+ 
+         /**
+@@ -521,5 +734,56 @@ public class CameraSettingsActivity extends FragmentActivity {
+                     megaPixels);
+             return result;
+         }
++
++        private void registerMediaMountListener() {
++            IntentFilter filter = new IntentFilter();
++            filter.addAction(Intent.ACTION_MEDIA_REMOVED);
++            filter.addAction(Intent.ACTION_MEDIA_EJECT);
++            filter.addAction(Intent.ACTION_MEDIA_MOUNTED);
++            filter.addAction(Intent.ACTION_MEDIA_UNMOUNTED);
++            filter.addDataScheme("file");
++            getActivity().registerReceiver(mMediaStateChangedReceiver, filter);
++            updateMediaSavePath();
++        }
++
++        private void unregisterMediaMountListener() {
++            try {
++                getActivity().unregisterReceiver(mMediaStateChangedReceiver);
++            } catch (Exception e) {
++                Log.e(TAG, "unregisterReceiver MediaStateChangedReceiver error:" + e);
++            }
++        }
++
++        private BroadcastReceiver mMediaStateChangedReceiver = new BroadcastReceiver(){
++            public void onReceive(Context context, Intent intent) {
++                Log.i(TAG, "receiver broadcast action = " + intent.getAction()
++                        + ", data = " + intent.getData().getPath());
++                updateMediaSavePath();
++            }
++        };
++
++        private void updateMediaSavePath() {
++            String value = mSettingsManager.getString(SettingsManager.SCOPE_GLOBAL, Keys.KEY_MEDIA_SAVE_PATH);
++            Log.i(TAG, "get mediapath value = " + value);
++            /*if (SDCARD.equals(value)) {
++                String state = Environment.getStorageState(new File(Storage.EXTENAL_SD));
++                Log.i(TAG,"getSecondVolumeStorageState = " + state);
++                if (!Environment.MEDIA_MOUNTED.equalsIgnoreCase(state)) {
++                    mSettingsManager.setToDefault(SettingsManager.SCOPE_GLOBAL, Keys.KEY_MEDIA_SAVE_PATH);
++                    restoreMediaSavePath();
++                }
++            }*/
++        }
++
++        private void restoreMediaSavePath() {
++            ListPreference preference = (ListPreference) findPreference(Keys.KEY_MEDIA_SAVE_PATH);
++            if (preference != null) {
++                preference.setValue(mSettingsManager.getString(SettingsManager.SCOPE_GLOBAL,
++                    Keys.KEY_MEDIA_SAVE_PATH));
++                preference.setSummary(preference.getEntry());
++            }
++            //Storage.DIRECTORY = Storage.DEFAULT_DIRECTORY;
++            //Log.i(TAG, "restore Storage.DIRECTORY = " + Storage.DIRECTORY);
++        }
+     }
+ }
+diff --git a/src/com/android/camera/settings/Keys.java b/src/com/android/camera/settings/Keys.java
+index 0339ea6c7..a87e658ab 100644
+--- a/src/com/android/camera/settings/Keys.java
++++ b/src/com/android/camera/settings/Keys.java
+@@ -18,7 +18,10 @@ package com.android.camera.settings;
+ 
+ import android.content.Context;
+ 
++import com.android.camera.CameraActivity;
++import com.android.camera.PhotoModule;
+ import com.android.camera.app.LocationManager;
++import com.android.camera.debug.DebugPropertyHelper;
+ import com.android.camera.util.ApiHelper;
+ import com.android.camera2.R;
+ 
+@@ -80,6 +83,39 @@ public class Keys {
+     public static final String KEY_HDR_PLUS_FLASH_MODE = "pref_hdr_plus_flash_mode";
+     public static final String KEY_SHOULD_SHOW_SETTINGS_BUTTON_CLING =
+             "pref_should_show_settings_button_cling";
++
++    public static final String KEY_WHITEBALANCE = "pref_camera_whitebalance_key";
++    public static final String KEY_WHITEBALANCE_ENABLED =
++            "pref_camera_whitebalance_enable_key";
++
++    public static final String KEY_COLOR_EFFECT = "pref_camera_color_effect_key";
++
++    public static final String KEY_CAMERA_SOUND = "pref_camera_sound_enable_key";
++
++    public static final String KEY_BURST_CAPTURE_ON = "pref_burst_capture_on_key";
++
++    public static final String KEY_3DNR_ON = "pref_3dnr_on_key";
++
++    public static final String KEY_FACE_DETECTION_ENABLED =
++            "pref_face_detection_enabled_key";
++    public static final String KEY_SMILE_SHUTTER_ON = "pref_smile_shutter_on_key";
++
++    public static final String KEY_PREVIEW_FULL_SIZE_ENABLE = "pref_preview_fullsize_enable_key";
++
++    public static final String KEY_PREVIEW_FULL_SIZE_ON = "pref_preview_fullsize_on_key";
++
++    public static final String KEY_SATURATION = "pref_camera_saturation_key";
++    public static final String KEY_CONTRAST = "pref_camera_contrast_key";
++    public static final String KEY_SHARPNESS = "pref_camera_sharpness_key";
++    public static final String KEY_BRIGHTNESS = "pref_camera_brightness_key";
++    public static final String KEY_HUE = "pref_camera_hue_key";
++
++    public static final String KEY_ANTIBANDING = "pref_camera_antibanding_key";
++
++    public static final String KEY_SETTINGS_FIRST_RUN = "pref_setting_First_Run";
++
++    public static final String KEY_MEDIA_SAVE_PATH = "pref_media_save_path_key";
++
+     public static final String KEY_HAS_SEEN_PERMISSIONS_DIALOGS = "pref_has_seen_permissions_dialogs";
+ 
+     /**
+@@ -141,6 +177,23 @@ public class Keys {
+                                          Keys.KEY_VIDEO_QUALITY_FRONT);
+         }
+ 
++        settingsManager.setDefaults(
++            KEY_PICTURE_SIZE_BACK,
++            context.getString(R.string.pref_camera_picturesize_default),
++            context.getResources().getStringArray(R.array.pref_camera_picturesize_entryvalues));
++        if (!settingsManager.isSet(SettingsManager.SCOPE_GLOBAL, Keys.KEY_PICTURE_SIZE_BACK)) {
++            settingsManager.setToDefault(SettingsManager.SCOPE_GLOBAL,
++                                         Keys.KEY_PICTURE_SIZE_BACK);
++        }
++
++        settingsManager.setDefaults(KEY_PICTURE_SIZE_FRONT,
++            context.getString(R.string.pref_camera_picturesize_default),
++            context.getResources().getStringArray(R.array.pref_camera_picturesize_entryvalues));
++        if (!settingsManager.isSet(SettingsManager.SCOPE_GLOBAL, Keys.KEY_PICTURE_SIZE_FRONT)) {
++            settingsManager.setToDefault(SettingsManager.SCOPE_GLOBAL,
++                                         Keys.KEY_PICTURE_SIZE_FRONT);
++        }
++
+         settingsManager.setDefaults(KEY_JPEG_QUALITY,
+             context.getString(R.string.pref_camera_jpeg_quality_normal),
+             context.getResources().getStringArray(
+@@ -180,6 +233,215 @@ public class Keys {
+ 
+         settingsManager.setDefaults(KEY_SHOULD_SHOW_SETTINGS_BUTTON_CLING, true);
+ 
++        settingsManager.setDefaults(KEY_CAMERA_SOUND, true);
++
++        settingsManager.setDefaults(KEY_WHITEBALANCE,
++            context.getString(R.string.pref_camera_whitebalance_default),
++            context.getResources().getStringArray(R.array.pref_camera_whitebalance_entry));
++
++        settingsManager.setDefaults(KEY_COLOR_EFFECT,
++            context.getString(R.string.pref_camera_color_effect_default),
++            context.getResources().getStringArray(R.array.pref_camera_color_effect_entry));
++
++        //settingsManager.setDefaults(KEY_BURST_CAPTURE_ON, false);
++
++        settingsManager.setDefaults(KEY_FACE_DETECTION_ENABLED, true);
++        settingsManager.setDefaults(KEY_SMILE_SHUTTER_ON, false);
++
++        settingsManager.setDefaults(KEY_PREVIEW_FULL_SIZE_ENABLE, DebugPropertyHelper.isPreviewFullSizeOn());
++
++        settingsManager.setDefaults(KEY_SATURATION,
++            context.getString(R.string.pref_camera_saturation_default),
++            context.getResources().getStringArray(R.array.pref_camera_saturation_entry));
++
++        settingsManager.setDefaults(KEY_CONTRAST,
++            context.getString(R.string.pref_camera_contrast_default),
++            context.getResources().getStringArray(R.array.pref_camera_contrast_entry));
++
++        settingsManager.setDefaults(KEY_SHARPNESS,
++            context.getString(R.string.pref_camera_sharpness_default),
++            context.getResources().getStringArray(R.array.pref_camera_sharpness_entry));
++
++        settingsManager.setDefaults(KEY_BRIGHTNESS,
++            context.getString(R.string.pref_camera_brightness_default),
++            context.getResources().getStringArray(R.array.pref_camera_brightness_entry));
++
++        settingsManager.setDefaults(KEY_HUE,
++            context.getString(R.string.pref_camera_hue_default),
++            context.getResources().getStringArray(R.array.pref_camera_hue_entry));
++
++        settingsManager.setDefaults(KEY_ANTIBANDING,
++            DebugPropertyHelper.getDefaultBanding(),
++            context.getResources().getStringArray(R.array.pref_antibanding_entryvalues));
++        if (!settingsManager.isSet(SettingsManager.SCOPE_GLOBAL, Keys.KEY_ANTIBANDING)) {
++            settingsManager.setToDefault(SettingsManager.SCOPE_GLOBAL,
++                                         Keys.KEY_ANTIBANDING);
++        }
++
++        settingsManager.setDefaults(
++            KEY_MEDIA_SAVE_PATH,
++            context.getString(R.string.pref_media_save_path_flash),
++            context.getResources().getStringArray(R.array.pref_media_save_path_entryvalues));
++        if (!settingsManager.isSet(SettingsManager.SCOPE_GLOBAL, Keys.KEY_MEDIA_SAVE_PATH)) {
++            settingsManager.setToDefault(SettingsManager.SCOPE_GLOBAL,
++                                         Keys.KEY_MEDIA_SAVE_PATH);
++        }
++
++        settingsManager.setDefaults(KEY_3DNR_ON, false);
++    }
++
++    /**
++     * Set the defined keys to defaults.
++     * It's not necessary to set all defaults.
++     */
++    public static void setToDefaults(SettingsManager settingsManager, Context context) {
++        if (settingsManager == null || context == null) return;
++        if (settingsManager.isSet(SettingsManager.SCOPE_GLOBAL, KEY_COUNTDOWN_DURATION))
++            settingsManager.setToDefault(SettingsManager.SCOPE_GLOBAL, KEY_COUNTDOWN_DURATION);
++
++        if (settingsManager.isSet(SettingsManager.SCOPE_GLOBAL, KEY_CAMERA_ID))
++            settingsManager.setToDefault(SettingsManager.SCOPE_GLOBAL, KEY_CAMERA_ID);
++
++        String[] cameraId = context.getResources().getStringArray(R.array.camera_id_entryvalues);
++        if (cameraId != null) {
++            for (int i = 0; i < cameraId.length; i++) {
++                if (Integer.valueOf(cameraId[i]) < 0) {
++                    // if an unopen camera i.e. negative ID is returned, which we've observed in
++                    // some automated scenarios, just return it as a valid separate scope
++                    // this could cause user issues, so log a stack trace noting the call path
++                    // which resulted in this scenario.
++                    continue;
++                }
++                String cameraScope = SettingsManager.CAMERA_SCOPE_PREFIX + cameraId[i];
++
++                if (settingsManager.isSet(cameraScope, KEY_SCENE_MODE))
++                    settingsManager.setToDefault(cameraScope, KEY_SCENE_MODE);
++
++                if (settingsManager.isSet(cameraScope, KEY_FLASH_MODE))
++                    settingsManager.setToDefault(cameraScope, KEY_FLASH_MODE);
++
++                if (settingsManager.isSet(cameraScope, KEY_FOCUS_MODE))
++                    settingsManager.setToDefault(cameraScope, KEY_FOCUS_MODE);
++
++                if (settingsManager.isSet(cameraScope, KEY_VIDEOCAMERA_FLASH_MODE))
++                    settingsManager.setToDefault(cameraScope, KEY_VIDEOCAMERA_FLASH_MODE);
++
++                if (settingsManager.isSet(cameraScope, KEY_WHITEBALANCE))
++                    settingsManager.setToDefault(cameraScope, KEY_WHITEBALANCE);
++
++                if (settingsManager.isSet(cameraScope, KEY_COLOR_EFFECT))
++                    settingsManager.setToDefault(cameraScope, KEY_COLOR_EFFECT);
++
++                if (settingsManager.isSet(cameraScope, KEY_SATURATION))
++                    settingsManager.setToDefault(cameraScope, KEY_SATURATION);
++
++                if (settingsManager.isSet(cameraScope, KEY_CONTRAST))
++                    settingsManager.setToDefault(cameraScope, KEY_CONTRAST);
++
++                if (settingsManager.isSet(cameraScope, KEY_SHARPNESS))
++                    settingsManager.setToDefault(cameraScope, KEY_SHARPNESS);
++
++                if (settingsManager.isSet(cameraScope, KEY_BRIGHTNESS))
++                    settingsManager.setToDefault(cameraScope, KEY_BRIGHTNESS);
++
++                if (settingsManager.isSet(cameraScope, KEY_HUE))
++                    settingsManager.setToDefault(cameraScope, KEY_HUE);
++            }
++        }
++
++        if (settingsManager.isSet(SettingsManager.SCOPE_GLOBAL, KEY_CAMERA_HDR))
++            settingsManager.setToDefault(SettingsManager.SCOPE_GLOBAL, KEY_CAMERA_HDR);
++        if (settingsManager.isSet(SettingsManager.SCOPE_GLOBAL, KEY_CAMERA_HDR_PLUS))
++            settingsManager.setToDefault(SettingsManager.SCOPE_GLOBAL, KEY_CAMERA_HDR_PLUS);
++
++        if (settingsManager.isSet(SettingsManager.SCOPE_GLOBAL, KEY_CAMERA_FIRST_USE_HINT_SHOWN))
++            settingsManager.setToDefault(SettingsManager.SCOPE_GLOBAL, KEY_CAMERA_FIRST_USE_HINT_SHOWN);
++
++        if (settingsManager.isSet(SettingsManager.SCOPE_GLOBAL, KEY_VIDEO_QUALITY_BACK))
++            settingsManager.setToDefault(SettingsManager.SCOPE_GLOBAL,
++                KEY_VIDEO_QUALITY_BACK);
++
++        if (settingsManager.isSet(SettingsManager.SCOPE_GLOBAL, KEY_VIDEO_QUALITY_FRONT))
++            settingsManager.setToDefault(SettingsManager.SCOPE_GLOBAL,
++                KEY_VIDEO_QUALITY_FRONT);
++
++        if (settingsManager.isSet(SettingsManager.SCOPE_GLOBAL, KEY_PICTURE_SIZE_BACK))
++            settingsManager.setToDefault(SettingsManager.SCOPE_GLOBAL,
++                    KEY_PICTURE_SIZE_BACK);
++
++        if (settingsManager.isSet(SettingsManager.SCOPE_GLOBAL, KEY_PICTURE_SIZE_FRONT))
++            settingsManager.setToDefault(SettingsManager.SCOPE_GLOBAL,
++                    KEY_PICTURE_SIZE_FRONT);
++
++        if (settingsManager.isSet(SettingsManager.SCOPE_GLOBAL, KEY_STARTUP_MODULE_INDEX))
++            settingsManager.setToDefault(SettingsManager.SCOPE_GLOBAL,
++                KEY_STARTUP_MODULE_INDEX);
++
++        if (settingsManager.isSet(SettingsManager.SCOPE_GLOBAL, KEY_CAMERA_MODULE_LAST_USED))
++            settingsManager.setToDefault(SettingsManager.SCOPE_GLOBAL,
++                KEY_CAMERA_MODULE_LAST_USED);
++
++        if (settingsManager.isSet(SettingsManager.SCOPE_GLOBAL, KEY_CAMERA_PANO_ORIENTATION))
++            settingsManager.setToDefault(SettingsManager.SCOPE_GLOBAL,
++                KEY_CAMERA_PANO_ORIENTATION);
++
++        if (settingsManager.isSet(SettingsManager.SCOPE_GLOBAL, KEY_CAMERA_GRID_LINES))
++            settingsManager.setToDefault(SettingsManager.SCOPE_GLOBAL,
++                KEY_CAMERA_GRID_LINES);
++
++        if (settingsManager.isSet(SettingsManager.SCOPE_GLOBAL, KEY_SHOULD_SHOW_REFOCUS_VIEWER_CLING))
++            settingsManager.setToDefault(SettingsManager.SCOPE_GLOBAL,
++                KEY_SHOULD_SHOW_REFOCUS_VIEWER_CLING);
++
++        String photoModuleScope = SettingsManager.MODULE_SCOPE_PREFIX + SettingsScopeNamespaces.PHOTO;
++        if (settingsManager.isSet(photoModuleScope, KEY_HDR_PLUS_FLASH_MODE))
++            settingsManager.setToDefault(photoModuleScope,
++                KEY_HDR_PLUS_FLASH_MODE);
++        String videoModuleScope = SettingsManager.MODULE_SCOPE_PREFIX + SettingsScopeNamespaces.VIDEO;
++        if (settingsManager.isSet(videoModuleScope, KEY_HDR_PLUS_FLASH_MODE))
++            settingsManager.setToDefault(videoModuleScope,
++                KEY_HDR_PLUS_FLASH_MODE);
++
++        if (settingsManager.isSet(SettingsManager.SCOPE_GLOBAL, KEY_SHOULD_SHOW_SETTINGS_BUTTON_CLING))
++            settingsManager.setToDefault(SettingsManager.SCOPE_GLOBAL,
++                KEY_SHOULD_SHOW_SETTINGS_BUTTON_CLING);
++
++        if (settingsManager.isSet(SettingsManager.SCOPE_GLOBAL, KEY_CAMERA_SOUND))
++            settingsManager.setToDefault(SettingsManager.SCOPE_GLOBAL,
++                KEY_CAMERA_SOUND);
++
++        if (settingsManager.isSet(SettingsManager.SCOPE_GLOBAL, KEY_BURST_CAPTURE_ON))
++            settingsManager.setToDefault(SettingsManager.SCOPE_GLOBAL, KEY_BURST_CAPTURE_ON);
++
++        if (settingsManager.isSet(SettingsManager.SCOPE_GLOBAL, KEY_FACE_DETECTION_ENABLED))
++            settingsManager.setToDefault(SettingsManager.SCOPE_GLOBAL, KEY_FACE_DETECTION_ENABLED);
++        if (settingsManager.isSet(SettingsManager.SCOPE_GLOBAL, KEY_SMILE_SHUTTER_ON))
++            settingsManager.setToDefault(SettingsManager.SCOPE_GLOBAL, KEY_SMILE_SHUTTER_ON);
++
++        if (settingsManager.isSet(SettingsManager.SCOPE_GLOBAL, KEY_RECORD_LOCATION))
++            settingsManager.set(SettingsManager.SCOPE_GLOBAL, KEY_RECORD_LOCATION, false);
++
++        if (settingsManager.isSet(SettingsManager.SCOPE_GLOBAL, KEY_PREVIEW_FULL_SIZE_ENABLE))
++            settingsManager.setToDefault(SettingsManager.SCOPE_GLOBAL, KEY_PREVIEW_FULL_SIZE_ENABLE);
++        if (settingsManager.isSet(SettingsManager.SCOPE_GLOBAL, KEY_PREVIEW_FULL_SIZE_ON))
++            settingsManager.set(SettingsManager.SCOPE_GLOBAL, KEY_PREVIEW_FULL_SIZE_ON, false);
++
++        if (settingsManager.isSet(SettingsManager.SCOPE_GLOBAL, KEY_WHITEBALANCE_ENABLED))
++            settingsManager.set(SettingsManager.SCOPE_GLOBAL, KEY_WHITEBALANCE_ENABLED, false);
++        if (settingsManager.isSet(SettingsManager.SCOPE_GLOBAL, KEY_EXPOSURE_COMPENSATION_ENABLED))
++            settingsManager.set(SettingsManager.SCOPE_GLOBAL, KEY_EXPOSURE_COMPENSATION_ENABLED, false);
++
++        if (settingsManager.isSet(SettingsManager.SCOPE_GLOBAL, KEY_ANTIBANDING))
++            settingsManager.setToDefault(SettingsManager.SCOPE_GLOBAL,
++                    KEY_ANTIBANDING);
++
++        if (settingsManager.isSet(SettingsManager.SCOPE_GLOBAL, KEY_MEDIA_SAVE_PATH))
++            settingsManager.setToDefault(SettingsManager.SCOPE_GLOBAL,
++                    KEY_MEDIA_SAVE_PATH);
++
++        if (settingsManager.isSet(SettingsManager.SCOPE_GLOBAL, KEY_3DNR_ON))
++            settingsManager.setToDefault(SettingsManager.SCOPE_GLOBAL,
++                    KEY_3DNR_ON);
+     }
+ 
+     /** Helper functions for some defined keys. */
+diff --git a/src/com/android/camera/settings/ResolutionSetting.java b/src/com/android/camera/settings/ResolutionSetting.java
+index a90bf6683..d899157a9 100644
+--- a/src/com/android/camera/settings/ResolutionSetting.java
++++ b/src/com/android/camera/settings/ResolutionSetting.java
+@@ -108,6 +108,7 @@ public class ResolutionSetting {
+      */
+     public Size getPictureSize(CameraId cameraId, Facing cameraFacing)
+             throws OneCameraAccessException {
++            Log.d(TAG,"cameraId="+cameraId.getValue());
+         final String pictureSizeSettingKey = cameraFacing == OneCamera.Facing.FRONT ?
+                 Keys.KEY_PICTURE_SIZE_FRONT : Keys.KEY_PICTURE_SIZE_BACK;
+ 
+diff --git a/src/com/android/camera/settings/ResolutionUtil.java b/src/com/android/camera/settings/ResolutionUtil.java
+index 14d1d75d8..dd50724e4 100644
+--- a/src/com/android/camera/settings/ResolutionUtil.java
++++ b/src/com/android/camera/settings/ResolutionUtil.java
+@@ -184,9 +184,12 @@ public class ResolutionUtil {
+     private static List<Size> pickUpToThree(List<Size> sizes) {
+         List<Size> result = new ArrayList<Size>();
+         Size largest = sizes.get(0);
+-        result.add(largest);
++        if (largest.width() != 1920 || largest.height() != 1088)
++            result.add(largest);
+         Size lastSize = largest;
+         for (Size size : sizes) {
++            if (size != null && size.width() == 1920 && size.height() == 1088)
++                continue;
+             double targetArea = Math.pow(.5, result.size()) * area(largest);
+             if (area(size) < targetArea) {
+                 // This candidate is smaller than half the mega pixels of the
+diff --git a/src/com/android/camera/settings/SettingObserver.java b/src/com/android/camera/settings/SettingObserver.java
+index f9f14f96c..ecdfc4115 100644
+--- a/src/com/android/camera/settings/SettingObserver.java
++++ b/src/com/android/camera/settings/SettingObserver.java
+@@ -18,6 +18,8 @@ package com.android.camera.settings;
+ 
+ import com.android.camera.async.Observable;
+ import com.android.camera.async.SafeCloseable;
++import com.android.camera.debug.Log;
++import com.android.camera.debug.Log.Tag;
+ 
+ import java.util.concurrent.Executor;
+ 
+@@ -31,6 +33,7 @@ import javax.annotation.concurrent.ThreadSafe;
+  */
+ @ThreadSafe
+ public final class SettingObserver<T> implements Observable<T> {
++    private final Tag TAG = new Log.Tag("SettingObserver");
+     private class Listener implements SettingsManager.OnSettingChangedListener, SafeCloseable {
+         private final Runnable mRunnable;
+         private final Executor mExecutor;
+@@ -42,6 +45,7 @@ public final class SettingObserver<T> implements Observable<T> {
+ 
+         @Override
+         public void onSettingChanged(SettingsManager settingsManager, String key) {
++            Log.d(TAG, "onSettingChanged:" + key);
+             mExecutor.execute(mRunnable);
+         }
+ 
+diff --git a/src/com/android/camera/settings/SettingsManager.java b/src/com/android/camera/settings/SettingsManager.java
+index d2794e578..80d36d93e 100644
+--- a/src/com/android/camera/settings/SettingsManager.java
++++ b/src/com/android/camera/settings/SettingsManager.java
+@@ -160,6 +160,7 @@ public class SettingsManager {
+     }
+ 
+     public static String getCameraSettingScope(String cameraIdValue) {
++        cameraIdValue = cameraIdValue.replaceAll("/", "_");
+         return CAMERA_SCOPE_PREFIX + cameraIdValue;
+     }
+ 
+diff --git a/src/com/android/camera/settings/SettingsUtil.java b/src/com/android/camera/settings/SettingsUtil.java
+index f83fb8bcd..5861a2ae1 100644
+--- a/src/com/android/camera/settings/SettingsUtil.java
++++ b/src/com/android/camera/settings/SettingsUtil.java
+@@ -133,6 +133,8 @@ public class SettingsUtil {
+ 
+     /** Video qualities sorted by size. */
+     public static int[] sVideoQualities = new int[] {
++            CamcorderProfile.QUALITY_8KUHD,
++            CamcorderProfile.QUALITY_4KDCI,
+             CamcorderProfile.QUALITY_2160P,
+             CamcorderProfile.QUALITY_1080P,
+             CamcorderProfile.QUALITY_720P,
+@@ -336,6 +338,7 @@ public class SettingsUtil {
+         for (int i = start + 1; i < sVideoQualities.length; ++i) {
+             if (isVideoQualitySupported(sVideoQualities[i])
+                     && CamcorderProfile.hasProfile(cameraId, sVideoQualities[i])) {
++                Log.d(TAG, "hasProfiles:" + sVideoQualities[i] + ",index:" + i);
+                 // We found a new supported quality.
+                 return i;
+             }
+-- 
+2.53.0
+

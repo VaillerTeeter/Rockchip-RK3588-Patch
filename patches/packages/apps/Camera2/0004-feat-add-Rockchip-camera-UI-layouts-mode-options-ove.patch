@@ -1,0 +1,453 @@
+From 7fdf7df89ea081e7cc951b0aede018b5b6fa6419 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Sat, 11 Jul 2026 01:54:07 +0800
+Subject: [PATCH 05/27] feat: add Rockchip camera UI layouts, mode options
+ overlays, and Chinese translations
+
+Change-Id: I8250350eca189fd4297a713b02c80b7d37879a4e
+---
+ res/layout-land/indicators.xml              | 29 +++++++++-
+ res/layout-land/mode_options.xml            | 60 +++++++++++++++++++++
+ res/layout-port/indicators.xml              | 29 +++++++++-
+ res/layout-port/mode_options.xml            | 60 +++++++++++++++++++++
+ res/layout/activity_main.xml                |  2 +-
+ res/layout/camera.xml                       |  2 +-
+ res/layout/mode_options_overlay.xml         | 13 +++++
+ res/layout/photo_module.xml                 | 35 ++++++++++++
+ res/layout/sticky_bottom_capture_layout.xml |  2 +
+ res/layout/video_module.xml                 | 15 +++++-
+ res/menu/filmstrip_menu.xml                 |  4 ++
+ 11 files changed, 244 insertions(+), 7 deletions(-)
+
+diff --git a/res/layout-land/indicators.xml b/res/layout-land/indicators.xml
+index fa83e8f42..74fa645d2 100644
+--- a/res/layout-land/indicators.xml
++++ b/res/layout-land/indicators.xml
+@@ -15,7 +15,7 @@
+ -->
+ <!-- This layout is shared by phone and tablet in landscape orientation. -->
+   <!-- TODO: make horizontal once nine patch stretches horizontally -->
+-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
++<com.android.camera.ui.ModeOptionsToggle xmlns:android="http://schemas.android.com/apk/res/android"
+       android:id="@+id/mode_options_toggle"
+       android:layout_width="wrap_content"
+       android:layout_height="wrap_content"
+@@ -25,6 +25,22 @@
+       android:contentDescription="@string/accessibility_mode_options"
+       android:background="@drawable/bg_options_indicator"
+       android:layout_gravity="top|right" >
++    <ImageView
++        android:id="@+id/wb_cloudy_indicator"
++        style="@style/IndicatorIcon"
++        android:src="@drawable/ic_indicator_wb_cloudy" />
++    <ImageView
++        android:id="@+id/wb_fluorescent_indicator"
++        style="@style/IndicatorIcon"
++        android:src="@drawable/ic_indicator_wb_fluorescent" />
++    <ImageView
++        android:id="@+id/wb_tungsten_indicator"
++        style="@style/IndicatorIcon"
++        android:src="@drawable/ic_indicator_wb_tungsten" />
++    <ImageView
++        android:id="@+id/wb_daylight_indicator"
++        style="@style/IndicatorIcon"
++        android:src="@drawable/ic_indicator_wb_daylight" />
+     <ImageView
+         android:id="@+id/exposure_n2_indicator"
+         style="@style/IndicatorIcon"
+@@ -41,6 +57,15 @@
+         android:id="@+id/exposure_p2_indicator"
+         style="@style/IndicatorIcon"
+         android:src="@drawable/ic_exposure_p2_indicator" />
++    <ImageView
++        android:id="@+id/threednr_indicator"
++        style="@style/IndicatorIcon" />
++    <ImageView
++        android:id="@+id/smile_shutter_indicator"
++        style="@style/IndicatorIcon" />
++    <ImageView
++        android:id="@+id/zsl_indicator"
++        style="@style/IndicatorIcon" />
+     <ImageView
+         android:id="@+id/pano_indicator"
+         style="@style/IndicatorIcon" />
+@@ -59,4 +84,4 @@
+         android:src="@drawable/ic_options_land"
+         android:contentDescription="@string/accessibility_mode_options"
+         android:visibility="visible" />
+-</LinearLayout>
++</com.android.camera.ui.ModeOptionsToggle>
+diff --git a/res/layout-land/mode_options.xml b/res/layout-land/mode_options.xml
+index 7e49f4557..43146ad54 100644
+--- a/res/layout-land/mode_options.xml
++++ b/res/layout-land/mode_options.xml
+@@ -23,6 +23,47 @@
+     android:layout_gravity="right"
+     android:visibility="invisible"
+     android:background="#00000000" >
++    <com.android.camera.ui.RadioOptions
++        android:id="@+id/mode_options_whitebalance"
++        android:layout_width="match_parent"
++        android:layout_height="match_parent"
++        android:orientation="vertical"
++        android:gravity="center"
++        android:background="@null"
++        camera:selected_drawable="@drawable/button_background_selected_photo"
++        android:visibility="invisible" >
++        <ImageButton
++            android:id="@+id/wb_cloudy"
++            style="@style/ModeOption"
++            android:tag="cloudy-daylight"
++            android:background="@null"
++            android:src="@drawable/ic_wb_cloudy" />
++        <ImageButton
++            android:id="@+id/wb_fluorescent"
++            style="@style/ModeOption"
++            android:tag="fluorescent"
++            android:background="@null"
++            android:src="@drawable/ic_wb_fluorescent" />
++        <ImageButton
++            android:id="@+id/wb_auto"
++            style="@style/ModeOption"
++            android:tag="auto"
++            android:background="@null"
++            android:src="@drawable/ic_wb_auto" />
++        <ImageButton
++            android:id="@+id/wb_incandescent"
++            style="@style/ModeOption"
++            android:tag="incandescent"
++            android:background="@null"
++            android:src="@drawable/ic_wb_incandescent" />
++        <ImageButton
++            android:id="@+id/wb_sunlight"
++            style="@style/ModeOption"
++            android:tag="daylight"
++            android:background="@null"
++            android:src="@drawable/ic_wb_sunlight" />
++    </com.android.camera.ui.RadioOptions>
++
+     <com.android.camera.ui.RadioOptions
+         android:id="@+id/mode_options_exposure"
+         android:layout_width="match_parent"
+@@ -117,11 +158,30 @@
+             style="@style/ModeOption"
+             camera:imageIds="@array/countdown_duration_icons"
+             camera:contentDescriptionIds="@array/countdown_duration_descriptions" />
++        <com.android.camera.MultiToggleImageButton
++            android:id="@+id/zsl_toggle_button"
++            style="@style/ModeOption"
++            camera:imageIds="@array/zsl_icons"
++            camera:contentDescriptionIds="@array/zsl_descriptions" />
++        <com.android.camera.MultiToggleImageButton
++            android:id="@+id/smile_shutter_toggle_button"
++            style="@style/ModeOption"
++            camera:imageIds="@array/smile_shutter_icons"
++            camera:contentDescriptionIds="@array/smile_shutter_descriptions" />
++        <com.android.camera.MultiToggleImageButton
++            android:id="@+id/threednr_toggle_button"
++            style="@style/ModeOption"
++            camera:imageIds="@array/threednr_icons"
++            camera:contentDescriptionIds="@array/threednr_descriptions" />
+         <ImageButton
+             android:id="@+id/exposure_button"
+             style="@style/ModeOption"
+             android:background="@null"
+             android:src="@drawable/ic_exposure"
+             android:contentDescription="@string/manual_exposure_compensation_desc" />
++        <ImageButton
++            android:id="@+id/wb_button"
++            style="@style/ModeOption"
++            android:src="@drawable/ic_whitebalance_auto" />
+     </com.android.camera.ui.TopRightWeightedLayout>
+ </com.android.camera.widget.ModeOptions>
+diff --git a/res/layout-port/indicators.xml b/res/layout-port/indicators.xml
+index d98c591e5..dec59e138 100644
+--- a/res/layout-port/indicators.xml
++++ b/res/layout-port/indicators.xml
+@@ -15,7 +15,7 @@
+ -->
+ <!-- This layout is shared by phone and tablet in landscape orientation. -->
+   <!-- TODO: make horizontal once nine patch stretches horizontally -->
+-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
++<com.android.camera.ui.ModeOptionsToggle xmlns:android="http://schemas.android.com/apk/res/android"
+       android:id="@+id/mode_options_toggle"
+       android:layout_width="wrap_content"
+       android:layout_height="wrap_content"
+@@ -25,6 +25,22 @@
+       android:contentDescription="@string/accessibility_mode_options"
+       android:background="@drawable/bg_options_indicator"
+       android:layout_gravity="bottom|right" >
++    <ImageView
++        android:id="@+id/wb_cloudy_indicator"
++        style="@style/IndicatorIcon"
++        android:src="@drawable/ic_indicator_wb_cloudy" />
++    <ImageView
++        android:id="@+id/wb_fluorescent_indicator"
++        style="@style/IndicatorIcon"
++        android:src="@drawable/ic_indicator_wb_fluorescent" />
++    <ImageView
++        android:id="@+id/wb_tungsten_indicator"
++        style="@style/IndicatorIcon"
++        android:src="@drawable/ic_indicator_wb_tungsten" />
++    <ImageView
++        android:id="@+id/wb_daylight_indicator"
++        style="@style/IndicatorIcon"
++        android:src="@drawable/ic_indicator_wb_daylight" />
+     <ImageView
+         android:id="@+id/exposure_n2_indicator"
+         style="@style/IndicatorIcon"
+@@ -41,6 +57,15 @@
+         android:id="@+id/exposure_p2_indicator"
+         style="@style/IndicatorIcon"
+         android:src="@drawable/ic_exposure_p2_indicator" />
++    <ImageView
++        android:id="@+id/threednr_indicator"
++        style="@style/IndicatorIcon" />
++    <ImageView
++        android:id="@+id/smile_shutter_indicator"
++        style="@style/IndicatorIcon" />
++    <ImageView
++        android:id="@+id/zsl_indicator"
++        style="@style/IndicatorIcon" />
+     <ImageView
+         android:id="@+id/pano_indicator"
+         style="@style/IndicatorIcon" />
+@@ -59,4 +84,4 @@
+         android:src="@drawable/ic_options_port"
+         android:contentDescription="@string/accessibility_mode_options"
+         android:visibility="visible" />
+-</LinearLayout>
++</com.android.camera.ui.ModeOptionsToggle>
+diff --git a/res/layout-port/mode_options.xml b/res/layout-port/mode_options.xml
+index d9508bf5e..75a66b56f 100644
+--- a/res/layout-port/mode_options.xml
++++ b/res/layout-port/mode_options.xml
+@@ -23,6 +23,47 @@
+     android:layout_gravity="bottom"
+     android:visibility="invisible"
+     android:background="#00000000" >
++    <com.android.camera.ui.RadioOptions
++        android:id="@+id/mode_options_whitebalance"
++        android:layout_width="match_parent"
++        android:layout_height="match_parent"
++        android:orientation="horizontal"
++        android:gravity="center"
++        android:background="@null"
++        camera:selected_drawable="@drawable/button_background_selected_photo"
++        android:visibility="invisible" >
++        <ImageButton
++            android:id="@+id/wb_cloudy"
++            style="@style/ModeOption"
++            android:tag="cloudy-daylight"
++            android:background="@null"
++            android:src="@drawable/ic_wb_cloudy" />
++        <ImageButton
++            android:id="@+id/wb_fluorescent"
++            style="@style/ModeOption"
++            android:tag="fluorescent"
++            android:background="@null"
++            android:src="@drawable/ic_wb_fluorescent" />
++        <ImageButton
++            android:id="@+id/wb_auto"
++            style="@style/ModeOption"
++            android:tag="auto"
++            android:background="@null"
++            android:src="@drawable/ic_wb_auto" />
++        <ImageButton
++            android:id="@+id/wb_incandescent"
++            style="@style/ModeOption"
++            android:tag="incandescent"
++            android:background="@null"
++            android:src="@drawable/ic_wb_incandescent" />
++        <ImageButton
++            android:id="@+id/wb_sunlight"
++            style="@style/ModeOption"
++            android:tag="daylight"
++            android:background="@null"
++            android:src="@drawable/ic_wb_sunlight" />
++    </com.android.camera.ui.RadioOptions>
++
+     <com.android.camera.ui.RadioOptions
+         android:id="@+id/mode_options_exposure"
+         android:layout_width="match_parent"
+@@ -92,11 +133,30 @@
+         android:clipChildren="false"
+         android:clipToPadding="false"
+         android:alpha="0.0" >
++        <ImageButton
++            android:id="@+id/wb_button"
++            style="@style/ModeOption"
++            android:src="@drawable/ic_whitebalance_auto" />
+         <ImageButton
+             android:id="@+id/exposure_button"
+             style="@style/ModeOption"
+             android:src="@drawable/ic_exposure"
+             android:contentDescription="@string/manual_exposure_compensation_desc" />
++        <com.android.camera.MultiToggleImageButton
++            android:id="@+id/threednr_toggle_button"
++            style="@style/ModeOption"
++            camera:imageIds="@array/threednr_icons"
++            camera:contentDescriptionIds="@array/threednr_descriptions" />
++        <com.android.camera.MultiToggleImageButton
++            android:id="@+id/smile_shutter_toggle_button"
++            style="@style/ModeOption"
++            camera:imageIds="@array/smile_shutter_icons"
++            camera:contentDescriptionIds="@array/smile_shutter_descriptions" />
++        <com.android.camera.MultiToggleImageButton
++            android:id="@+id/zsl_toggle_button"
++            style="@style/ModeOption"
++            camera:imageIds="@array/zsl_icons"
++            camera:contentDescriptionIds="@array/zsl_descriptions" />
+         <com.android.camera.MultiToggleImageButton
+             android:id="@+id/countdown_toggle_button"
+             style="@style/ModeOption"
+diff --git a/res/layout/activity_main.xml b/res/layout/activity_main.xml
+index c0eedab43..11c5e848c 100644
+--- a/res/layout/activity_main.xml
++++ b/res/layout/activity_main.xml
+@@ -20,7 +20,7 @@
+     android:id="@+id/activity_root_view"
+     android:layout_width="match_parent"
+     android:layout_height="match_parent"
+-    android:background="@null">
++    android:background="@android:color/black">
+ 
+     <include layout="@layout/camera" />
+     <include layout="@layout/camera_filmstrip" />
+diff --git a/res/layout/camera.xml b/res/layout/camera.xml
+index 704bfc203..e58de6356 100644
+--- a/res/layout/camera.xml
++++ b/res/layout/camera.xml
+@@ -18,7 +18,7 @@
+ <FrameLayout
+     xmlns:android="http://schemas.android.com/apk/res/android"
+     android:id="@+id/camera_app_root"
+-    android:background="@android:color/black"
++    android:background="@android:color/transparent"
+     android:layout_width="match_parent"
+     android:layout_height="match_parent" >
+ 
+diff --git a/res/layout/mode_options_overlay.xml b/res/layout/mode_options_overlay.xml
+index 3f042db4e..65d9d6c50 100644
+--- a/res/layout/mode_options_overlay.xml
++++ b/res/layout/mode_options_overlay.xml
+@@ -23,4 +23,17 @@
+ 
+     <include layout="@layout/mode_options" />
+     <include layout="@layout/indicators" />
++    <include layout="@layout/mode_options_screen_effects"/>
++    <include layout="@layout/manual_focus_seek"/>
++
++    <TextView android:id="@+id/smile_shutter_tip"
++        android:layout_width="wrap_content"
++        android:layout_height="wrap_content"
++        android:layout_marginTop="20dp"
++        android:layout_gravity="center_horizontal"
++        android:textAppearance="@android:style/TextAppearance.Holo.Medium"
++        android:textColor="@android:color/white"
++        android:text="@string/smile_shutter_tip"
++        android:visibility="gone"/>
++
+ </com.android.camera.widget.ModeOptionsOverlay>
+diff --git a/res/layout/photo_module.xml b/res/layout/photo_module.xml
+index 563454fcf..cb402c1db 100644
+--- a/res/layout/photo_module.xml
++++ b/res/layout/photo_module.xml
+@@ -45,4 +45,39 @@
+               android:gravity="center"/>
+     </com.android.camera.ui.CountDownView>
+ 
++    <com.android.camera.ui.BurstCountDownView
++        android:id="@+id/burst_count_down_view"
++        android:visibility="invisible"
++        android:layout_width="match_parent"
++        android:layout_height="match_parent" >
++        <TextView android:id="@+id/burst_remaining_seconds"
++            android:layout_width="match_parent"
++            android:layout_height="match_parent"
++            android:visibility="invisible"
++            android:textSize="160dp"
++            android:textColor="@android:color/white"
++            android:gravity="center"/>
++
++        <com.android.camera.ui.TextProgressBar
++            android:id="@+id/burst_save_progress"
++            android:layout_width="@dimen/progress_bar_size"
++            android:layout_height="@dimen/progress_bar_size"
++            android:gravity="center"
++            android:visibility="invisible"
++            android:max="100"
++            style="@android:attr/progressBarStyleLarge"/>
++
++        <TextView
++            android:id="@+id/burst_save_message"
++            android:layout_height="wrap_content"
++            android:layout_width="wrap_content"
++            android:visibility="invisible"
++            android:textAppearance="@style/OnScreenHintTextAppearance.Small"
++            android:textColor="#ffffffff"
++            android:shadowColor="#BB000000"
++            android:shadowRadius="2.75"
++            android:text="@string/pref_burst_saving"
++            android:background="@android:drawable/toast_frame" />
++    </com.android.camera.ui.BurstCountDownView>
++
+ </FrameLayout>
+diff --git a/res/layout/sticky_bottom_capture_layout.xml b/res/layout/sticky_bottom_capture_layout.xml
+index fe0d31617..570175223 100644
+--- a/res/layout/sticky_bottom_capture_layout.xml
++++ b/res/layout/sticky_bottom_capture_layout.xml
+@@ -39,4 +39,6 @@
+         <include layout="@layout/bottom_bar_contents" />
+ 
+     </com.android.camera.ui.BottomBar>
++
++    <include layout="@layout/bottombar_button_contents"/>
+ </com.android.camera.ui.StickyBottomCaptureLayout>
+diff --git a/res/layout/video_module.xml b/res/layout/video_module.xml
+index e6ea14cf7..620d36892 100644
+--- a/res/layout/video_module.xml
++++ b/res/layout/video_module.xml
+@@ -31,7 +31,7 @@
+         android:id="@+id/review_image"
+         android:layout_height="match_parent"
+         android:layout_width="match_parent"
+-        android:scaleType="fitStart"
++        android:scaleType="fitCenter"
+         android:visibility="gone"
+         android:background="@android:color/black" />
+ 
+@@ -43,4 +43,17 @@
+         android:scaleType="center"
+         android:visibility="gone"
+         android:onClick="onReviewPlayClicked" />
++
++    <com.android.camera.ui.CountDownView
++        android:id="@+id/count_down_view"
++        android:visibility="invisible"
++        android:layout_width="match_parent"
++        android:layout_height="match_parent" >
++        <TextView android:id="@+id/remaining_seconds"
++            android:layout_width="match_parent"
++            android:layout_height="match_parent"
++            android:textSize="160dp"
++            android:textColor="@android:color/white"
++            android:gravity="center"/>
++    </com.android.camera.ui.CountDownView>
+ </merge>
+diff --git a/res/menu/filmstrip_menu.xml b/res/menu/filmstrip_menu.xml
+index 56c38dafe..194110ba8 100644
+--- a/res/menu/filmstrip_menu.xml
++++ b/res/menu/filmstrip_menu.xml
+@@ -20,4 +20,8 @@
+             android:title="@string/details"
+             android:visible="true"
+             android:showAsAction="never" />
++    <item android:id="@+id/action_show_on_map"
++            android:title="@string/show_on_map"
++            android:showAsAction="never"
++            android:visible="false" />
+ </menu>
+-- 
+2.53.0
+

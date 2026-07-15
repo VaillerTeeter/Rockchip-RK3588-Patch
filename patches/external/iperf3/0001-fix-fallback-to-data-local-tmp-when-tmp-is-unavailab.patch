@@ -1,0 +1,31 @@
+From 5ea0c8ebb1a0b6f2458de8fb2605f196748eee46 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 13:41:12 +0800
+Subject: [PATCH] fix: fallback to /data/local/tmp when /tmp is unavailable on
+ Android
+
+Change-Id: I0ba051894f71fca1ec6689187cc5047694945498
+---
+ src/iperf_api.c | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/src/iperf_api.c b/src/iperf_api.c
+index 88fed30..83fd09e 100644
+--- a/src/iperf_api.c
++++ b/src/iperf_api.c
+@@ -3840,7 +3840,11 @@ iperf_new_stream(struct iperf_test *test, int s, int sender)
+             tempdir = getenv("TMP");
+         }
+         if (tempdir == 0){
+-            tempdir = "/tmp";
++            if (!access("/tmp", 0)) {
++                tempdir = "/tmp";
++            } else {
++                tempdir = "/data/local/tmp";
++            }
+         }
+         snprintf(template, sizeof(template) / sizeof(char), "%s/iperf3.XXXXXX", tempdir);
+     }
+-- 
+2.53.0
+

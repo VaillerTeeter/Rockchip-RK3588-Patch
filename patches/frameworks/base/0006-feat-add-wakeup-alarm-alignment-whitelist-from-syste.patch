@@ -1,0 +1,258 @@
+From 72e462de46c7bd46a31bf3a3b060943756229481 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 17:22:11 +0800
+Subject: [PATCH] feat: add wakeup-alarm-alignment whitelist from system config
+
+Change-Id: I573d139ff14e6b52f6ce0033838175f42fad1c07
+
+diff --git a/apex/jobscheduler/service/java/com/android/server/alarm/AlarmManagerService.java b/apex/jobscheduler/service/java/com/android/server/alarm/AlarmManagerService.java
+index f1a39310e2f8..559f96401806 100644
+--- a/apex/jobscheduler/service/java/com/android/server/alarm/AlarmManagerService.java
++++ b/apex/jobscheduler/service/java/com/android/server/alarm/AlarmManagerService.java
+@@ -144,6 +144,7 @@ import com.android.server.DeviceIdleInternal;
+ import com.android.server.EventLogTags;
+ import com.android.server.JobSchedulerBackgroundThread;
+ import com.android.server.LocalServices;
++import com.android.server.SystemConfig;
+ import com.android.server.SystemService;
+ import com.android.server.SystemServiceManager;
+ import com.android.server.pm.parsing.pkg.AndroidPackage;
+@@ -188,6 +189,7 @@ public class AlarmManagerService extends SystemService {
+     private static final int ELAPSED_REALTIME_WAKEUP_MASK = 1 << ELAPSED_REALTIME_WAKEUP;
+     private static final int REMOVAL_HISTORY_SIZE_PER_UID = 10;
+     static final int TIME_CHANGED_MASK = 1 << 16;
++    static final int FLAG_WHITELIST = 1 << 7;
+     static final int IS_WAKEUP_MASK = RTC_WAKEUP_MASK | ELAPSED_REALTIME_WAKEUP_MASK;
+ 
+     static final String TAG = "AlarmManager";
+@@ -203,6 +205,7 @@ public class AlarmManagerService extends SystemService {
+     static final boolean RECORD_ALARMS_IN_HISTORY = true;
+     static final boolean RECORD_DEVICE_IDLE_ALARMS = false;
+     static final String TIMEZONE_PROPERTY = "persist.sys.timezone";
++    static final String LAZYBATCHING_PROPERTY = "persist.sys.lazy_batching";
+ 
+     static final int TICK_HISTORY_DEPTH = 10;
+     static final long INDEFINITE_DELAY = 365 * INTERVAL_DAY;
+@@ -263,8 +266,9 @@ public class AlarmManagerService extends SystemService {
+     private long mNextNonWakeup;
+     private long mNextWakeUpSetAt;
+     private long mNextNonWakeUpSetAt;
+-    private long mLastWakeup;
++    static long mLastWakeup;
+     private long mLastTrigger;
++    static long WAKEUP_INTERVAL;
+ 
+     private long mLastTickSet;
+     private long mLastTickReceived;
+@@ -651,6 +655,8 @@ public class AlarmManagerService extends SystemService {
+         @VisibleForTesting
+         static final String KEY_MAX_INTERVAL = "max_interval";
+         @VisibleForTesting
++        static final String KEY_WAKEUP_INTERVAL = "wakeup_interval";
++        @VisibleForTesting
+         static final String KEY_MIN_WINDOW = "min_window";
+         @VisibleForTesting
+         static final String KEY_ALLOW_WHILE_IDLE_WHITELIST_DURATION
+@@ -712,6 +718,7 @@ public class AlarmManagerService extends SystemService {
+         private static final long DEFAULT_MIN_FUTURITY = 5 * 1000;
+         private static final long DEFAULT_MIN_INTERVAL = 60 * 1000;
+         private static final long DEFAULT_MAX_INTERVAL = 365 * INTERVAL_DAY;
++        private static final long DEFAULT_WAKEUP_INTERVAL = 10 * 60 * 1000;
+         private static final long DEFAULT_MIN_WINDOW = 10 * 60 * 1000;
+         private static final long DEFAULT_ALLOW_WHILE_IDLE_WHITELIST_DURATION = 10 * 1000;
+         private static final long DEFAULT_LISTENER_TIMEOUT = 5 * 1000;
+@@ -730,7 +737,7 @@ public class AlarmManagerService extends SystemService {
+         private static final int DEFAULT_APP_STANDBY_RESTRICTED_QUOTA = 1;
+         private static final long DEFAULT_APP_STANDBY_RESTRICTED_WINDOW = INTERVAL_DAY;
+ 
+-        private static final boolean DEFAULT_LAZY_BATCHING = true;
++        private final boolean DEFAULT_LAZY_BATCHING = SystemProperties.getBoolean(LAZYBATCHING_PROPERTY, true);
+         private static final boolean DEFAULT_TIME_TICK_ALLOWED_WHILE_IDLE = true;
+ 
+         /**
+@@ -919,6 +926,10 @@ public class AlarmManagerService extends SystemService {
+                             MAX_INTERVAL = properties.getLong(
+                                     KEY_MAX_INTERVAL, DEFAULT_MAX_INTERVAL);
+                             break;
++                        case KEY_WAKEUP_INTERVAL:
++                            WAKEUP_INTERVAL = properties.getLong(
++                                    KEY_WAKEUP_INTERVAL, DEFAULT_WAKEUP_INTERVAL);
++                            break;
+                         case KEY_ALLOW_WHILE_IDLE_QUOTA:
+                             ALLOW_WHILE_IDLE_QUOTA = properties.getInt(KEY_ALLOW_WHILE_IDLE_QUOTA,
+                                     DEFAULT_ALLOW_WHILE_IDLE_QUOTA);
+@@ -1206,6 +1217,11 @@ public class AlarmManagerService extends SystemService {
+             TimeUtils.formatDuration(MAX_INTERVAL, pw);
+             pw.println();
+ 
++            pw.print(KEY_WAKEUP_INTERVAL);
++            pw.print("=");
++            TimeUtils.formatDuration(WAKEUP_INTERVAL, pw);
++            pw.println();
++
+             pw.print(KEY_MIN_WINDOW);
+             pw.print("=");
+             TimeUtils.formatDuration(MIN_WINDOW, pw);
+@@ -1414,6 +1430,9 @@ public class AlarmManagerService extends SystemService {
+         super(context);
+         mInjector = injector;
+         mEconomyManagerInternal = LocalServices.getService(EconomyManagerInternal.class);
++        if (SystemConfig.getInstance().getWakeupAalarmalignWwhitelist() != null) {
++            Slog.d(TAG, "mWakeupWhiteList=" + SystemConfig.getInstance().getWakeupAalarmalignWwhitelist());
++        }
+     }
+ 
+     public AlarmManagerService(Context context) {
+@@ -1898,6 +1917,7 @@ public class AlarmManagerService extends SystemService {
+         synchronized (mLock) {
+             mHandler = new AlarmHandler();
+             mConstants = new Constants(mHandler);
++            WAKEUP_INTERVAL = mConstants.DEFAULT_WAKEUP_INTERVAL;
+ 
+             mAlarmStore = mConstants.LAZY_BATCHING ? new LazyAlarmStore()
+                     : new BatchingAlarmStore();
+@@ -2324,6 +2344,12 @@ public class AlarmManagerService extends SystemService {
+             String listenerTag, int flags, WorkSource workSource,
+             AlarmManager.AlarmClockInfo alarmClock, int callingUid, String callingPackage,
+             Bundle idleOptions, int exactAllowReason) {
++        Slog.d(TAG, "setImplLocked() callingPackage=" + callingPackage);
++        if (mConstants.LAZY_BATCHING == false && (type == ELAPSED_REALTIME_WAKEUP || type == RTC_WAKEUP)
++                && SystemConfig.getInstance().getWakeupAalarmalignWwhitelist().contains(callingPackage)) {
++            Slog.d(TAG, "setImplLocked() callingPackage=" + callingPackage + " add FLAG_WHITELIST");
++            flags |= FLAG_WHITELIST;
++        }
+         final Alarm a = new Alarm(type, when, whenElapsed, windowLength, interval,
+                 operation, directReceiver, listenerTag, workSource, flags, alarmClock,
+                 callingUid, callingPackage, idleOptions, exactAllowReason);
+diff --git a/apex/jobscheduler/service/java/com/android/server/alarm/BatchingAlarmStore.java b/apex/jobscheduler/service/java/com/android/server/alarm/BatchingAlarmStore.java
+index 1a4efb8ffcd9..b19c9fa98241 100644
+--- a/apex/jobscheduler/service/java/com/android/server/alarm/BatchingAlarmStore.java
++++ b/apex/jobscheduler/service/java/com/android/server/alarm/BatchingAlarmStore.java
+@@ -20,6 +20,9 @@ import static com.android.server.alarm.AlarmManagerService.DEBUG_BATCH;
+ import static com.android.server.alarm.AlarmManagerService.clampPositive;
+ import static com.android.server.alarm.AlarmManagerService.dumpAlarmList;
+ import static com.android.server.alarm.AlarmManagerService.isTimeTickAlarm;
++import static com.android.server.alarm.AlarmManagerService.mLastWakeup;
++import static com.android.server.alarm.AlarmManagerService.FLAG_WHITELIST;
++import static com.android.server.alarm.AlarmManagerService.WAKEUP_INTERVAL;
+ 
+ import android.app.AlarmManager;
+ import android.util.IndentingPrintWriter;
+@@ -136,9 +139,23 @@ public class BatchingAlarmStore implements AlarmStore {
+ 
+     @Override
+     public long getNextWakeupDeliveryTime() {
++        ArrayList<Batch> waitWakeupAlarmBatchesWhitelist = new ArrayList<>();
+         for (Batch b : mAlarmBatches) {
+-            if (b.hasWakeups()) {
+-                return b.mStart;
++            if (b.hasWakeups() && b.mStart > mLastWakeup && (b.mFlags & FLAG_WHITELIST) != 0) {
++                waitWakeupAlarmBatchesWhitelist.add(b);
++            }
++        }
++        for (Batch b : mAlarmBatches) {
++            if (b.hasWakeups() && b.mStart > mLastWakeup) {
++                if (b.mStart > mLastWakeup + WAKEUP_INTERVAL) {
++                    return b.mStart;
++                }
++                for (Batch waitBatch : waitWakeupAlarmBatchesWhitelist) {
++                    if (waitBatch.mStart < mLastWakeup + WAKEUP_INTERVAL) {
++                        return waitBatch.mStart;
++                    }
++                }
++                return mLastWakeup + WAKEUP_INTERVAL;
+             }
+         }
+         return 0;
+@@ -237,7 +254,8 @@ public class BatchingAlarmStore implements AlarmStore {
+     }
+ 
+     private void insertAndBatchAlarm(Alarm alarm) {
+-        final int whichBatch = ((alarm.flags & AlarmManager.FLAG_STANDALONE) != 0) ? -1
++        final int whichBatch = ((alarm.flags & AlarmManager.FLAG_STANDALONE) != 0
++                || (alarm.flags & FLAG_WHITELIST) != 0) ? -1
+                 : attemptCoalesce(alarm.getWhenElapsed(), alarm.getMaxWhenElapsed());
+ 
+         if (whichBatch < 0) {
+@@ -266,7 +284,8 @@ public class BatchingAlarmStore implements AlarmStore {
+         final int n = mAlarmBatches.size();
+         for (int i = 0; i < n; i++) {
+             Batch b = mAlarmBatches.get(i);
+-            if ((b.mFlags & AlarmManager.FLAG_STANDALONE) == 0 && b.canHold(whenElapsed, maxWhen)) {
++            if ((b.mFlags & AlarmManager.FLAG_STANDALONE) == 0 && (b.mFlags & FLAG_WHITELIST) == 0
++                    && b.canHold(whenElapsed, maxWhen)) {
+                 return i;
+             }
+         }
+@@ -310,12 +329,13 @@ public class BatchingAlarmStore implements AlarmStore {
+             if (DEBUG_BATCH) {
+                 Slog.v(TAG, "Adding " + alarm + " to " + this);
+             }
+-            if (alarm.getWhenElapsed() > mStart) {
++            if (alarm.getWhenElapsed() < mStart && (mEnd - mStart) < WAKEUP_INTERVAL) {
+                 mStart = alarm.getWhenElapsed();
+                 newStart = true;
+             }
+-            if (alarm.getMaxWhenElapsed() < mEnd) {
++            if (alarm.getMaxWhenElapsed() > mEnd && (mEnd - mStart) < WAKEUP_INTERVAL) {
+                 mEnd = alarm.getMaxWhenElapsed();
++                newStart = true;
+             }
+             mFlags |= alarm.flags;
+ 
+diff --git a/core/java/com/android/server/SystemConfig.java b/core/java/com/android/server/SystemConfig.java
+index 00b01051adae..c001d9ba8dab 100644
+--- a/core/java/com/android/server/SystemConfig.java
++++ b/core/java/com/android/server/SystemConfig.java
+@@ -284,6 +284,8 @@ public class SystemConfig {
+     // Package names that are exempted from private API blacklisting
+     final ArraySet<String> mHiddenApiPackageWhitelist = new ArraySet<>();
+ 
++    final ArraySet<String> mWakeupAalarmalignWhitelist = new ArraySet<>();
++
+     // The list of carrier applications which should be disabled until used.
+     // This function suppresses update notifications for these pre-installed apps.
+     // In SubscriptionInfoUpdater, the listed applications are disabled until used when all of the
+@@ -436,6 +438,8 @@ public class SystemConfig {
+         return mHiddenApiPackageWhitelist;
+     }
+ 
++    public ArraySet<String> getWakeupAalarmalignWwhitelist() { return mWakeupAalarmalignWhitelist; }
++
+     public ArraySet<ComponentName> getDefaultVrComponents() {
+         return mDefaultVrComponents;
+     }
+@@ -1293,6 +1297,16 @@ public class SystemConfig {
+                         }
+                         XmlUtils.skipCurrentTag(parser);
+                     } break;
++                    case "wakeup-alarmalign-whitelist": {
++                        String pkgname = parser.getAttributeValue(null, "package");
++                        if (pkgname == null) {
++                            Slog.w(TAG, "<" + name + "> without package in "
++                                    + permFile + " at " + parser.getPositionDescription());
++                        } else {
++                            mWakeupAalarmalignWhitelist.add(pkgname);
++                        }
++                        XmlUtils.skipCurrentTag(parser);
++                    } break;
+                     case "allow-association": {
+                         if (allowAssociations) {
+                             String target = parser.getAttributeValue(null, "target");
+diff --git a/data/etc/Android.bp b/data/etc/Android.bp
+index df51871c57d9..7f93daab4919 100644
+--- a/data/etc/Android.bp
++++ b/data/etc/Android.bp
+@@ -48,6 +48,12 @@ prebuilt_etc {
+     src: "hiddenapi-package-whitelist.xml",
+ }
+ 
++prebuilt_etc {
++    name: "wakeup-alarmalign-whitelist.xml",
++    sub_dir: "sysconfig",
++    src: "wakeup-alarmalign-whitelist.xml",
++}
++
+ // Privapp permission whitelist files
+ 
+ prebuilt_etc {

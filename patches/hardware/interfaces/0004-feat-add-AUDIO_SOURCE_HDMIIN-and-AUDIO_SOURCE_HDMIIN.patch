@@ -1,0 +1,41 @@
+From 934f6fc5ffa944714ef49e64ba2879a8c9402aad Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 23:05:46 +0800
+Subject: [PATCH] feat: add AUDIO_SOURCE_HDMIIN and AUDIO_SOURCE_HDMIIN_1 to
+ audio policy configuration
+
+Change-Id: I750a49740c798c93cf6e2088bc8182565201b89a
+---
+ audio/7.0/config/api/current.txt                | 2 ++
+ audio/7.0/config/audio_policy_configuration.xsd | 2 ++
+ 2 files changed, 4 insertions(+)
+
+diff --git a/audio/7.0/config/api/current.txt b/audio/7.0/config/api/current.txt
+index 3716cf0ea..2bc82eae9 100644
+--- a/audio/7.0/config/api/current.txt
++++ b/audio/7.0/config/api/current.txt
+@@ -307,6 +307,8 @@ package android.audio.policy.configuration.V7_0 {
+     enum_constant public static final android.audio.policy.configuration.V7_0.AudioSource AUDIO_SOURCE_DEFAULT;
+     enum_constant public static final android.audio.policy.configuration.V7_0.AudioSource AUDIO_SOURCE_ECHO_REFERENCE;
+     enum_constant public static final android.audio.policy.configuration.V7_0.AudioSource AUDIO_SOURCE_FM_TUNER;
++    enum_constant public static final android.audio.policy.configuration.V7_0.AudioSource AUDIO_SOURCE_HDMIIN;
++    enum_constant public static final android.audio.policy.configuration.V7_0.AudioSource AUDIO_SOURCE_HDMIIN_1;
+     enum_constant public static final android.audio.policy.configuration.V7_0.AudioSource AUDIO_SOURCE_HOTWORD;
+     enum_constant public static final android.audio.policy.configuration.V7_0.AudioSource AUDIO_SOURCE_MIC;
+     enum_constant public static final android.audio.policy.configuration.V7_0.AudioSource AUDIO_SOURCE_REMOTE_SUBMIX;
+diff --git a/audio/7.0/config/audio_policy_configuration.xsd b/audio/7.0/config/audio_policy_configuration.xsd
+index 7f7fb61f4..d0984a62e 100644
+--- a/audio/7.0/config/audio_policy_configuration.xsd
++++ b/audio/7.0/config/audio_policy_configuration.xsd
+@@ -734,6 +734,8 @@
+             <xs:enumeration value="AUDIO_SOURCE_UNPROCESSED"/>
+             <xs:enumeration value="AUDIO_SOURCE_VOICE_PERFORMANCE"/>
+             <xs:enumeration value="AUDIO_SOURCE_ECHO_REFERENCE"/>
++            <xs:enumeration value="AUDIO_SOURCE_HDMIIN"/>
++            <xs:enumeration value="AUDIO_SOURCE_HDMIIN_1"/>
+             <xs:enumeration value="AUDIO_SOURCE_FM_TUNER"/>
+             <xs:enumeration value="AUDIO_SOURCE_HOTWORD"/>
+         </xs:restriction>
+-- 
+2.53.0
+

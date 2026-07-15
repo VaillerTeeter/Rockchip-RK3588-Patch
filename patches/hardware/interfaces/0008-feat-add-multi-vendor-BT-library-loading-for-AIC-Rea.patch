@@ -1,0 +1,118 @@
+From f29ba8af059acea346852f8aaec4c2fb4db1401e Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 23:15:14 +0800
+Subject: [PATCH] feat: add multi-vendor BT library loading for AIC, Realtek,
+ SSV and librkwifi-ctrl dependency
+
+Change-Id: I1bf7a6767632eb53c3c577c664ae850dac068a41
+---
+ bluetooth/1.0/default/Android.bp             |  4 +++
+ bluetooth/1.0/default/test/fuzzer/Android.bp |  2 ++
+ bluetooth/1.0/default/vendor_interface.cc    | 31 +++++++++++++++-----
+ 3 files changed, 30 insertions(+), 7 deletions(-)
+
+diff --git a/bluetooth/1.0/default/Android.bp b/bluetooth/1.0/default/Android.bp
+index 84a49cf0a..1996bedd2 100644
+--- a/bluetooth/1.0/default/Android.bp
++++ b/bluetooth/1.0/default/Android.bp
+@@ -39,6 +39,7 @@ cc_defaults {
+         "libhidlbase",
+         "liblog",
+         "libutils",
++        "librkwifi-ctrl",
+     ],
+     static_libs: [
+         "android.hardware.bluetooth-async",
+@@ -60,6 +61,9 @@ cc_library {
+         "hidl_defaults",
+         "android.hardware.bluetooth@1.0-defaults",
+     ],
++    shared_libs: [
++        "librkwifi-ctrl",
++    ],
+     cflags: [
+         "-DBT_FUZZER",
+     ],
+diff --git a/bluetooth/1.0/default/test/fuzzer/Android.bp b/bluetooth/1.0/default/test/fuzzer/Android.bp
+index 691136fe5..3a0f23030 100644
+--- a/bluetooth/1.0/default/test/fuzzer/Android.bp
++++ b/bluetooth/1.0/default/test/fuzzer/Android.bp
+@@ -54,6 +54,8 @@ cc_fuzz {
+         "libbt-vendor-fuzz",
+         "liblog",
+         "libutils",
++        "librkwifi-ctrl",
++
+     ],
+     fuzz_config: {
+         cc: [
+diff --git a/bluetooth/1.0/default/vendor_interface.cc b/bluetooth/1.0/default/vendor_interface.cc
+index 1d15dd6f1..b66306e7f 100644
+--- a/bluetooth/1.0/default/vendor_interface.cc
++++ b/bluetooth/1.0/default/vendor_interface.cc
+@@ -27,11 +27,9 @@
+ #include "h4_protocol.h"
+ #include "mct_protocol.h"
+ 
+-#ifdef BT_FUZZER
+-static const char* VENDOR_LIBRARY_NAME = "libbt-vendor-fuzz.so";
+-#else
+ static const char* VENDOR_LIBRARY_NAME = "libbt-vendor.so";
+-#endif
++static const char* VENDOR_REALTEK_LIBRARY_NAME = "libbt-vendor-realtek.so";
++static const char* VENDOR_AIC_LIBRARY_NAME = "libbt-vendor-aic.so";
+ static const char* VENDOR_LIBRARY_SYMBOL_NAME =
+     "BLUETOOTH_VENDOR_LIB_INTERFACE";
+ 
+@@ -186,18 +184,37 @@ void VendorInterface::Shutdown() {
+ 
+ VendorInterface* VendorInterface::get() { return g_vendor_interface; }
+ 
++static char wifi_type[64] = {0};
++extern "C" int check_wifi_chip_type_string(char *type);
++
++
+ bool VendorInterface::Open(InitializeCompleteCallback initialize_complete_cb,
+                            PacketReadCallback event_cb,
+                            PacketReadCallback acl_cb,
+                            PacketReadCallback sco_cb,
+                            PacketReadCallback iso_cb) {
+   initialize_complete_cb_ = initialize_complete_cb;
++  char vendor_lib_name[32];
+ 
+   // Initialize vendor interface
++  if (wifi_type[0] == 0)
++    check_wifi_chip_type_string(wifi_type);
++
++
++  if ((0 == strncmp(wifi_type, "AIC", 3))) {
++	  ALOGE("%s try to open %s \n", __func__, VENDOR_AIC_LIBRARY_NAME);
++	  strcpy(vendor_lib_name, VENDOR_AIC_LIBRARY_NAME);
++  } else if ((0 == strncmp(wifi_type, "RTL", 3)) ||
++      (0 == strncmp(wifi_type, "SSV", 3))) { // for ssv6051 wifi + rtl8761 bt
++    strcpy(vendor_lib_name, VENDOR_REALTEK_LIBRARY_NAME);
++  } else {
++    strcpy(vendor_lib_name, VENDOR_LIBRARY_NAME);
++  }
+ 
+-  lib_handle_ = dlopen(VENDOR_LIBRARY_NAME, RTLD_NOW);
++  ALOGD("%s: %s", __func__, vendor_lib_name);
++  lib_handle_ = dlopen(vendor_lib_name, RTLD_NOW);
+   if (!lib_handle_) {
+-    ALOGE("%s unable to open %s (%s)", __func__, VENDOR_LIBRARY_NAME,
++    ALOGE("%s unable to open %s (%s)", __func__, vendor_lib_name,
+           dlerror());
+     return false;
+   }
+@@ -206,7 +223,7 @@ bool VendorInterface::Open(InitializeCompleteCallback initialize_complete_cb,
+       dlsym(lib_handle_, VENDOR_LIBRARY_SYMBOL_NAME));
+   if (!lib_interface_) {
+     ALOGE("%s unable to find symbol %s in %s (%s)", __func__,
+-          VENDOR_LIBRARY_SYMBOL_NAME, VENDOR_LIBRARY_NAME, dlerror());
++          VENDOR_LIBRARY_SYMBOL_NAME, vendor_lib_name, dlerror());
+     return false;
+   }
+ 
+-- 
+2.53.0
+

@@ -1,0 +1,488 @@
+From 89f3fca10a670968953dd4389eb4fe3e9b771dfc Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 22:57:52 +0800
+Subject: [PATCH] fix: replace mutex with recursive_mutex in ComposerResources
+ and HWC2On1Adapter for thread safety
+
+Change-Id: I09566eef805591a2da9745c53f69dea17e4e6cf2
+---
+ .../include/composer-hal/2.1/ComposerClient.h |  1 +
+ .../composer-hal/2.1/ComposerCommandEngine.h  |  4 +
+ .../utils/hwc2on1adapter/HWC2On1Adapter.cpp   | 93 +++++++++++++++++--
+ .../include/hwc2on1adapter/HWC2On1Adapter.h   |  8 ++
+ .../2.1/utils/resources/ComposerResources.cpp | 26 +++---
+ .../2.1/ComposerResources.h                   |  4 +-
+ .../2.2/utils/resources/ComposerResources.cpp |  2 +-
+ .../2.2/ComposerResources.h                   |  2 +-
+ 8 files changed, 115 insertions(+), 25 deletions(-)
+
+diff --git a/graphics/composer/2.1/utils/hal/include/composer-hal/2.1/ComposerClient.h b/graphics/composer/2.1/utils/hal/include/composer-hal/2.1/ComposerClient.h
+index 46f5d6e1e..bd77ae6d8 100644
+--- a/graphics/composer/2.1/utils/hal/include/composer-hal/2.1/ComposerClient.h
++++ b/graphics/composer/2.1/utils/hal/include/composer-hal/2.1/ComposerClient.h
+@@ -94,6 +94,7 @@ class ComposerClientImpl : public Interface {
+          void onHotplug(Display display, IComposerCallback::Connection connected) {
+              if (connected == IComposerCallback::Connection::CONNECTED) {
+                  if (mResources->hasDisplay(display)) {
++                    std::lock_guard<std::recursive_mutex> lock(mResources->getLock());
+                      // This is a subsequent hotplug "connected" for a display. This signals a
+                      // display change and thus the framework may want to reallocate buffers. We
+                      // need to free all cached handles, since they are holding a strong reference
+diff --git a/graphics/composer/2.1/utils/hal/include/composer-hal/2.1/ComposerCommandEngine.h b/graphics/composer/2.1/utils/hal/include/composer-hal/2.1/ComposerCommandEngine.h
+index 9ae6173a9..1daec17d1 100644
+--- a/graphics/composer/2.1/utils/hal/include/composer-hal/2.1/ComposerCommandEngine.h
++++ b/graphics/composer/2.1/utils/hal/include/composer-hal/2.1/ComposerCommandEngine.h
+@@ -220,6 +220,7 @@ class ComposerCommandEngine : protected CommandReaderBase {
+         bool closeFence = true;
+ 
+         const native_handle_t* clientTarget;
++        std::lock_guard<std::recursive_mutex> lock(mResources->getLock());
+         ComposerResources::ReplacedHandle replacedClientTarget(true);
+         auto err = mResources->getDisplayClientTarget(mCurrentDisplay, slot, useCache, rawHandle,
+                                                       &clientTarget, &replacedClientTarget);
+@@ -251,6 +252,7 @@ class ComposerCommandEngine : protected CommandReaderBase {
+         bool closeFence = true;
+ 
+         const native_handle_t* outputBuffer;
++        std::lock_guard<std::recursive_mutex> lock(mResources->getLock());
+         ComposerResources::ReplacedHandle replacedOutputBuffer(true);
+         auto err = mResources->getDisplayOutputBuffer(mCurrentDisplay, slot, useCache, rawhandle,
+                                                       &outputBuffer, &replacedOutputBuffer);
+@@ -367,6 +369,8 @@ class ComposerCommandEngine : protected CommandReaderBase {
+ 
+         const native_handle_t* buffer;
+         ComposerResources::ReplacedHandle replacedBuffer(true);
++
++        std::lock_guard<std::recursive_mutex> lock(mResources->getLock());
+         auto err = mResources->getLayerBuffer(mCurrentDisplay, mCurrentLayer, slot, useCache,
+                                               rawHandle, &buffer, &replacedBuffer);
+         if (err == Error::NONE) {
+diff --git a/graphics/composer/2.1/utils/hwc2on1adapter/HWC2On1Adapter.cpp b/graphics/composer/2.1/utils/hwc2on1adapter/HWC2On1Adapter.cpp
+index 37021716c..0a5ad5e75 100644
+--- a/graphics/composer/2.1/utils/hwc2on1adapter/HWC2On1Adapter.cpp
++++ b/graphics/composer/2.1/utils/hwc2on1adapter/HWC2On1Adapter.cpp
+@@ -528,7 +528,9 @@ HWC2On1Adapter::Display::Display(HWC2On1Adapter& device, HWC2::DisplayType type)
+     mHwc1LayerMap(),
+     mNumAvailableRects(0),
+     mNextAvailableRect(nullptr),
+-    mGeometryChanged(false)
++    mGeometryChanged(false),
++    mHasPrepare(false),
++    mHasSet(false)
+     {}
+ 
+ Error HWC2On1Adapter::Display::acceptChanges() {
+@@ -786,8 +788,7 @@ Error HWC2On1Adapter::Display::getType(int32_t* outType) {
+ 
+ Error HWC2On1Adapter::Display::present(int32_t* outRetireFence) {
+     std::unique_lock<std::recursive_mutex> lock(mStateMutex);
+-
+-    if (mChanges) {
++    if (mChanges && !mHasSet) {
+         Error error = mDevice.setAllDisplays();
+         if (error != Error::None) {
+             ALOGE("[%" PRIu64 "] present: setAllDisplaysFailed (%s)", mId,
+@@ -849,6 +850,8 @@ Error HWC2On1Adapter::Display::setColorMode(android_color_mode_t mode) {
+     std::unique_lock<std::recursive_mutex> lock (mStateMutex);
+ 
+     ALOGV("[%" PRIu64 "] setColorMode(%d)", mId, mode);
++    if (mode == -1)
++        return Error::BadParameter;
+ 
+     if (mode == mActiveColorMode) {
+         return Error::None;
+@@ -903,6 +906,8 @@ static bool isValid(PowerMode mode) {
+         case PowerMode::DozeSuspend: // Fall-through
+         case PowerMode::Doze: // Fall-through
+         case PowerMode::On: return true;
++        default:
++            return false;
+     }
+ }
+ 
+@@ -963,7 +968,6 @@ Error HWC2On1Adapter::Display::setVsyncEnabled(Vsync enable) {
+             mHwc1Id, HWC_EVENT_VSYNC, enable == Vsync::Enable);
+     ALOGE_IF(error != 0, "setVsyncEnabled: Failed to set vsync on HWC1 (%d)",
+             error);
+-
+     mVsyncEnabled = enable;
+     return Error::None;
+ }
+@@ -972,11 +976,11 @@ Error HWC2On1Adapter::Display::validate(uint32_t* outNumTypes,
+         uint32_t* outNumRequests) {
+     std::unique_lock<std::recursive_mutex> lock(mStateMutex);
+ 
+-    if (!mChanges) {
++    if (!mChanges && !mHasPrepare) {
+         if (!mDevice.prepareAllDisplays()) {
+             return Error::BadDisplay;
+         }
+-    } else {
++    } else if(!mHasPrepare){
+         ALOGE("Validate was called more than once!");
+     }
+ 
+@@ -1274,6 +1278,7 @@ Error HWC2On1Adapter::Display::set(hwc_display_contents_1& hwcContents) {
+ 
+     if (!mChanges || (mChanges->getNumTypes() > 0)) {
+         ALOGE("[%" PRIu64 "] set failed: not validated", mId);
++
+         return Error::NotValidated;
+     }
+ 
+@@ -1916,6 +1921,7 @@ HWC2On1Adapter::Layer::Layer(Display& display)
+     mSourceCrop({0.0f, 0.0f, -1.0f, -1.0f}),
+     mTransform(Transform::None),
+     mVisibleRegion(),
++    mDataSpace(HAL_DATASPACE_UNKNOWN),
+     mZ(0),
+     mReleaseFence(),
+     mHwc1Id(0),
+@@ -1945,7 +1951,8 @@ Error HWC2On1Adapter::Layer::setCursorPosition(int32_t x, int32_t y) {
+ 
+     auto displayId = mDisplay.getHwc1Id();
+     auto hwc1Device = mDisplay.getDevice().getHwc1Device();
+-    hwc1Device->setCursorPositionAsync(hwc1Device, displayId, x, y);
++    if(hwc1Device != NULL && hwc1Device->setCursorPositionAsync)
++        hwc1Device->setCursorPositionAsync(hwc1Device, displayId, x, y);
+     return Error::None;
+ }
+ 
+@@ -1979,7 +1986,9 @@ Error HWC2On1Adapter::Layer::setCompositionType(Composition type) {
+     return Error::None;
+ }
+ 
+-Error HWC2On1Adapter::Layer::setDataspace(android_dataspace_t) {
++Error HWC2On1Adapter::Layer::setDataspace(android_dataspace_t dataspace) {
++    mDataSpace = dataspace;
++    mDisplay.markGeometryChanged();
+     return Error::None;
+ }
+ 
+@@ -2103,6 +2112,7 @@ std::string HWC2On1Adapter::Layer::dump() const {
+                 frectString(mSourceCrop) << '\n';
+         output << fill << "  Transform: " << to_string(mTransform);
+         output << "  Blend mode: " << to_string(mBlendMode);
++        output << " DataSpace: " << mDataSpace;
+         if (mPlaneAlpha != 1.0f) {
+             output << "  Alpha: " <<
+                 alphaString(mPlaneAlpha) << '\n';
+@@ -2148,6 +2158,11 @@ void HWC2On1Adapter::Layer::applyCommonState(hwc_layer_1_t& hwc1Layer) {
+     } else {
+         hwc1Layer.sourceCropf = mSourceCrop;
+     }
++    auto pendingDataSpace = mDataSpace;
++    hwc1Layer.reserved[0] = pendingDataSpace & 0xFF;
++    hwc1Layer.reserved[1] = (pendingDataSpace >> 8) & 0xFF;
++    hwc1Layer.reserved[2] = (pendingDataSpace >> 16) & 0xFF;
++    hwc1Layer.reserved[3] = (pendingDataSpace >> 24) & 0xFF;
+ 
+     hwc1Layer.transform = static_cast<uint32_t>(mTransform);
+ 
+@@ -2397,6 +2412,8 @@ bool HWC2On1Adapter::prepareAllDisplays() {
+         auto displayId = mHwc1DisplayMap[hwc1Id];
+         auto& display = mDisplays[displayId];
+         display->generateChanges();
++        display->markHasPrepare();
++        display->resetHasSet();
+     }
+ 
+     return true;
+@@ -2521,6 +2538,8 @@ Error HWC2On1Adapter::setAllDisplays() {
+                 retireFenceFd, hwc1Id);
+         display->addRetireFence(mHwc1Contents[hwc1Id]->retireFenceFd);
+         display->addReleaseFences(*mHwc1Contents[hwc1Id]);
++        display->resetHasPrepare();
++        display->markHasSet();
+     }
+ 
+     return Error::None;
+@@ -2580,6 +2599,27 @@ void HWC2On1Adapter::hwc1Vsync(int hwc1DisplayId, int64_t timestamp) {
+     vsync(callbackInfo.data, displayId, timestamp);
+ }
+ 
++Error HWC2On1Adapter::Display::destroyLayers() {
++    std::unique_lock<std::recursive_mutex> lock(mStateMutex);
++
++    for (auto current = mLayers.begin(); current != mLayers.end(); ++current) {
++        for(auto current2 = mDevice.mLayers.begin(); current2 != mDevice.mLayers.end(); )
++        {
++          if(**current == *(current2->second))
++          {
++            current2=mDevice.mLayers.erase(current2);
++          }
++          else
++            ++current2;
++        }
++    }
++
++    mLayers.clear();
++    markGeometryChanged();
++
++    return Error::None;
++}
++
+ void HWC2On1Adapter::hwc1Hotplug(int hwc1DisplayId, int connected) {
+     ALOGV("Received hwc1Hotplug(%d, %d)", hwc1DisplayId, connected);
+ 
+@@ -2612,9 +2652,44 @@ void HWC2On1Adapter::hwc1Hotplug(int hwc1DisplayId, int connected) {
+             return;
+         }
+ 
+-        // Disconnect an existing display
+         displayId = mHwc1DisplayMap[hwc1DisplayId];
++        auto& display = mDisplays[displayId];
++        //Remove extern display context if plug out HDMI.
++        //Fix crash when plug out HDMI.
++        /*
++          F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x10
++          ...
++          F DEBUG   :     #00 pc 0000000000068790  /system/lib64/libc.so (pthread_mutex_lock)
++          F DEBUG   :     #01 pc 00000000000b8a7c  /system/lib64/vndk-sp/libc++.so (std::__1::recursive_mutex::lock()+8)
++          F DEBUG   :     #02 pc 00000000000116f4  /vendor/lib64/libhwc2on1adapter.so (android::HWC2On1Adapter::setAllDisplays()+740)
++          F DEBUG   :     #03 pc 00000000000112b8  /vendor/lib64/libhwc2on1adapter.so (android::HWC2On1Adapter::Display::present(int*)+72)
++        */
++        if (mHwc1Contents[HWC_DISPLAY_EXTERNAL] != nullptr)
++        {
++            if(mHwc1Contents[HWC_DISPLAY_EXTERNAL]->retireFenceFd > 0){
++                close(mHwc1Contents[HWC_DISPLAY_EXTERNAL]->retireFenceFd);
++                mHwc1Contents[HWC_DISPLAY_EXTERNAL]->retireFenceFd = -1;
++            }
++            if(mHwc1Contents[HWC_DISPLAY_EXTERNAL]->outbufAcquireFenceFd > 0){
++                close(mHwc1Contents[HWC_DISPLAY_EXTERNAL]->outbufAcquireFenceFd);
++                mHwc1Contents[HWC_DISPLAY_EXTERNAL]->outbufAcquireFenceFd = -1;
++            }
++            for(size_t layerId=0 ; layerId < mHwc1Contents[HWC_DISPLAY_EXTERNAL]->numHwLayers ; layerId++)  {
++                hwc_layer_1_t& layer = mHwc1Contents[HWC_DISPLAY_EXTERNAL]->hwLayers[layerId];
++                if(layer.releaseFenceFd > 0){
++                    close(layer.releaseFenceFd);
++                    layer.releaseFenceFd = -1;
++                }
++                if(layer.acquireFenceFd > 0){
++                    close(layer.acquireFenceFd);
++                    layer.acquireFenceFd = -1;
++                }
++            }
++            mHwc1Contents.erase(mHwc1Contents.begin()+HWC_DISPLAY_EXTERNAL);
++        }
++        // Disconnect an existing display
+         mHwc1DisplayMap.erase(HWC_DISPLAY_EXTERNAL);
++        display->destroyLayers();
+         mDisplays.erase(displayId);
+     }
+ 
+diff --git a/graphics/composer/2.1/utils/hwc2on1adapter/include/hwc2on1adapter/HWC2On1Adapter.h b/graphics/composer/2.1/utils/hwc2on1adapter/include/hwc2on1adapter/HWC2On1Adapter.h
+index da771dc7a..784f431da 100644
+--- a/graphics/composer/2.1/utils/hwc2on1adapter/include/hwc2on1adapter/HWC2On1Adapter.h
++++ b/graphics/composer/2.1/utils/hwc2on1adapter/include/hwc2on1adapter/HWC2On1Adapter.h
+@@ -202,6 +202,7 @@ private:
+             HWC2::Error acceptChanges();
+             HWC2::Error createLayer(hwc2_layer_t* outLayerId);
+             HWC2::Error destroyLayer(hwc2_layer_t layerId);
++            HWC2::Error destroyLayers();
+             HWC2::Error getActiveConfig(hwc2_config_t* outConfigId);
+             HWC2::Error getAttribute(hwc2_config_t configId,
+                     HWC2::Attribute attribute, int32_t* outValue);
+@@ -278,6 +279,10 @@ private:
+ 
+             void markGeometryChanged() { mGeometryChanged = true; }
+             void resetGeometryMarker() { mGeometryChanged = false;}
++            void markHasPrepare() { mHasPrepare = true; }
++            void resetHasPrepare() { mHasPrepare = false;}
++            void markHasSet() { mHasSet = true; }
++            void resetHasSet() { mHasSet = false;}
+         private:
+             class Config {
+                 public:
+@@ -458,6 +463,8 @@ private:
+             // updated with anything other than a buffer since last call to
+             // Display::set()
+             bool mGeometryChanged;
++            bool mHasPrepare;
++            bool mHasSet;
+     };
+ 
+     // Utility template calling a Display object method directly based on the
+@@ -599,6 +606,7 @@ private:
+             HWC2::Transform mTransform;
+             std::vector<hwc_rect_t> mVisibleRegion;
+ 
++            android_dataspace_t mDataSpace;
+             uint32_t mZ;
+ 
+             DeferredFence mReleaseFence;
+diff --git a/graphics/composer/2.1/utils/resources/ComposerResources.cpp b/graphics/composer/2.1/utils/resources/ComposerResources.cpp
+index e52bf7124..77f87a050 100644
+--- a/graphics/composer/2.1/utils/resources/ComposerResources.cpp
++++ b/graphics/composer/2.1/utils/resources/ComposerResources.cpp
+@@ -17,7 +17,6 @@
+ #define LOG_TAG "ComposerResources"
+ 
+ #include "composer-resources/2.1/ComposerResources.h"
+-
+ namespace android {
+ namespace hardware {
+ namespace graphics {
+@@ -296,7 +295,7 @@ bool ComposerResources::init() {
+ }
+ 
+ void ComposerResources::clear(RemoveDisplay removeDisplay) {
+-    std::lock_guard<std::mutex> lock(mDisplayResourcesMutex);
++    std::lock_guard<std::recursive_mutex> lock(mDisplayResourcesMutex);
+     for (const auto& displayKey : mDisplayResources) {
+         Display display = displayKey.first;
+         const ComposerDisplayResource& displayResource = *displayKey.second;
+@@ -312,7 +311,7 @@ bool ComposerResources::hasDisplay(Display display) {
+ Error ComposerResources::addPhysicalDisplay(Display display) {
+     auto displayResource = createDisplayResource(ComposerDisplayResource::DisplayType::PHYSICAL, 0);
+ 
+-    std::lock_guard<std::mutex> lock(mDisplayResourcesMutex);
++    std::lock_guard<std::recursive_mutex> lock(mDisplayResourcesMutex);
+     auto result = mDisplayResources.emplace(display, std::move(displayResource));
+     return result.second ? Error::NONE : Error::BAD_DISPLAY;
+ }
+@@ -321,19 +320,19 @@ Error ComposerResources::addVirtualDisplay(Display display, uint32_t outputBuffe
+     auto displayResource = createDisplayResource(ComposerDisplayResource::DisplayType::VIRTUAL,
+                                                  outputBufferCacheSize);
+ 
+-    std::lock_guard<std::mutex> lock(mDisplayResourcesMutex);
++    std::lock_guard<std::recursive_mutex> lock(mDisplayResourcesMutex);
+     auto result = mDisplayResources.emplace(display, std::move(displayResource));
+     return result.second ? Error::NONE : Error::BAD_DISPLAY;
+ }
+ 
+ Error ComposerResources::removeDisplay(Display display) {
+-    std::lock_guard<std::mutex> lock(mDisplayResourcesMutex);
++    std::lock_guard<std::recursive_mutex> lock(mDisplayResourcesMutex);
+     return mDisplayResources.erase(display) > 0 ? Error::NONE : Error::BAD_DISPLAY;
+ }
+ 
+ Error ComposerResources::setDisplayClientTargetCacheSize(Display display,
+                                                          uint32_t clientTargetCacheSize) {
+-    std::lock_guard<std::mutex> lock(mDisplayResourcesMutex);
++    std::lock_guard<std::recursive_mutex> lock(mDisplayResourcesMutex);
+     ComposerDisplayResource* displayResource = findDisplayResourceLocked(display);
+     if (!displayResource) {
+         return Error::BAD_DISPLAY;
+@@ -344,7 +343,7 @@ Error ComposerResources::setDisplayClientTargetCacheSize(Display display,
+ }
+ 
+ Error ComposerResources::getDisplayClientTargetCacheSize(Display display, size_t* outCacheSize) {
+-    std::lock_guard<std::mutex> lock(mDisplayResourcesMutex);
++    std::lock_guard<std::recursive_mutex> lock(mDisplayResourcesMutex);
+     ComposerDisplayResource* displayResource = findDisplayResourceLocked(display);
+     if (!displayResource) {
+         return Error::BAD_DISPLAY;
+@@ -354,7 +353,7 @@ Error ComposerResources::getDisplayClientTargetCacheSize(Display display, size_t
+ }
+ 
+ Error ComposerResources::getDisplayOutputBufferCacheSize(Display display, size_t* outCacheSize) {
+-    std::lock_guard<std::mutex> lock(mDisplayResourcesMutex);
++    std::lock_guard<std::recursive_mutex> lock(mDisplayResourcesMutex);
+     ComposerDisplayResource* displayResource = findDisplayResourceLocked(display);
+     if (!displayResource) {
+         return Error::BAD_DISPLAY;
+@@ -366,7 +365,7 @@ Error ComposerResources::getDisplayOutputBufferCacheSize(Display display, size_t
+ Error ComposerResources::addLayer(Display display, Layer layer, uint32_t bufferCacheSize) {
+     auto layerResource = createLayerResource(bufferCacheSize);
+ 
+-    std::lock_guard<std::mutex> lock(mDisplayResourcesMutex);
++    std::lock_guard<std::recursive_mutex> lock(mDisplayResourcesMutex);
+     ComposerDisplayResource* displayResource = findDisplayResourceLocked(display);
+     if (!displayResource) {
+         return Error::BAD_DISPLAY;
+@@ -377,7 +376,7 @@ Error ComposerResources::addLayer(Display display, Layer layer, uint32_t bufferC
+ }
+ 
+ Error ComposerResources::removeLayer(Display display, Layer layer) {
+-    std::lock_guard<std::mutex> lock(mDisplayResourcesMutex);
++    std::lock_guard<std::recursive_mutex> lock(mDisplayResourcesMutex);
+     ComposerDisplayResource* displayResource = findDisplayResourceLocked(display);
+     if (!displayResource) {
+         return Error::BAD_DISPLAY;
+@@ -419,7 +418,7 @@ Error ComposerResources::getLayerSidebandStream(Display display, Layer layer,
+ }
+ 
+ void ComposerResources::setDisplayMustValidateState(Display display, bool mustValidate) {
+-    std::lock_guard<std::mutex> lock(mDisplayResourcesMutex);
++    std::lock_guard<std::recursive_mutex> lock(mDisplayResourcesMutex);
+     auto* displayResource = findDisplayResourceLocked(display);
+     if (displayResource) {
+         displayResource->setMustValidateState(mustValidate);
+@@ -427,7 +426,7 @@ void ComposerResources::setDisplayMustValidateState(Display display, bool mustVa
+ }
+ 
+ bool ComposerResources::mustValidateDisplay(Display display) {
+-    std::lock_guard<std::mutex> lock(mDisplayResourcesMutex);
++    std::lock_guard<std::recursive_mutex> lock(mDisplayResourcesMutex);
+     auto* displayResource = findDisplayResourceLocked(display);
+     if (displayResource) {
+         return displayResource->mustValidate();
+@@ -459,6 +458,7 @@ Error ComposerResources::getHandle(Display display, Layer layer, uint32_t slot,
+                                    ReplacedHandle* outReplacedHandle) {
+     Error error;
+ 
++
+     // import the raw handle (or ignore raw handle when fromCache is true)
+     const native_handle_t* importedHandle = nullptr;
+     if (!fromCache) {
+@@ -470,7 +470,7 @@ Error ComposerResources::getHandle(Display display, Layer layer, uint32_t slot,
+         }
+     }
+ 
+-    std::lock_guard<std::mutex> lock(mDisplayResourcesMutex);
++    std::lock_guard<std::recursive_mutex> lock(mDisplayResourcesMutex);
+ 
+     // find display/layer resource
+     const bool needLayerResource = (cache == ComposerResources::Cache::LAYER_BUFFER ||
+diff --git a/graphics/composer/2.1/utils/resources/include/composer-resources/2.1/ComposerResources.h b/graphics/composer/2.1/utils/resources/include/composer-resources/2.1/ComposerResources.h
+index de78a59e9..1b043a035 100644
+--- a/graphics/composer/2.1/utils/resources/include/composer-resources/2.1/ComposerResources.h
++++ b/graphics/composer/2.1/utils/resources/include/composer-resources/2.1/ComposerResources.h
+@@ -181,6 +181,8 @@ class ComposerResources {
+ 
+     bool mustValidateDisplay(Display display);
+ 
++    std::recursive_mutex& getLock() { return mDisplayResourcesMutex; };
++
+     // When a buffer in the cache is replaced by a new one, we must keep it
+     // alive until it has been replaced in ComposerHal because it is still using
+     // the old buffer.
+@@ -242,7 +244,7 @@ class ComposerResources {
+ 
+     ComposerHandleImporter mImporter;
+ 
+-    std::mutex mDisplayResourcesMutex;
++    std::recursive_mutex mDisplayResourcesMutex;
+     std::unordered_map<Display, std::unique_ptr<ComposerDisplayResource>> mDisplayResources;
+ 
+   private:
+diff --git a/graphics/composer/2.2/utils/resources/ComposerResources.cpp b/graphics/composer/2.2/utils/resources/ComposerResources.cpp
+index a0610a3fd..9e68177e6 100644
+--- a/graphics/composer/2.2/utils/resources/ComposerResources.cpp
++++ b/graphics/composer/2.2/utils/resources/ComposerResources.cpp
+@@ -54,7 +54,7 @@ Error ComposerResources::getDisplayReadbackBuffer(Display display, const native_
+         return error;
+     }
+ 
+-    std::lock_guard<std::mutex> lock(mDisplayResourcesMutex);
++    std::lock_guard<std::muterecursive_mutexx> lock(mDisplayResourcesMutex);
+ 
+     auto iter = mDisplayResources.find(display);
+     if (iter == mDisplayResources.end()) {
+diff --git a/graphics/composer/2.2/utils/resources/include/composer-resources/2.2/ComposerResources.h b/graphics/composer/2.2/utils/resources/include/composer-resources/2.2/ComposerResources.h
+index 18a50fecd..3715c72b9 100644
+--- a/graphics/composer/2.2/utils/resources/include/composer-resources/2.2/ComposerResources.h
++++ b/graphics/composer/2.2/utils/resources/include/composer-resources/2.2/ComposerResources.h
+@@ -70,7 +70,7 @@ class ComposerResources : public V2_1::hal::ComposerResources {
+             return error;
+         }
+ 
+-        std::lock_guard<std::mutex> lock(mDisplayResourcesMutex);
++        std::lock_guard<std::recursive_mutex> lock(mDisplayResourcesMutex);
+ 
+         auto iter = mDisplayResources.find(display);
+         if (iter == mDisplayResources.end()) {
+-- 
+2.53.0
+

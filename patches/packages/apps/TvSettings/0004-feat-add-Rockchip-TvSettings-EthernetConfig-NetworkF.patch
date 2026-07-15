@@ -1,0 +1,570 @@
+From 7a16c45b55efaaf5a1850e89235708131d70dae6 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Sat, 11 Jul 2026 21:26:33 +0800
+Subject: [PATCH 73/78] feat: add Rockchip TvSettings EthernetConfig,
+ NetworkFragment enhancements, and Wi-Fi setup state flow
+
+Change-Id: I49f194a4bf7c6dfa5e748f7274e0e3e0485bca76
+---
+ .../settings/connectivity/EthernetConfig.java |   5 +-
+ .../connectivity/NetworkFragment.java         | 227 +++++++++++++++++-
+ .../connectivity/setup/Dns1State.java         |   2 +-
+ .../connectivity/setup/Dns2State.java         |   2 +-
+ .../setup/EnterPasswordState.java             |  17 +-
+ .../connectivity/setup/EnterSsidState.java    |   2 +-
+ .../connectivity/setup/GatewayState.java      |   2 +-
+ .../connectivity/setup/IpAddressState.java    |   3 +-
+ .../setup/NetworkPrefixLengthState.java       |   2 +-
+ .../connectivity/setup/ProxyBypassState.java  |   2 +-
+ .../setup/ProxyHostNameState.java             |   3 +-
+ .../connectivity/setup/ProxyPortState.java    |   2 +-
+ 12 files changed, 248 insertions(+), 21 deletions(-)
+
+diff --git a/Settings/src/com/android/tv/settings/connectivity/EthernetConfig.java b/Settings/src/com/android/tv/settings/connectivity/EthernetConfig.java
+index 6c781f5e3..c596ac1be 100644
+--- a/Settings/src/com/android/tv/settings/connectivity/EthernetConfig.java
++++ b/Settings/src/com/android/tv/settings/connectivity/EthernetConfig.java
+@@ -56,7 +56,7 @@ class EthernetConfig implements NetworkConfiguration {
+         if (mInterfaceName != null) {
+             // TODO: Remove below NetworkCapabilities list once EthernetNetworkUpdateRequest
+             // supports the default standard NetworkCapabilities built for Ethernet transport.
+-            final NetworkCapabilities nc = new NetworkCapabilities.Builder()
++/*            final NetworkCapabilities nc = new NetworkCapabilities.Builder()
+                     .addTransportType(NetworkCapabilities.TRANSPORT_ETHERNET)
+                     .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_ROAMING)
+                     .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_CONGESTED)
+@@ -66,10 +66,11 @@ class EthernetConfig implements NetworkConfiguration {
+                     .setLinkUpstreamBandwidthKbps(100 * 1000)
+                     .setLinkDownstreamBandwidthKbps(100 * 1000)
+                     .build();
++*/
+             final EthernetNetworkUpdateRequest request =
+                     new EthernetNetworkUpdateRequest.Builder()
+                             .setIpConfiguration(mIpConfiguration)
+-                            .setNetworkCapabilities(nc)
++ //                           .setNetworkCapabilities(nc)
+                             .build();
+             mEthernetManager.updateConfiguration(mInterfaceName, request, r -> r.run(),
+                     null /* network listener */);
+diff --git a/Settings/src/com/android/tv/settings/connectivity/NetworkFragment.java b/Settings/src/com/android/tv/settings/connectivity/NetworkFragment.java
+index 65e294b39..70ab2bc0a 100644
+--- a/Settings/src/com/android/tv/settings/connectivity/NetworkFragment.java
++++ b/Settings/src/com/android/tv/settings/connectivity/NetworkFragment.java
+@@ -23,42 +23,71 @@ import static com.android.tv.settings.library.overlay.FlavorUtils.FLAVOR_X;
+ import static com.android.tv.settings.util.InstrumentationUtils.logEntrySelected;
+ import static com.android.tv.settings.util.InstrumentationUtils.logToggleInteracted;
+ 
++import android.app.AppOpsManager;
+ import android.app.tvsettings.TvSettingsEnums;
+ import android.content.Context;
+ import android.content.Intent;
+ import android.content.pm.PackageManager;
+ import android.content.pm.ResolveInfo;
++import android.net.ConnectivityManager.NetworkCallback;
+ import android.net.ConnectivityManager;
++import android.net.VpnManager;
+ import android.net.NetworkCapabilities;
+ import android.net.NetworkInfo;
+ import android.net.wifi.WifiManager;
+ import android.os.Bundle;
+ import android.os.Handler;
++import android.os.Message;
++import android.os.UserHandle;
++import android.os.UserManager;
++import android.os.RemoteException;
++import android.os.ServiceManager;
+ import android.os.SystemClock;
++import android.os.SystemProperties;
+ import android.os.UserManager;
+ import android.provider.Settings;
+-
++import android.security.Credentials;
++import android.security.LegacyVpnProfileStore;
++import android.util.ArrayMap;
++import android.util.ArraySet;
++import android.util.Log;
++
++import androidx.annotation.UiThread;
++import androidx.annotation.WorkerThread;
+ import androidx.annotation.Keep;
+ import androidx.preference.Preference;
+ import androidx.preference.PreferenceCategory;
+ import androidx.preference.PreferenceManager;
+ import androidx.preference.TwoStatePreference;
+ 
++import com.android.settingslib.RestrictedLockUtils;
+ import com.android.settingslib.RestrictedPreference;
+ import com.android.settingslib.wifi.AccessPoint;
++import com.android.internal.net.LegacyVpnInfo;
++import com.android.internal.net.VpnConfig;
++import com.android.internal.net.VpnProfile;
++import com.android.internal.util.ArrayUtils;
+ import com.android.tv.settings.MainFragment;
++import com.android.tv.settings.data.ConstData;
+ import com.android.tv.settings.R;
+ import com.android.tv.settings.RestrictedPreferenceAdapter;
+ import com.android.tv.settings.SettingsPreferenceFragment;
+ import com.android.tv.settings.library.overlay.FlavorUtils;
+ import com.android.tv.settings.library.util.SliceUtils;
++import com.android.tv.settings.vpn.*;
++import com.android.tv.settings.vpn.GearPreference.OnGearClickListener;
+ import com.android.tv.settings.widget.CustomContentDescriptionSwitchPreference;
+ import com.android.tv.settings.widget.TvAccessPointPreference;
+ import com.android.tv.twopanelsettings.slices.SlicePreference;
++import com.google.android.collect.Lists;
+ 
+ import java.util.Collection;
+ import java.util.HashSet;
++import java.util.Map;
++import java.util.List;
+ import java.util.Set;
++import java.util.ArrayList;
++import java.util.Collections;
+ 
+ /**
+  * Fragment for controlling network connectivity
+@@ -66,7 +95,8 @@ import java.util.Set;
+ @Keep
+ public class NetworkFragment extends SettingsPreferenceFragment implements
+         ConnectivityListener.Listener, ConnectivityListener.WifiNetworkListener,
+-        AccessPoint.AccessPointListener {
++        AccessPoint.AccessPointListener, Preference.OnPreferenceClickListener, Handler.Callback {
++    private static final String TAG = "NetworkFragment";
+ 
+     private static final String KEY_WIFI_ENABLE = "wifi_enable";
+     private static final String KEY_WIFI_LIST = "wifi_list";
+@@ -84,6 +114,10 @@ public class NetworkFragment extends SettingsPreferenceFragment implements
+     private static final String KEY_NETWORK_DIAGNOSTICS = "network_diagnostics";
+ 
+     private static final String ACTION_DATA_ALERT_SETTINGS = "android.settings.DATA_ALERT_SETTINGS";
++    private static final String KEY_HOTSPOT = "hotspot";
++    private static final String KEY_VPN = "avaliable_vpns";
++    private static final String KEY_EDIT_VPN = "edit_vpn";
++
+     private static final int INITIAL_UPDATE_DELAY = 500;
+ 
+     private static final String NETWORK_DIAGNOSTICS_ACTION =
+@@ -92,6 +126,7 @@ public class NetworkFragment extends SettingsPreferenceFragment implements
+     private ConnectivityListener mConnectivityListener;
+     private WifiManager mWifiManager;
+     private ConnectivityManager mConnectivityManager;
++    private VpnManager mVpnManager;
+     private TvAccessPointPreference.UserBadgeCache mUserBadgeCache;
+ 
+     private TwoStatePreference mEnableWifiPref;
+@@ -101,13 +136,21 @@ public class NetworkFragment extends SettingsPreferenceFragment implements
+     private RestrictedPreference mAddEasyConnectPref;
+     private TwoStatePreference mAlwaysScan;
+     private PreferenceCategory mEthernetCategory;
++    private PreferenceCategory mVpnCategory;
+     private Preference mEthernetStatusPref;
+     private Preference mEthernetProxyPref;
+     private Preference mEthernetDhcpPref;
+     private PreferenceCategory mWifiOther;
++    private Preference mHotsPot;
+ 
+     private final Handler mHandler = new Handler();
+     private long mNoWifiUpdateBeforeMillis;
++    private Preference mVpnCreatePref;
++    private LegacyVpnInfo mConnectedLegacyVpn;
++    private Handler mUpdater;
++    private static final int RESCAN_MESSAGE = 0;
++    private static final int RESCAN_INTERVAL_MS = 1000;
++    private Map<String, LegacyVpnPreference> mLegacyVpnPreferences = new ArrayMap<>();
+     private Runnable mInitialUpdateWifiListRunnable = new Runnable() {
+         @Override
+         public void run() {
+@@ -142,17 +185,38 @@ public class NetworkFragment extends SettingsPreferenceFragment implements
+         updateWifiList();
+     }
+ 
+-    @Override
+-    public void onDestroy() {
+-        super.onDestroy();
+-    }
+-
+     @Override
+     public void onResume() {
+         super.onResume();
+         // There doesn't seem to be an API to listen to everything this could cover, so
+         // tickle it here and hope for the best.
+         updateConnectivity();
++        if (mUpdater == null) {
++            mUpdater = new Handler(this);
++        }
++        mUpdater.sendEmptyMessage(RESCAN_MESSAGE);
++    }
++
++    @Override
++    public void onPause() {
++        super.onPause();
++        if (mUpdater != null) {
++            mUpdater.removeCallbacksAndMessages(null);
++        }
++    }
++
++    @Override
++    public void onStop() {
++        super.onStop();
++        mConnectivityListener.stop();
++    }
++
++    @Override
++    public void onDestroy() {
++        super.onDestroy();
++        if (mConnectivityListener != null) {
++            mConnectivityListener.destroy();
++        }
+     }
+ 
+     private int getPreferenceScreenResId() {
+@@ -181,6 +245,7 @@ public class NetworkFragment extends SettingsPreferenceFragment implements
+         mAddEasyConnectPref = (RestrictedPreference) findPreference(KEY_WIFI_ADD_EASYCONNECT);
+         mAlwaysScan = (TwoStatePreference) findPreference(KEY_WIFI_ALWAYS_SCAN);
+         mWifiOther = (PreferenceCategory) findPreference(KEY_WIFI_OTHER);
++        mHotsPot = findPreference(KEY_HOTSPOT);
+ 
+         mEthernetCategory = (PreferenceCategory) findPreference(KEY_ETHERNET);
+         mEthernetStatusPref = findPreference(KEY_ETHERNET_STATUS);
+@@ -204,6 +269,12 @@ public class NetworkFragment extends SettingsPreferenceFragment implements
+                 mHandler.post(() -> scrollToPreference(dataAlertSlicePref));
+             }
+         }
++        mVpnCategory = (PreferenceCategory) findPreference(KEY_VPN);
++        getPreferenceScreen().removePreference(mVpnCategory);
++        getPreferenceScreen().removePreference((PreferenceCategory) findPreference("vpn"));
++        if (!SystemProperties.get("ro.target.product","box").equals("box")) {
++            getPreferenceScreen().removePreference(mHotsPot);
++        }
+ 
+         Preference networkDiagnosticsPref = findPreference(KEY_NETWORK_DIAGNOSTICS);
+         Intent networkDiagnosticsIntent = makeNetworkDiagnosticsIntent();
+@@ -359,6 +430,54 @@ public class NetworkFragment extends SettingsPreferenceFragment implements
+         updateVisibilityForDataSaver();
+     }
+ 
++    private void updateVPNList() {
++        getActivity().runOnUiThread(new Runnable() {
++            public void run() {
++
++                List<VpnProfile> vpnProfiles = loadVpnProfiles();
++                String lockdownVpnKey = VpnUtils.getLockdownVpn();
++                final Set<Preference> updates = new ArraySet<>();
++                Map<String, LegacyVpnInfo> connectedLegacyVpns = getConnectedLegacyVpns();
++                for (VpnProfile profile : vpnProfiles) {
++                    LegacyVpnPreference p = findOrCreatePreference(profile);
++                    if (connectedLegacyVpns.containsKey(profile.key)) {
++                        p.setState(connectedLegacyVpns.get(profile.key).state);
++                    } else {
++                        p.setState(LegacyVpnPreference.STATE_NONE);
++                    }
++                    p.setAlwaysOn(lockdownVpnKey != null && lockdownVpnKey.equals(profile.key));
++                    updates.add(p);
++                }
++                mLegacyVpnPreferences.values().retainAll(updates);
++                for (int i = mVpnCategory.getPreferenceCount() - 1; i >= 0; i--) {
++                    Preference p = mVpnCategory.getPreference(i);
++                    if (updates.contains(p)) {
++                        updates.remove(p);
++                    } /*else if(!"vpn_create".equals(p.getKey())){
++                         mVpnCategory.removePreference(p);
++                     }*/
++                }
++                // Show any new preferences on the screen
++                for (Preference pref : updates) {
++                    mVpnCategory.addPreference(pref);
++                }
++ /*             Preference vpnCreatePref = new Preference(getPreferenceManager().getContext());
++                vpnCreatePref.setTitle(R.string.create_vpn);
++                Intent createVpnIntent = new Intent();
++                createVpnIntent.setClassName(getActivity().getPackageName(), VpnCreateActivity.class.getName());
++                VpnProfile createProfile = new VpnProfile(Long.toHexString(System.currentTimeMillis()));
++                createVpnIntent.putExtra(ConstData.IntentKey.VPN_PROFILE, createProfile);
++                createVpnIntent.putExtra(ConstData.IntentKey.VPN_EXIST, false);
++                createVpnIntent.putExtra(ConstData.IntentKey.VPN_EDITING, true);
++                vpnCreatePref.setIntent(createVpnIntent);
++                mVpnCategory.addPreference(vpnCreatePref);*/
++            }
++
++            ;
++        });
++
++    }
++
+     private void updateWifiList() {
+         if (!isAdded()) {
+             return;
+@@ -495,4 +614,98 @@ public class NetworkFragment extends SettingsPreferenceFragment implements
+ 
+         return getContext().getResources().getBoolean(R.bool.config_easyconnect_enabled);
+     }
++
++    static List<VpnProfile> loadVpnProfiles() {
++        final ArrayList<VpnProfile> result = Lists.newArrayList();
++
++        for (String key : LegacyVpnProfileStore.list(Credentials.VPN)) {
++            final VpnProfile profile = VpnProfile.decode(key, LegacyVpnProfileStore.get(Credentials.VPN + key));
++            if (profile != null) {
++                result.add(profile);
++            }
++        }
++        return result;
++    }
++
++    @WorkerThread
++    private Map<String, LegacyVpnInfo> getConnectedLegacyVpns() {
++        mConnectedLegacyVpn = mVpnManager.getLegacyVpnInfo(UserHandle.myUserId());
++        if (mConnectedLegacyVpn != null) {
++            return Collections.singletonMap(mConnectedLegacyVpn.key, mConnectedLegacyVpn);
++        }
++        return Collections.emptyMap();
++    }
++
++    @UiThread
++    private LegacyVpnPreference findOrCreatePreference(VpnProfile profile) {
++        LegacyVpnPreference pref = mLegacyVpnPreferences.get(profile.key);
++        if (pref == null) {
++            pref = new LegacyVpnPreference(getPreferenceManager().getContext());
++            //pref.setOnGearClickListener(mGearListener);
++            pref.setOnPreferenceClickListener(this);
++            mLegacyVpnPreferences.put(profile.key, pref);
++        }
++        // This may change as the profile can update and keep the same key.
++        pref.setProfile(profile);
++        return pref;
++    }
++
++    @Override
++    public boolean onPreferenceClick(Preference preference) {
++        if (preference instanceof LegacyVpnPreference) {
++            LegacyVpnPreference pref = (LegacyVpnPreference) preference;
++            VpnProfile profile = pref.getProfile();
++            if (mConnectedLegacyVpn != null && profile.key.equals(mConnectedLegacyVpn.key) &&
++                    mConnectedLegacyVpn.state == LegacyVpnInfo.STATE_CONNECTED) {
++                try {
++                    mConnectedLegacyVpn.intent.send();
++                    return true;
++                } catch (Exception e) {
++                    Log.w(TAG, "Starting config intent failed", e);
++                }
++            }
++            Intent prefIntent = new Intent();
++            prefIntent.setClass(getContext(), VpnCreateActivity.class);
++            prefIntent.putExtra(ConstData.IntentKey.VPN_PROFILE, profile);
++            prefIntent.putExtra(ConstData.IntentKey.VPN_EDITING, false);
++            prefIntent.putExtra(ConstData.IntentKey.VPN_EXIST, true);
++            startActivity(prefIntent);
++            //ConfigDialogFragment.show(this, profile, false /* editing */, true /* exists */);
++            return true;
++        } /*else if (preference instanceof AppPreference) {
++            AppPreference pref = (AppPreference) preference;
++            boolean connected = (pref.getState() == AppPreference.STATE_CONNECTED);
++
++            if (!connected) {
++                try {
++                    UserHandle user = UserHandle.of(pref.getUserId());
++                    Context userContext = getActivity().createPackageContextAsUser(
++                            getActivity().getPackageName(), 0  flags , user);
++                    PackageManager pm = userContext.getPackageManager();
++                    Intent appIntent = pm.getLaunchIntentForPackage(pref.getPackageName());
++                    if (appIntent != null) {
++                        userContext.startActivityAsUser(appIntent, user);
++                        return true;
++                    }
++                } catch (PackageManager.NameNotFoundException nnfe) {
++                    Log.w(LOG_TAG, "VPN provider does not exist: " + pref.getPackageName(), nnfe);
++                }
++            }
++
++            // Already connected or no launch intent available - show an info dialog
++            PackageInfo pkgInfo = pref.getPackageInfo();
++            AppDialogFragment.show(this, pkgInfo, pref.getLabel(), false  editing , connected);
++            return true;
++        }else{
++            createVPN();
++        }*/
++        return false;
++    }
++
++    @Override
++    public boolean handleMessage(Message message) {
++        mUpdater.removeMessages(RESCAN_MESSAGE);
++        mUpdater.sendEmptyMessageDelayed(RESCAN_MESSAGE, RESCAN_INTERVAL_MS);
++        return true;
++    }
+ }
+diff --git a/Settings/src/com/android/tv/settings/connectivity/setup/Dns1State.java b/Settings/src/com/android/tv/settings/connectivity/setup/Dns1State.java
+index a0a2551ca..e87e40d82 100644
+--- a/Settings/src/com/android/tv/settings/connectivity/setup/Dns1State.java
++++ b/Settings/src/com/android/tv/settings/connectivity/setup/Dns1State.java
+@@ -128,7 +128,7 @@ public class Dns1State implements State {
+ 
+         @Override
+         public void onViewCreated(View view, Bundle savedInstanceState) {
+-            openInEditMode(mAction);
++            // openInEditMode(mAction);
+         }
+ 
+         @Override
+diff --git a/Settings/src/com/android/tv/settings/connectivity/setup/Dns2State.java b/Settings/src/com/android/tv/settings/connectivity/setup/Dns2State.java
+index ae3444ec6..c3cc11755 100644
+--- a/Settings/src/com/android/tv/settings/connectivity/setup/Dns2State.java
++++ b/Settings/src/com/android/tv/settings/connectivity/setup/Dns2State.java
+@@ -127,7 +127,7 @@ public class Dns2State implements State {
+ 
+         @Override
+         public void onViewCreated(View view, Bundle savedInstanceState) {
+-            openInEditMode(mAction);
++            // openInEditMode(mAction);
+         }
+ 
+         @Override
+diff --git a/Settings/src/com/android/tv/settings/connectivity/setup/EnterPasswordState.java b/Settings/src/com/android/tv/settings/connectivity/setup/EnterPasswordState.java
+index 481d09b07..acb0f124a 100644
+--- a/Settings/src/com/android/tv/settings/connectivity/setup/EnterPasswordState.java
++++ b/Settings/src/com/android/tv/settings/connectivity/setup/EnterPasswordState.java
+@@ -141,6 +141,12 @@ public class EnterPasswordState implements State {
+                     if (action.getId() == ACTION_ID_CHECKBOX) {
+                         PasswordViewHolder checkBoxVH = (PasswordViewHolder) vh;
+                         mCheckBox = checkBoxVH.mCheckbox;
++                        mCheckBox.setOnCheckedChangeListener((view, isChecked) -> {
++                            if (mPasswordAction != null) {
++                                setSelectedActionPosition(0);
++                            }
++                            mTextInput.setInputType(InputType.TYPE_CLASS_TEXT | (isChecked ? InputType.TYPE_TEXT_VARIATION_PASSWORD : InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD));
++                        });
+                         checkBoxVH.itemView.setOnClickListener(view -> {
+                             mCheckBox.setChecked(!mCheckBox.isChecked());
+                             if (mPasswordAction != null) {
+@@ -153,7 +159,14 @@ public class EnterPasswordState implements State {
+                                 R.id.guidedactions_item_title);
+                         mTextInput.setImeOptions(
+                                 EditorInfo.IME_ACTION_DONE | EditorInfo.IME_FLAG_NO_EXTRACT_UI);
+-                        openInEditMode(action);
++                        mTextInput.setClickable(true);
++                        mTextInput.setOnClickListener(new View.OnClickListener() {
++                            @Override
++                            public void onClick(View v) {
++                                openInEditMode(action);
++                            }
++                        });
++                        // openInEditMode(action);
+                     }
+                 }
+ 
+@@ -258,7 +271,7 @@ public class EnterPasswordState implements State {
+         public void onGuidedActionFocused(GuidedAction action) {
+             boolean newEditFocused = action == mPasswordAction;
+             if (!mEditFocused && newEditFocused) {
+-                openInEditMode(action);
++                // openInEditMode(action);
+             }
+             mEditFocused = newEditFocused;
+         }
+diff --git a/Settings/src/com/android/tv/settings/connectivity/setup/EnterSsidState.java b/Settings/src/com/android/tv/settings/connectivity/setup/EnterSsidState.java
+index d084f1069..938e04722 100644
+--- a/Settings/src/com/android/tv/settings/connectivity/setup/EnterSsidState.java
++++ b/Settings/src/com/android/tv/settings/connectivity/setup/EnterSsidState.java
+@@ -121,7 +121,7 @@ public class EnterSsidState implements State {
+ 
+         @Override
+         public void onViewCreated(@NonNull View view, Bundle savedInstanceState) {
+-            openInEditMode(mAction);
++            // openInEditMode(mAction);
+         }
+ 
+         @Override
+diff --git a/Settings/src/com/android/tv/settings/connectivity/setup/GatewayState.java b/Settings/src/com/android/tv/settings/connectivity/setup/GatewayState.java
+index e24223666..84d3bf487 100644
+--- a/Settings/src/com/android/tv/settings/connectivity/setup/GatewayState.java
++++ b/Settings/src/com/android/tv/settings/connectivity/setup/GatewayState.java
+@@ -129,7 +129,7 @@ public class GatewayState implements State {
+ 
+         @Override
+         public void onViewCreated(View view, Bundle savedInstanceState) {
+-            openInEditMode(mAction);
++            // openInEditMode(mAction);
+         }
+ 
+         @Override
+diff --git a/Settings/src/com/android/tv/settings/connectivity/setup/IpAddressState.java b/Settings/src/com/android/tv/settings/connectivity/setup/IpAddressState.java
+index e8714ece7..a83d9bb22 100644
+--- a/Settings/src/com/android/tv/settings/connectivity/setup/IpAddressState.java
++++ b/Settings/src/com/android/tv/settings/connectivity/setup/IpAddressState.java
+@@ -27,6 +27,7 @@ import androidx.leanback.widget.GuidedAction;
+ import androidx.leanback.widget.GuidedActionsStylist;
+ import androidx.lifecycle.ViewModelProviders;
+ 
++import android.util.Log;
+ import com.android.tv.settings.R;
+ import com.android.tv.settings.connectivity.util.State;
+ import com.android.tv.settings.connectivity.util.StateMachine;
+@@ -127,7 +128,7 @@ public class IpAddressState implements State {
+ 
+         @Override
+         public void onViewCreated(View view, Bundle savedInstanceState) {
+-            openInEditMode(mAction);
++            // openInEditMode(mAction);
+         }
+ 
+         @Override
+diff --git a/Settings/src/com/android/tv/settings/connectivity/setup/NetworkPrefixLengthState.java b/Settings/src/com/android/tv/settings/connectivity/setup/NetworkPrefixLengthState.java
+index d717066c3..2c934b1b9 100644
+--- a/Settings/src/com/android/tv/settings/connectivity/setup/NetworkPrefixLengthState.java
++++ b/Settings/src/com/android/tv/settings/connectivity/setup/NetworkPrefixLengthState.java
+@@ -127,7 +127,7 @@ public class NetworkPrefixLengthState implements State {
+ 
+         @Override
+         public void onViewCreated(View view, Bundle savedInstanceState) {
+-            openInEditMode(mAction);
++            // openInEditMode(mAction);
+         }
+ 
+         @Override
+diff --git a/Settings/src/com/android/tv/settings/connectivity/setup/ProxyBypassState.java b/Settings/src/com/android/tv/settings/connectivity/setup/ProxyBypassState.java
+index 3940947ca..271c47bb0 100644
+--- a/Settings/src/com/android/tv/settings/connectivity/setup/ProxyBypassState.java
++++ b/Settings/src/com/android/tv/settings/connectivity/setup/ProxyBypassState.java
+@@ -128,7 +128,7 @@ public class ProxyBypassState implements State {
+ 
+         @Override
+         public void onViewCreated(View view, Bundle savedInstanceState) {
+-            openInEditMode(mAction);
++            // openInEditMode(mAction);
+         }
+ 
+         @Override
+diff --git a/Settings/src/com/android/tv/settings/connectivity/setup/ProxyHostNameState.java b/Settings/src/com/android/tv/settings/connectivity/setup/ProxyHostNameState.java
+index 085b0edb7..4d7d0bd2d 100644
+--- a/Settings/src/com/android/tv/settings/connectivity/setup/ProxyHostNameState.java
++++ b/Settings/src/com/android/tv/settings/connectivity/setup/ProxyHostNameState.java
+@@ -125,7 +125,7 @@ public class ProxyHostNameState implements State {
+ 
+         @Override
+         public void onViewCreated(@NonNull View view, Bundle savedInstanceState) {
+-            openInEditMode(mAction);
++            // openInEditMode(mAction);
+         }
+ 
+         @Override
+@@ -139,4 +139,3 @@ public class ProxyHostNameState implements State {
+         }
+     }
+ }
+-
+diff --git a/Settings/src/com/android/tv/settings/connectivity/setup/ProxyPortState.java b/Settings/src/com/android/tv/settings/connectivity/setup/ProxyPortState.java
+index 049392ce2..d016056a3 100644
+--- a/Settings/src/com/android/tv/settings/connectivity/setup/ProxyPortState.java
++++ b/Settings/src/com/android/tv/settings/connectivity/setup/ProxyPortState.java
+@@ -122,7 +122,7 @@ public class ProxyPortState implements State {
+ 
+         @Override
+         public void onViewCreated(View view, Bundle savedInstanceState) {
+-            openInEditMode(mAction);
++            // openInEditMode(mAction);
+         }
+ 
+         @Override
+-- 
+2.53.0
+

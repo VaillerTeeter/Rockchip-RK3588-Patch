@@ -1,0 +1,29 @@
+From 0b0bfa8326e2d93752d402f859e79fa384159342 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 17:51:54 +0800
+Subject: [PATCH] feat: export libhwui headers to JNI module
+
+Change-Id: I4b8f85c12f4e727c6efaacdbfbe8ee275d58d788
+
+diff --git a/core/jni/Android.bp b/core/jni/Android.bp
+index aa661713b1fe..19d860eb3286 100644
+--- a/core/jni/Android.bp
++++ b/core/jni/Android.bp
+@@ -306,6 +306,7 @@ cc_library_shared {
+                 "libvintf",
+                 "libnativedisplay",
+                 "libnativewindow",
++                "libhwui",
+                 "libdl",
+                 "libdl_android",
+                 "libtimeinstate",
+@@ -314,6 +315,9 @@ cc_library_shared {
+             export_shared_lib_headers: [
+                 // our headers include libnativewindow's public headers
+                 "libnativewindow",
++
++                // GraphicsJNI.h includes hwui headers
++                "libhwui",
+             ],
+             export_static_lib_headers: [
+                 // AndroidRuntime.h depends on nativehelper/jni.h

@@ -1,0 +1,931 @@
+From b7981fd4f143f6f3f69117bd2c023dce4e457a25 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Sat, 11 Jul 2026 21:56:47 +0800
+Subject: [PATCH 71/78] feat: add Rockchip TvSettings resource strings, arrays,
+ colors, and themes
+
+Change-Id: I3db0d69cbb2e4121d1f3cdfdd38266e4ed9ec4da
+---
+ Settings/res/values/arrays.xml         | 198 ++++++++++++++
+ Settings/res/values/colors.xml         |   2 +
+ Settings/res/values/strings.xml        | 357 ++++++++++++++++++++++++-
+ Settings/res/values/styles.xml         |  66 +++++
+ Settings/res/values/themes.xml         |   3 +
+ Settings/res/xml/development_prefs.xml |  18 ++
+ Settings/res/xml/device.xml            |  25 ++
+ Settings/res/xml/device_x.xml          |  10 +
+ Settings/res/xml/inputs.xml            |  10 +
+ Settings/res/xml/keyboard.xml          |  13 +
+ Settings/res/xml/network.xml           |  28 ++
+ 11 files changed, 729 insertions(+), 1 deletion(-)
+
+diff --git a/Settings/res/values/arrays.xml b/Settings/res/values/arrays.xml
+index 69da42ff7..07a2b881c 100644
+--- a/Settings/res/values/arrays.xml
++++ b/Settings/res/values/arrays.xml
+@@ -22,6 +22,7 @@
+         <item>30 minutes</item>
+         <item>1 hour</item>
+         <item>2 hours</item>
++        <item>Never</item>
+     </string-array>
+ 
+     <!-- Do not translate. -->
+@@ -37,6 +38,8 @@
+         <item>3600000</item>
+         <!-- Do not translate. -->
+         <item>7200000</item>
++       <!-- Do not translate. -->
++        <item>2147483647</item>
+     </string-array>
+ 
+     <!-- Display settings.  The delay after the daydream starts when the screen goes off. -->
+@@ -288,4 +291,199 @@
+     <string-array name="customized_ignored_system_alert_window_packages" translatable="false">
+     </string-array>
+ 
++    <!-- WengTao resolution list -->
++    <string-array name="resolution_list" translatable="false">
++        <item>1920x1080p-60</item>
++        <item>1280x720p-60</item>
++        <item>720x480p-60</item>
++    </string-array>
++
++    <string-array name="color_list" translatable="false">
++        <item>color1</item>
++        <item>color2</item>
++        <item>color3</item>
++    </string-array>
++
++    <string-array name="hdmi_rotation_entries">
++        <item>0</item>
++        <item>90</item>
++        <item>180</item>
++        <item>270</item>
++    </string-array>
++
++    <string-array name="hdmi_rotation_values">
++        <item>0</item>
++        <item>90</item>
++        <item>180</item>
++        <item>270</item>
++    </string-array>
++
++    <string-array name="power_key_choose">
++        <item>@string/dormancy</item>
++        <item>@string/power_off</item>
++        <item>@string/reboot</item>
++    </string-array>
++
++    <string-array name="power_key_choose_values">
++        <item>0</item>
++        <item>1</item>
++        <item>2</item>
++    </string-array>
++
++    <string-array name="device_apps_app_management_ui_mode_entry">
++        <item>@string/device_apps_app_management_ui_mode_normal</item>
++        <item>@string/device_apps_app_management_ui_mode_desk</item>
++        <item>@string/device_apps_app_management_ui_mode_car</item>
++        <item>@string/device_apps_app_management_ui_mode_television</item>
++        <item>@string/device_apps_app_management_ui_mode_appliance</item>
++        <item>@string/device_apps_app_management_ui_mode_watch</item>
++        <item>@string/device_apps_app_management_ui_mode_vr_headset</item>
++    </string-array>
++
++    <string-array name="device_apps_app_management_ui_mode_entry_value">
++        <item>1</item>
++        <item>2</item>
++        <item>3</item>
++        <item>4</item>
++        <item>5</item>
++        <item>6</item>
++        <item>7</item>
++    </string-array>
++
++    <string-array name="audio_mode_list">
++        <item>RF</item>
++        <item>Line</item>
++    </string-array>
++
++    <string-array name="audio_mode_list_values">
++        <item>RF Mode</item>
++        <item>Line Mode</item>
++    </string-array>
++
++    <string-array name="audio_device_list">
++        <item>@string/audio_device_decode</item>
++        <item>@string/audio_device_hdmi</item>
++        <item>@string/audio_device_spdif</item>
++    </string-array>
++    <string-array name="audio_device_list_values">
++        <item>decode</item>
++        <item>hdmi</item>
++        <item>spdif</item>
++    </string-array>
++
++    <string-array name="audio_device_hdmi_entries">
++        <item>Auto</item>
++        <item>Manual</item>
++    </string-array>
++
++    <string-array name="audio_device_hdmi">
++        <item>@string/surround_sound_auto_summary</item>
++        <item>@string/surround_sound_manual_summary</item>
++    </string-array>
++
++    <string-array name="decode_formats">
++        <item>MP1</item>
++        <item>MP2</item>
++        <item>MP3</item>
++        <item>AAC</item>
++        <item>APE</item>
++        <item>WMALOSSLESS</item>
++        <item>WMAPRO</item>
++        <item>WMAV1</item>
++        <item>WMAV2</item>
++        <item>ADPCM_IMA_QT</item>
++        <item>VORBIS</item>
++        <item>PCM_S16LE</item>
++        <item>PCM_S24LE</item>
++        <item>FLAC</item>
++    </string-array>
++
++    <string-array name="hdmi_formats">
++        <item>AC3</item>
++        <item>DTS</item>
++        <item>EAC3</item>
++        <item>DTSHD</item>
++        <item>TRUEHD</item>
++    </string-array>
++
++    <string-array name="spdif_formats">
++        <item>AC3</item>
++        <item>DTS</item>
++    </string-array>
++
++    <string-array name="surround_sound_entries_spdif" translatable="false">
++        <item>@string/surround_sound_none_title</item>
++        <item>@string/surround_sound_manual_summary</item>
++    </string-array>
++
++
++    <string-array name="surround_sound_entry_values_spdif" translatable="false">
++        <item>never</item>
++        <item>manual</item>
++    </string-array>
++
++    <!-- List entries for controlling surround sound passthrough setting -->
++    <string-array name="surround_sound_entries" translatable="false">
++        <item>@string/surround_sound_auto_summary</item>
++        <item>@string/surround_sound_none_title</item>
++        <item>@string/surround_sound_manual_summary</item>
++    </string-array>
++
++    <!-- Entry values for surround sound preference -->
++    <string-array name="surround_sound_entry_values" translatable="false">
++        <item>auto</item>
++        <item>never</item>
++        <item>manual</item>
++    </string-array>
++
++    <!-- vpn interface -->
++    <string-array name="vpn_types" translatable="false">
++        <item>PPTP</item>
++        <item>L2TP/IPSec PSK</item>
++        <item>L2TP/IPSec RSA</item>
++        <item>IPSec Xauth PSK</item>
++        <item>IPSec Xauth RSA</item>
++        <item>IPSec Hybrid RSA</item>
++    </string-array>
++    <string-array name="vpn_states">
++        <!-- Status message when VPN is disconnected. -->
++        <item>Disconnected</item>
++        <!-- Status message when VPN is initializing. -->
++        <item>Initializing\u2026</item>
++        <!-- Status message when VPN is connecting. -->
++        <item>Connecting\u2026</item>
++        <!-- Status message when VPN is connected. -->
++        <item>Connected</item>
++        <!-- Status message when VPN is timeout. -->
++        <item>Timeout</item>
++        <!-- Status message when VPN is failed. -->
++        <item>Unsuccessful</item>
++    </string-array>
++
++    <string-array name="wifi_ap_band_config_2G_only">
++        <item>@string/wifi_ap_choose_2G</item>
++    </string-array>
++
++    <string-array name="wifi_ap_security">
++        <item>@string/wifi_security_wpa2</item>
++        <item>@string/wifi_security_none</item>
++    </string-array>
++
++    <string-array name="wifi_ap_band_config_full">
++        <item>@string/wifi_ap_choose_2G</item>
++        <item>@string/wifi_ap_choose_5G</item>
++    </string-array>
++
++    <string-array name="hdr_mode_entries">
++        <item>@string/hdr_mode_auto</item>
++        <item>@string/hdr_mode_hdr</item>
++        <item>@string/hdr_mode_sdr</item>
++    </string-array>
++
++    <string-array name="hdr_mode_values">
++        <item>2</item>
++        <item>1</item>
++        <item>0</item>
++    </string-array>
++
+ </resources>
+diff --git a/Settings/res/values/colors.xml b/Settings/res/values/colors.xml
+index ba2ad55db..bf5e92043 100644
+--- a/Settings/res/values/colors.xml
++++ b/Settings/res/values/colors.xml
+@@ -135,6 +135,7 @@
+     <color name="toast_notification_background">#881F1F1F</color>
+     <color name="toast_notification_text_color">#FFF0F0F0</color>
+     <color name="tv_white">#FFCCCCCC</color>
++    <color name="tv_black">#FF0F0F0F</color>
+ 
+     <item name="list_item_selected_description_text_alpha" format="float" type="dimen">0.50</item>
+     <item name="list_item_selected_title_text_alpha" format="float" type="dimen">1.00</item>
+@@ -169,4 +170,5 @@
+     <color name="sensor_physical_privacy_enabled_info_background">#2BD93025</color>
+     <!-- Background color of physical privacy enabled info box when focused -->
+     <color name="sensor_physical_privacy_enabled_info_background_focused">#4FFF5C5C</color>
++    <color name="green">#FF00FF00</color>
+ </resources>
+diff --git a/Settings/res/values/strings.xml b/Settings/res/values/strings.xml
+index c8c60aa0b..3ebb9747d 100644
+--- a/Settings/res/values/strings.xml
++++ b/Settings/res/values/strings.xml
+@@ -2055,7 +2055,6 @@
+     <string name="pin_toast_wrong">Wrong PIN, try again</string>
+     <!-- Toast message when an user couldn't pass the PIN confirmation. [CHAR LIMIT=128] -->
+     <string name="pin_toast_not_match">Try again, PIN doesn\'t match</string>
+-
+     <!-- Message displayed to prompt the user to input the network password, ^1 will be replaced with the name of the network and should be a possive form related to password [CHAR LIMIT=NONE] -->
+     <string name="wifi_setup_input_password">Enter password for <xliff:g id="ssid">%1$s</xliff:g></string>
+     <!-- Summary displayed to explain next steps for user to submit network password, ^1 be replaced with keyboard icon to be selected [CHAR LIMIT=NONE] -->
+@@ -2588,4 +2587,360 @@
+ 
+     <!-- Adb wireless pairing device dialog ethernet pairing code label [CHAR LIMIT=60] -->
+     <string name="adb_pairing_device_dialog_ethernet_pairing_code_label">Ethernet pairing code</string>
++
++    <!-- WengTao add for display -->
++    <string name="resolutions">Resolutions</string>
++    <string name="rk3399_resolutions">RK3399 resolutions</string>
++    <string name="display">Display</string>
++    <string name="resolution">Resolution</string>
++    <string name="display_devices">Display devices</string>
++    <string name="zoom">Zoom</string>
++    <string name="bcsh">BCSH</string>
++    <string name="bcsh_reset">reset</string>
++    <string name="bcsh_cold">cold</string>
++    <string name="bcsh_warm">warm</string>
++    <string name="bcsh_sharp">sharp</string>
++    <string name="hdr">SDR->HDR</string>
++    <string name="sdr">HDR->SDR</string>
++    <string name="brightness">Brightness</string>
++    <string name="current">Current value:</string>
++    <string name="contrast">Contrast</string>
++    <string name="saturation">Saturation</string>
++    <string name="tone">Tone</string>
++    <string name="max_brightness">Max brightness</string>
++    <string name="min_brightness">Min brightness</string>
++    <string name="ok">OK</string>
++    <string name="color">Color</string>
++    <string name="confirm_dialog_title">Save Confirm</string>
++    <string name="confirm_dialog_message">Will cancel in</string>
++    <string name="fixed_rotation">Fixed rotation</string>
++    <string name="hdmi_rotation">Rotation</string>
++    <string name="ui_resolutions">Ui Resolutions</string>
++
++    <!-- added for AI Advanced Display -->
++    <string name="ai_display_settings">AI Advanced Display</string>
++    <string name="ai_svep_mode">SVEP Mode(1/0)</string>
++    <string name="ai_svep_global_ui">Global UI Mode(2/1) </string>
++    <string name="ai_svep_contrast_mode">SVEP Contrast Mode </string>
++    <string name="ai_svep_contrast_mode_summary">Long press MENU to enable SVEP left right split screen debug mode</string>
++    <string name="ai_svep_contrast_ratio">AI Contrast Ratio</string>
++    <string name="ai_svep_enhance_rate">AI Enhancement"</string>
++
++    <string name="advance_settings">Advanced setting</string>
++
++    <!--performance -->
++    <string name="performance_float">Performance Dialog</string>
++    <string name="cpu_title">CPU:</string>
++    <string name="cpu_model">cpu curFrq:</string>
++    <string name="cpu_usage">cpu usage:</string>
++    <string name="cpu_temp">cpu temperature:</string>
++    <string name="ram_title">RAM:</string>
++    <string name="ram_total">ram total:</string>
++    <string name="ram_usage">sys ram free:</string>
++    <string name="network_title">Network:</string>
++    <string name="network_speed">net speed:</string>
++    <string name="network_mac">wifi mac:</string>
++    <string name="network_mac2">ethernet mac:</string>
++
++    <string name="default_launcher">Default Launcher</string>
++
++    <!-- power -->
++    <string name="power_key">Power Key</string>
++    <string name="power_key_definition">Power Key Definition</string>
++    <string name="dormancy">Dormancy</string>
++    <string name="power_off">Power Off</string>
++    <string name="reboot">Reboot</string>
++
++    <!-- UiMode -->
++    <string name="device_apps_app_management_ui_mode">Ui Mode</string>
++    <string name="device_apps_app_management_ui_mode_normal">NORMAL</string>
++    <string name="device_apps_app_management_ui_mode_desk">DESK</string>
++    <string name="device_apps_app_management_ui_mode_car">CAR</string>
++    <string name="device_apps_app_management_ui_mode_television">TELEVISION</string>
++    <string name="device_apps_app_management_ui_mode_appliance">APPLIANCE</string>
++    <string name="device_apps_app_management_ui_mode_watch">WATCH</string>
++    <string name="device_apps_app_management_ui_mode_vr_headset">VR HEADSET</string>
++
++    <!-- Audio -->
++    <string name="device_sound_bootsafe">Enforce safe volume</string>
++    <string name="device_bit_stream">Decode &#038; BitStream</string>
++    <string name="hdmi">HDMI</string>
++    <string name="audio_device">Audio device</string>
++    <string name="audio_mode">Audio mode</string>
++    <string name="formats">Formats</string>
++    <string name="surround_sound_format_true_hd">Dolby TrueHD</string>
++    <string name="audio_device_decode">Decode</string>
++    <string name="audio_device_hdmi">HDMI Bitstream</string>
++    <string name="audio_device_spdif">Spdif Passthrough</string>
++
++    <!-- Bluetooth -->
++    <string name="bluetooth">Bluetooth</string>
++    <!-- Bluetooth message permission alert for notification content [CHAR LIMIT=none] -->
++    <string name="bluetooth_message_access_notification_content">Untrusted device wants to access your messages. Tap for details.</string>
++    <!-- Bluetooth phonebook permission alert for notification content [CHAR LIMIT=none] -->
++    <string name="bluetooth_phonebook_access_notification_content">Untrusted device wants to access your contacts and call log. Tap for details.</string>
++    <string name="bluetooth_tethering_devices_connected_subtext" product="tablet">Sharing this tablet\u2019s Internet connection to <xliff:g id="connectedDeviceCount">%1$d</xliff:g> devices</string>
++    <string name="bluetooth_tethering_devices_connected_subtext" product="default">Sharing this phone\u2019s Internet connection to <xliff:g id="connectedDeviceCount">%1$d</xliff:g> devices</string>
++    <string name="bluetooth_tethering_device_connected_subtext" product="tablet">Sharing this tablet\u2019s Internet connection to 1 device</string>
++    <string name="bluetooth_tethering_device_connected_subtext" product="default">Sharing this phone\u2019s Internet connection to 1 device</string>
++    <string name="bluetooth_tethering_errored_subtext">Not tethered</string>
++    <string name="bluetooth_tethering_available_subtext" product="tablet">Sharing this tablet\u2019s Internet connection</string>
++    <!-- Bluetooth available subtext - shown when Bluetooth tethering is turned on but it is not currently tethered to any devices [CHAR LIMIT=50]-->
++    <string name="bluetooth_tethering_available_subtext" product="default">Sharing this phone\u2019s Internet connection</string>
++    <string name="bluetooth_connect_title">Connect?</string>
++    <string name="bluetooth_connect_all_profiles">This will begin your connection with:&lt;br>&lt;b><xliff:g id="device_name">%1$s</xliff:g>&lt;/b></string>
++    <string name="bluetooth_preference_paired_dialog_name_label">Name</string>
++    <string name="bluetooth_disable_profile_title">Disable profile?</string>
++    <string name="bluetooth_disable_profile_message">This will disable:&lt;br>&lt;b><xliff:g id="profile_name">%1$s</xliff:g>&lt;/b>&lt;br>&lt;br>From:&lt;br>&lt;b><xliff:g id="device_name">%2$s</xliff:g>&lt;/b></string>
++    <string name="bluetooth_tethering_off_subtext" product="tablet">Not sharing this tablet\u2019s Internet connection</string>
++    <!-- Bluetooth tethering off subtext - shown when Bluetooth Tethering is turned off [CHAR LIMIT=50]-->
++    <string name="bluetooth_tethering_off_subtext" product="default">Not sharing this phone\u2019s Internet connection</string>
++    <!-- Message when bluetooth is informing the user of the pairing key. [CHAR LIMIT=NONE] -->
++    <string name="bluetooth_pairing_key_msg">Bluetooth pairing code</string>
++    <!-- Message when bluetooth dialog for passkey entry is showing. [CHAR LIMIT=NONE] -->
++    <string name="bluetooth_enable_alphanumeric_pin">PIN contains letters or symbols</string>
++    <!-- Message when bluetooth dialog when passkey or pin needs to be displayed. -->
++    <string name="bluetooth_pairing_shares_phonebook">Allow <xliff:g id="device_name">%1$s</xliff:g> to access your contacts and call history</string>
++    <!-- Bluetooth settings.  Connection options screen.  The title of the header that is above all of the profiles.
++         When a user decides what Bluetooth capabilities to use with the device.  -->
++    <string name="bluetooth_device_advanced_profile_header_title">Use for</string>
++    <string name="bluetooth_device_details">Device settings</string>
++    <string name="bluetooth_paired">Paired devices</string>
++    <string name="avaliable_bluetooth">Available bluetooth</string>
++    <string name="bluetooth_refresh">Refresh</string>
++    <string name="bluetooth_received">Display received files</string>
++    <!-- Strings for Dialog allow button -->
++    <string name="allow">Allow</string>
++    <!-- Strings for Dialog deny button -->
++    <string name="deny">Deny</string>
++    <string name="bluetooth_ask_enablement">An app wants to turn Bluetooth ON for this device.</string>
++    <string name="bluetooth_ask_discovery" product="default">An app wants to make your phone visible to other Bluetooth devices for <xliff:g id="timeout">%1$d</xliff:g> seconds.</string>
++    <string name="bluetooth_ask_enablement_and_discovery">An app wants to turn on Bluetooth and make your tablet visible to other devices for <xliff:g id="timeout">%1$d</xliff:g> seconds.</string>
++    <string name="bluetooth_ask_enablement_and_lasting_discovery" product="default">An app wants to turn on Bluetooth and make your phone visible to other devices. You can change this later in Bluetooth settings.</string>
++    <string name="bluetooth_ask_lasting_discovery" product="default">An app wants to make your phone visible to other Bluetooth devices. You can change this later in Bluetooth settings.</string>
++    <string name="bluetooth_connecting_error_message">Couldn\u2019t connect to <xliff:g id="device_name">%1$s</xliff:g>.</string>
++    <string name="bluetooth_connection_dialog_text">"Do you want to connect to \u0022<xliff:g id="device_name">%1$s</xliff:g>\u0022?"</string>
++    <string name="bluetooth_connection_permission_request">"Bluetooth connection request"</string>
++    <string name="bluetooth_device">Unnamed Bluetooth device</string>
++    <!-- Bluetooth settings.  Context menu item for a device.  Action will first pair, and then connect to all profiles on the device. -->
++    <string name="bluetooth_device_context_pair_connect">Pair &amp; connect</string>
++    <string name="bluetooth_devices">Bluetooth devices</string>
++    <string name="bluetooth_disconnect_all_profiles">This will end your connection with:&lt;br>&lt;b><xliff:g id="device_name">%1$s</xliff:g>&lt;/b></string>
++    <string name="bluetooth_disconnect_title">Disconnect?</string>
++    <string name="bluetooth_enter_passkey_other_device">You may also need to type this passkey on the other device.</string>
++    <string name="bluetooth_error_title"></string>
++    <string name="bluetooth_notif_message">Tap to pair with <xliff:g id="device_name">%1$s</xliff:g>.</string>
++    <string name="bluetooth_notif_ticker">Bluetooth pairing request</string>
++    <string name="bluetooth_enter_pin_other_device">You may also need to type this PIN on the other device.</string>
++    <string name="bluetooth_is_discoverable">Visible to all nearby Bluetooth devices (<xliff:g id="discoverable_time_period">%1$s</xliff:g>)</string>
++    <string name="bluetooth_is_discoverable_always">Visible to all nearby Bluetooth devices</string>
++    <string name="bluetooth_map_acceptance_dialog_text">%1$s wants to access your messages. Give access to %2$s?</string>
++    <string name="bluetooth_map_request">"Message access request"</string>
++    <string name="bluetooth_no_devices_found">No nearby Bluetooth devices were found.</string>
++    <string name="bluetooth_not_visible_to_other_devices">Not visible to other Bluetooth devices</string>
++    <string name="bluetooth_notif_title">Pairing request</string>
++    <string name="bluetooth_only_visible_to_paired_devices">Only visible to paired devices</string>
++    <string name="bluetooth_pb_acceptance_dialog_text">%1$s wants to access your contacts and call history. Give access to %2$s?</string>
++    <string name="bluetooth_pb_remember_choice">Don\u2019t ask again</string>
++    <string name="bluetooth_phonebook_request">"Phone book access request"</string>
++    <string name="bluetooth_pin_values_hint_16_digits">Must be 16 digits</string>
++    <!-- Bluetooth settings: The sub heading for available devices during and after scanning. [CHAR LIMIT=40] -->
++    <string name="bluetooth_preference_found_devices">Available devices</string>
++    <string name="bluetooth_remember_choice">Don\u2019t ask again</string>
++    <string name="bluetooth_rename_button">Rename</string>
++    <string name="bluetooth_rename_device">Rename this device</string>
++    <string name="bluetooth_sap_acceptance_dialog_text"><xliff:g id="device_name">%1$s</xliff:g> wants to access your SIM card. Granting access to the SIM card will disable data connectivity on your device for the duration of the connection. Give access to <xliff:g id="device_name">%2$s?</xliff:g></string>
++    <string name="bluetooth_sap_request">"SIM access request"</string>
++    <string name="bluetooth_turning_off">"Turning Bluetooth off\u2026"</string>
++    <string name="bluetooth_turning_on">"Turning Bluetooth on\u2026"</string>
++    <string name="forget">Forget</string>
++    <string name="wifi_in_airplane_mode">In Airplane mode</string>
++    <string name="bluetooth_talkback_computer">Computer</string>
++    <string name="bluetooth_talkback_headset">Headset</string>
++    <string name="bluetooth_talkback_phone">Phone</string>
++    <string name="bluetooth_talkback_imaging">Imaging</string>
++    <string name="bluetooth_talkback_headphone">Headphone</string>
++    <string name="bluetooth_talkback_input_peripheral">Input Peripheral</string>
++    <string name="bluetooth_talkback_bluetooth">Bluetooth</string>
++    <!-- Bluetooth settings: The sub heading for devices which have already been paired with this device. [CHAR LIMIT=40] -->
++    <string name="bluetooth_preference_paired_devices">Paired devices</string>
++    <string name="device_picker">Choose Bluetooth device</string>
++
++    <!-- VPN interface -->
++    <string name="vpn" >VPN</string>
++    <string name="create_vpn" >Create VPN</string>
++        <!-- Input label for the name of a VPN profile. [CHAR LIMIT=40] -->
++    <string name="vpn_name">Name</string>
++    <!-- Input label for the type of a VPN profile. [CHAR LIMIT=40] -->
++    <string name="vpn_type">Type</string>
++    <!-- Input label for the server address of a VPN profile. [CHAR LIMIT=40] -->
++    <string name="vpn_server">Server address</string>
++    <!-- Checkbox label to enable PPP encryption for a VPN profile. [CHAR LIMIT=40] -->
++    <string name="vpn_mppe">PPP encryption (MPPE)</string>
++    <!-- Input label for the L2TP secret of a VPN profile. [CHAR LIMIT=40] -->
++    <string name="vpn_l2tp_secret">L2TP secret</string>
++    <!-- Input label for the IPSec identifier of a VPN profile. [CHAR LIMIT=40] -->
++    <string name="vpn_ipsec_identifier">IPSec identifier</string>
++    <!-- Input label for the IPSec pre-shared key of a VPN profile. [CHAR LIMIT=40] -->
++    <string name="vpn_ipsec_secret">IPSec pre-shared key</string>
++    <!-- Selection label for the IPSec user certificate of a VPN profile. [CHAR LIMIT=40] -->
++    <string name="vpn_ipsec_user_cert">IPSec user certificate</string>
++    <!-- Selection label for the IPSec CA certificate of a VPN profile. [CHAR LIMIT=40] -->
++    <string name="vpn_ipsec_ca_cert">IPSec CA certificate</string>
++    <!-- Selection label for the IPSec server certificate of a VPN profile. [CHAR LIMIT=40] -->
++    <string name="vpn_ipsec_server_cert">IPSec server certificate</string>
++    <!-- Checkbox label to show advanced options of a VPN profile. [CHAR LIMIT=40] -->
++    <string name="vpn_show_options">Show advanced options</string>
++    <!-- Input label for the DNS search domains of a VPN profile. [CHAR LIMIT=40] -->
++    <string name="vpn_search_domains">DNS search domains</string>
++    <!-- Input label for the DNS servers of a VPN profile. [CHAR LIMIT=40] -->
++    <string name="vpn_dns_servers">DNS servers (e.g. 8.8.8.8)</string>
++    <!-- Input label for the forwarding routes of a VPN profile. [CHAR LIMIT=40] -->
++    <string name="vpn_routes">Forwarding routes (e.g. 10.0.0.0/8)</string>
++    <!-- Input label for the username of a VPN profile. [CHAR LIMIT=40] -->
++    <string name="vpn_username">Username</string>
++    <!-- Input label for the password of a VPN profile. [CHAR LIMIT=40] -->
++    <string name="vpn_password">Password</string>
++    <!-- Checkbox label to save the username and the password in a VPN profile. [CHAR LIMIT=40] -->
++    <string name="vpn_save_login">Save account information</string>
++    <!-- Hint for not using an optional feature in a VPN profile. [CHAR LIMIT=40] -->
++    <string name="vpn_not_used">(not used)</string>
++    <!-- Option to not use a CA certificate to verify the VPN server. [CHAR LIMIT=40] -->
++    <string name="vpn_no_ca_cert">(don\u2019t verify server)</string>
++    <!-- Option to use the server certificate received from the VPN server. [CHAR LIMIT=40] -->
++    <string name="vpn_no_server_cert">(received from server)</string>
++
++    <!-- Button label to cancel changing a VPN profile. [CHAR LIMIT=40] -->
++    <string name="vpn_cancel">Cancel</string>
++    <!-- Button label to finish editing a VPN profile. [CHAR LIMIT=40] -->
++    <string name="vpn_done">Dismiss</string>
++    <!-- Button label to save a VPN profile. [CHAR LIMIT=40] -->
++    <string name="vpn_save">Save</string>
++    <!-- Button label to connect to a VPN profile. [CHAR LIMIT=40] -->
++    <string name="vpn_connect">Connect</string>
++    <!-- Button label to connect a VPN profile, replacing the current one. [CHAR LIMIT=40] -->
++    <string name="vpn_replace">Replace</string>
++    <!-- Dialog title to edit a VPN profile. [CHAR LIMIT=40] -->
++    <string name="vpn_edit">Edit VPN profile</string>
++    <!-- Button label to forget a VPN profile. [CHAR LIMIT=40] -->
++    <string name="vpn_forget">Forget</string>
++    <!-- Dialog title to connect to a VPN profile. [CHAR LIMIT=40] -->
++    <string name="vpn_connect_to">Connect to <xliff:g id="profile" example="School">%s</xliff:g></string>
++    <!-- Dialog message body to disconnect from a VPN profile. -->
++    <string name="vpn_disconnect_confirm">Disconnect this VPN.</string>
++    <!-- Button label to disconnect from a VPN profile. [CHAR LIMIT=40] -->
++    <string name="vpn_disconnect">Disconnect</string>
++    <!-- Field label to show the version number for a VPN app. [CHAR LIMIT=40] -->
++    <string name="vpn_version">Version <xliff:g id="version" example="3.3.0">%s</xliff:g></string>
++    <!-- Preference title to create a new VPN profile. [CHAR LIMIT=40] -->
++    <string name="vpn_create">Add VPN profile</string>
++    <!-- Menu item to select always-on VPN profile. [CHAR LIMIT=40] -->
++    <string name="vpn_menu_lockdown">Always-on VPN</string>
++    <!-- Preference summary for active always-on vpn [CHAR LIMIT=40] -->
++    <string name="vpn_always_on_active">Always-on active</string>
++    <!-- Error indicating that the selected VPN doesn't meet requirements. [CHAR LIMIT=NONE] -->
++    <string name="vpn_lockdown_config_error">Always-on VPN requires an IP address for both server and DNS.</string>
++
++    <!-- Toast message when there is no network connection to start VPN. [CHAR LIMIT=100] -->
++    <string name="vpn_no_network">There is no network connection. Please try again later.</string>
++    <string name="join_two_unrelated_items"><xliff:g id="first_item">%1$s</xliff:g>, <xliff:g id="second_item">%2$s</xliff:g></string>
++    <string name="avaliable_vpns">Available vpns</string>
++    <string name="edit_vpn">Edit vpn</string>
++    <string name="edit">Edit</string>
++    <string name="vpn_insecure_summary">Not secure</string>
++    <string name="vpn_always_on_summary_active">Always on</string>
++    <!-- Dialog message title to confirm forcing all network connections to go through VPN.
++        [CHAR LIMIT=40] -->
++    <string name="vpn_require_connection_title">Require VPN connection?</string>
++    <!-- Dialog message title to set another VPN app to be always-on [CHAR LIMIT=40] -->
++    <string name="vpn_replace_vpn_title">Replace existing VPN?</string>
++    <!-- Dialog message title to set always-on VPN when another app was not already set. -->
++    <string name="vpn_set_vpn_title">Set always-on VPN?</string>
++    <!-- Dialog action button to turn on a VPN. -->
++    <string name="vpn_turn_on">Turn on</string>
++    <!-- Dialog message body to explain that always-on VPN will disable network traffic while the VPN is connecting, and that this will replace the current VPN. -->
++    <string name="vpn_replace_always_on_vpn_enable_message">Your existing VPN will be replaced, and you won\'t have an internet connection until the VPN successfully connects</string>
++    <!-- Dialog message body to explain that always-on VPN will disable network traffic while the VPN is connecting. -->
++    <string name="vpn_first_always_on_vpn_message">When this setting is on, you won\'t have an internet connection until the VPN successfully connects</string>
++    <!-- Dialog message body to connect a VPN app, replacing another VPN app that is already always-on [CHAR LIMIT=NONE] -->
++    <string name="vpn_replace_always_on_vpn_disable_message">You\'re already connected to an always-on VPN. If you connect to a different one, your existing VPN will be replaced, and always-on mode will turn off.</string>
++    <!-- Dialog message body to set another VPN app to be always-on [CHAR LIMIT=NONE] -->
++    <string name="vpn_replace_vpn_message">You\'re already connected to a VPN. If you connect to a different one, your existing VPN will be replaced.</string>
++
++    <!-- Hotspot -->
++    <string name="wifi_ap_choose_2G">2.4 GHz Band</string>
++    <string name="wifi_ap_choose_5G">5 GHz Band</string>
++    <string name="yes">"Yes"</string>
++    <!-- Strings for Dialog no button -->
++    <string name="no">"No"</string>
++    <string name="wifi_tether_configure_ssid_default">AndroidHotspot</string>
++    <string name="usb_tethering_active_subtext">Tethered</string>
++    <string name="usb_tethering_available_subtext">USB connected, check to tether</string>
++    <string name="usb_tethering_errored_subtext">USB tethering error</string>
++    <string name="usb_tethering_storage_active_subtext">Can\u2019t tether when USB storage is in use</string>
++    <string name="usb_tethering_unavailable_subtext">USB not connected</string>
++    <string name="wifi_tether_enabled_subtext">Portable hotspot <xliff:g id="network_ssid">%1$s</xliff:g> active</string>
++    <string name="wifi_error">Error</string>
++    <string name="wifi_tether_starting">Turning hotspot on\u2026</string>
++    <string name="wifi_tether_stopping">Turning off hotspot\u2026</string>
++    <string name="wifi_sap_no_channel_error">5 GHz band not available in this country</string>
++    <string name="hotspot_name">Hotspot</string>
++    <string name="usb_tethering_button_text">USB tethering</string>
++    <string name="wifi_tether_checkbox_text">Portable Wi\u2011Fi hotspot</string>
++    <string name="wifi_tether_configure_ap_text">Set up Wi\u2011Fi hotspot</string>
++    <string name="bluetooth_tether_checkbox_text">Bluetooth tethering</string>
++    <string name="wifi_tether_configure_subtext"><xliff:g id="network_ssid">%1$s</xliff:g> <xliff:g id="network_security">%2$s</xliff:g> portable Wi\u2011Fi hotspot</string>
++    <string name="credentials_password_too_short">The password must have at least 8 characters.</string>
++    <string name="wifi_ssid">Network name</string>
++    <string name="wifi_ssid_hint">Enter the SSID</string>
++    <string name="wifi_security">Security</string>
++    <string name="wifi_password">Password</string>
++    <string name="wifi_show_password">Show password</string>
++    <string name="wifi_ap_band_config">Select AP Band</string>
++    <string name="no_button">Cancel</string>
++    <string name="ok_button">Save</string>
++
++    <!-- Internet ADB -->
++    <string name="enable_internet_adb">Internet Adb</string>
++    <string name="enable_internet_adb_summary">enabled internet adb</string>
++    <!-- abc -->
++    <string name="enable_abc">Android bug collector</string>
++    <string name="enable_abc_summary">"Save recent boot logs in /data/logs"</string>
++    <string name="abc_tip_head">The current /data/vendor/logs directory size is:</string>
++    <string name="abc_tip_end"> MB. Free up space now！</string>
++    <!-- UsbMode -->
++    <string name="enable_usb">USB settings</string>
++    <string name="enable_usb_summary">Set the USB connection status</string>
++    <string name="usb_connect_to_computer">Connect to Computer</string>
++    <string name="usb_disconnect_to_computer">Disconnect to Computer</string>
++
++    <!-- keyboards -->
++    <string name="keyboard_and_input_methods_category">Keyboard &amp; inputs</string>
++    <string name="virtual_keyboard_category">Virtual keyboard</string>
++    <string name="physical_keyboard_title">Physical keyboard</string>
++    <string name="summary_placeholder" translatable="false">&#160;</string>
++    <string name="builtin_keyboard_settings_title">Physical keyboard</string>
++    <string name="keyboard_layout_default_label">Default</string>
++    <string name="keyboard_layout_picker_title">Keyboard layouts</string>
++    <string name="keyboard_assistance_category">Keyboard assistance</string>
++    <string name="show_ime_summary">Keep it on screen while physical keyboard is active</string>
++    <string name="show_ime">Show virtual keyboard</string>
++    <string name="keyboard_shortcuts_helper_summary">Display available shortcuts</string>
++    <string name="keyboard_shortcuts_helper">Keyboard shortcuts helper</string>
++    <string name="add_virtual_keyboard" msgid="3302152381456516928">"Manage KeyBoard"</string>
++    <string name="keyboard_layout_dialog_setup_button">Set up keyboard layouts</string>
++    <string name="keyboard_layout_dialog_title">Choose keyboard layout</string>
++    <string name="keyboard_layout_dialog_switch_hint">To switch, press Control-Spacebar</string>
++
++    <!-- cec-->
++    <string name="inputs_cec_audio_control">Audio Control</string>
++    <string name="inputs_cec_audio_control_desc">Allow HDMI devices to control TV\' Audio</string>
++    <string name="inputs_cec_audio_amplifier_control">Audio Amplifier Control</string>
++    <string name="inputs_cec_audio_amplifier_control_desc">Allow sending volume command to power amplifier</string>
++
++    <string name="hdr_mode">HDR Mode</string>
++    <string name="hdr_vivid_max_brightness">Vivid Max Brightness</string>
++    <string name="hdr_mode_sdr">SDR</string>
++    <string name="hdr_mode_hdr">HDR</string>
++    <string name="hdr_mode_auto">Auto</string>
+ </resources>
+diff --git a/Settings/res/values/styles.xml b/Settings/res/values/styles.xml
+index 1d34c66bb..3bf05d6db 100644
+--- a/Settings/res/values/styles.xml
++++ b/Settings/res/values/styles.xml
+@@ -428,4 +428,70 @@
+         <item name="android:layout_width">48dp</item>
+         <item name="android:visibility">visible</item>
+     </style>
++
++    <style name="vpn_label">
++        <item name="android:layout_width">match_parent</item>
++        <item name="android:layout_height">wrap_content</item>
++        <item name="android:textAppearance">?android:attr/textAppearanceSmall</item>
++    </style>
++
++    <style name="vpn_value">
++        <item name="android:layout_width">match_parent</item>
++        <item name="android:layout_height">wrap_content</item>
++        <item name="android:textAppearance">?android:attr/textAppearanceMedium</item>
++        <item name="android:singleLine">true</item>
++    </style>
++
++    <style name="bt_item_edit_content">
++        <item name="android:layout_width">match_parent</item>
++        <item name="android:layout_height">wrap_content</item>
++        <item name="android:textSize">18sp</item>
++    </style>
++
++    <style name="wifi_section">
++        <item name="android:orientation">vertical</item>
++    </style>
++    <style name="wifi_item">
++        <item name="android:layout_marginTop">8dip</item>
++        <item name="android:layout_marginStart">8dip</item>
++        <item name="android:layout_marginEnd">8dip</item>
++        <item name="android:paddingStart">8dip</item>
++        <item name="android:paddingEnd">8dip</item>
++        <item name="android:orientation">vertical</item>
++        <item name="android:gravity">start</item>
++    </style>
++    <style name="wifi_item_content">
++        <item name="android:textAlignment">viewStart</item>
++        <item name="android:textAppearance">@android:style/TextAppearance.Material.Subhead</item>
++        <item name="android:textColor">?android:attr/textColorPrimary</item>
++    </style>
++
++    <style name="wifi_item_edit_content">
++        <item name="android:paddingStart">4dip</item>
++        <item name="android:layout_marginStart">4dip</item>
++        <item name="android:textSize">18sp</item>
++    </style>
++
++    <style name="wifi_item_label">
++        <item name="android:paddingStart">8dip</item>
++        <item name="android:textSize">14sp</item>
++        <item name="android:textAlignment">viewStart</item>
++        <item name="android:textAppearance">@android:style/TextAppearance.Material.Body1</item>
++        <item name="android:textColor">?android:attr/textColorSecondary</item>
++    </style>
++
++     <style name="bt_item_label">
++        <item name="android:layout_width">wrap_content</item>
++        <item name="android:layout_height">wrap_content</item>
++        <item name="android:textSize">14sp</item>
++        <item name="android:textAlignment">viewStart</item>
++     </style>
++
++    <style name="transparent_dialog" parent="@style/Theme.AppCompat.Dialog.Alert">
++        <item name="android:windowBackground">@android:color/transparent</item>
++        <item name="android:windowNoTitle">true</item>
++        <item name="android:backgroundDimEnabled">false</item>
++        <item name="android:backgroundDimAmount">0</item>
++    </style>
++
+ </resources>
+diff --git a/Settings/res/values/themes.xml b/Settings/res/values/themes.xml
+index ac08b991a..79279b3fe 100644
+--- a/Settings/res/values/themes.xml
++++ b/Settings/res/values/themes.xml
+@@ -43,6 +43,9 @@
+         <item name="buttonBarButtonStyle">@*android:style/Widget.DeviceDefault.Button.ButtonBar.AlertDialog</item>
+     </style>
+ 
++    <style name="Theme.AlertDialog.Dark" parent="@style/Theme.AppCompat.Dialog.Alert">
++    </style>
++
+     <style name="FallbackHome" parent="@android:style/Theme.Material.Wallpaper.NoTitleBar">
+         <item name="android:windowTranslucentStatus">true</item>
+         <item name="android:windowTranslucentNavigation">true</item>
+diff --git a/Settings/res/xml/development_prefs.xml b/Settings/res/xml/development_prefs.xml
+index 56f79ee3e..2c846325c 100644
+--- a/Settings/res/xml/development_prefs.xml
++++ b/Settings/res/xml/development_prefs.xml
+@@ -81,12 +81,30 @@
+     <PreferenceCategory android:key="debug_debugging_category"
+                         android:title="@string/debug_debugging_category">
+ 
++        <SwitchPreference
++            android:key="enable_usb"
++            android:title="@string/enable_usb"
++            android:summary="@string/enable_usb_summary"
++            android:fragment="com.android.tv.settings.system.development.AdbDialog" />
++
+         <com.android.tv.settings.widget.SwitchWithSoundPreference
+             android:key="enable_adb"
+             android:title="@string/enable_adb"
+             android:summary="@string/enable_adb_summary"
+             android:fragment="com.android.tv.settings.system.development.AdbDialog" />
+ 
++        <SwitchPreference
++            android:key="enable_internet_adb"
++            android:title="@string/enable_internet_adb"
++            android:summary="@string/enable_internet_adb_summary"
++            android:fragment="com.android.tv.settings.system.development.AdbDialog" />
++
++        <SwitchPreference
++            android:key="enable_abc"
++            android:title="@string/enable_abc"
++            android:summary="@string/enable_abc_summary"
++            android:fragment="com.android.tv.settings.system.development.AdbDialog" />
++
+         <Preference android:key="clear_adb_keys"
+                     android:title="@string/clear_adb_keys"
+                     android:fragment="com.android.tv.settings.system.development.AdbKeysDialog" />
+diff --git a/Settings/res/xml/device.xml b/Settings/res/xml/device.xml
+index f7196586a..7c191bded 100644
+--- a/Settings/res/xml/device.xml
++++ b/Settings/res/xml/device.xml
+@@ -18,11 +18,21 @@
+ <PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+                   xmlns:custom="http://schemas.android.com/apk/res-auto"
+                   android:title="@string/device_pref_category_title">
++    <Preference
++        android:fragment="com.android.tv.settings.display.DisplayFragment"
++        android:icon="@drawable/icon_display"
++        android:key="displaies"
++        android:title="@string/display_category_title"/>
+     <Preference
+         android:fragment="com.android.tv.settings.about.AboutFragment"
+         android:icon="@drawable/ic_info_outline"
+         android:key="about_device"
+         android:title="@string/about_preference"/>
++    <Preference
++        android:icon="@drawable/ic_bluetooth"
++        android:key="bluetooth"
++        android:title="@string/bluetooth"
++        android:fragment="com.android.tv.settings.bluetooth.BluetoothFragment" />
+     <Preference
+         android:fragment="com.android.tv.settings.system.DateTimeFragment"
+         android:icon="@drawable/ic_access_time"
+@@ -38,11 +48,21 @@
+         android:icon="@drawable/ic_keyboard"
+         android:key="keyboard"
+         android:title="@string/system_keyboard"/>
++     <Preference
++        android:fragment="com.android.tv.settings.device.sound.BitStreamFragment"
++        android:icon="@drawable/ic_volume_up"
++        android:key="sound_effects"
++        android:title="@string/device_bit_stream"/>
+     <Preference
+         android:fragment="com.android.tv.settings.device.displaysound.DisplaySoundFragment"
+         android:icon="@drawable/ic_display_sound"
+         android:key="sound_effects"
+         android:title="@string/device_display_sound"/>
++    <Preference
++        android:icon="@drawable/ic_input"
++        android:key="inputs"
++        android:title="@string/system_inputs"
++        android:fragment="com.android.tv.settings.system.InputsFragment" />
+     <Preference
+         android:fragment="com.android.tv.settings.device.StorageSummaryFragment"
+         android:icon="@drawable/ic_storage"
+@@ -127,4 +147,9 @@
+         android:key="reboot"
+         android:title="@string/restart_button_label"
+         android:fragment="com.android.tv.settings.about.RebootConfirmFragment" />
++    <Preference
++        android:fragment="com.android.tv.settings.advance_settings.AdvanceSettingsFragment"
++        android:icon="@drawable/logo_settings_color_48dp"
++        android:key="advance_settings"
++        android:title="@string/advance_settings"/>
+ </PreferenceScreen>
+diff --git a/Settings/res/xml/device_x.xml b/Settings/res/xml/device_x.xml
+index 0456cca95..f2d2932f2 100644
+--- a/Settings/res/xml/device_x.xml
++++ b/Settings/res/xml/device_x.xml
+@@ -18,6 +18,11 @@
+ <PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+                   xmlns:custom="http://schemas.android.com/apk/res-auto"
+                   android:title="@string/device_pref_category_title">
++    <Preference
++        android:fragment="com.android.tv.settings.display.DisplayFragment"
++        android:icon="@drawable/icon_display"
++        android:key="displaies"
++        android:title="@string/display_category_title"/>
+     <Preference
+         android:fragment="com.android.tv.settings.accessibility.AccessibilityFragment"
+         android:icon="@drawable/ic_accessibility_new"
+@@ -101,4 +106,9 @@
+         android:icon="@drawable/ic_restart_alt"
+         android:key="reboot"
+         android:title="@string/restart_button_label"/>
++    <Preference
++        android:fragment="com.android.tv.settings.advance_settings.AdvanceSettingsFragment"
++        android:icon="@drawable/logo_settings_color_48dp"
++        android:key="advance_settings"
++        android:title="@string/advance_settings"/>
+ </PreferenceScreen>
+diff --git a/Settings/res/xml/inputs.xml b/Settings/res/xml/inputs.xml
+index aa21fc1df..38fbcbdfb 100644
+--- a/Settings/res/xml/inputs.xml
++++ b/Settings/res/xml/inputs.xml
+@@ -47,5 +47,15 @@
+             android:persistent="true"
+             android:title="@string/inputs_tv_auto_on"
+             android:summary="@string/inputs_tv_auto_on_desc" />
++        <com.android.tv.settings.widget.SwitchWithSoundPreference
++            android:key="cec_audio_control"
++            android:persistent="true"
++            android:title="@string/inputs_cec_audio_control"
++            android:summary="@string/inputs_cec_audio_control_desc" />
++        <com.android.tv.settings.widget.SwitchWithSoundPreference
++            android:key="cec_audio_amplifier_control"
++            android:persistent="true"
++            android:title="@string/inputs_cec_audio_amplifier_control"
++            android:summary="@string/inputs_cec_audio_amplifier_control_desc" />
+     </PreferenceCategory>
+ </PreferenceScreen>
+diff --git a/Settings/res/xml/keyboard.xml b/Settings/res/xml/keyboard.xml
+index db0793b1f..1bdfe81ed 100644
+--- a/Settings/res/xml/keyboard.xml
++++ b/Settings/res/xml/keyboard.xml
+@@ -55,5 +55,18 @@
+ 
+     <!-- Physical keyboard setting is inserted here with order=5 if any physical keyboards are
+          present -->
++    <PreferenceCategory
++        android:order="10"
++        android:key="keyboards_category"
++        android:title="@string/keyboard_and_input_methods_category">
++        <!-- <Preference
++            android:key="virtual_keyboard_pref"
++            android:title="@string/virtual_keyboard_category"
++            android:fragment="com.android.tv.settings.inputmethod.VirtualKeyboardFragment" /> -->
++        <Preference
++            android:key="physical_keyboard_pref"
++            android:title="@string/physical_keyboard_title"
++            android:fragment="com.android.tv.settings.inputmethod.PhysicalKeyboardFragment" />
++    </PreferenceCategory>
+ 
+ </PreferenceScreen>
+diff --git a/Settings/res/xml/network.xml b/Settings/res/xml/network.xml
+index 9082b2644..290429902 100644
+--- a/Settings/res/xml/network.xml
++++ b/Settings/res/xml/network.xml
+@@ -23,6 +23,14 @@
+         android:persistent="true"
+         android:title="@string/wifi_setting_enable_wifi" />
+ 
++    <Preference
++        android:key="hotspot"
++        android:title="@string/hotspot_name" >
++        <intent
++            android:targetClass="com.android.tv.settings.connectivity.HotspotActivity"
++            android:targetPackage="com.android.tv.settings" />
++    </Preference>
++
+     <com.android.tv.settings.connectivity.CollapsibleCategory
+         android:key="wifi_list"
+         android:title="@string/wifi_setting_available_networks"/>
+@@ -85,4 +93,24 @@
+         android:icon="@drawable/ic_network_check"
+         android:title="@string/connectivity_network_diagnostics" />
+ 
++    <PreferenceCategory
++        android:key="vpn"
++        android:title="@string/vpn" >
++        <Preference
++            android:key="vpn_create"
++            android:title="@string/create_vpn" >
++            <intent
++                android:targetClass="com.android.tv.settings.vpn.VpnCreateActivity"
++                android:targetPackage="com.android.tv.settings" />
++        </Preference>
++    <!-- <Preference
++            android:key="edit_vpn"
++            android:title="@string/edit_vpn"
++            android:fragment="com.android.tv.settings.vpn.VpnEditFragment"/> -->
++    </PreferenceCategory>
++
++     <PreferenceCategory
++            android:key="avaliable_vpns"
++            android:title="@string/avaliable_vpns"/>
++
+ </PreferenceScreen>
+-- 
+2.53.0
+

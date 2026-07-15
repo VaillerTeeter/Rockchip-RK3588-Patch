@@ -1,0 +1,175 @@
+From e484b50ed9da86ce0b6496c12136e6644f86d48f Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 13:18:37 +0800
+Subject: [PATCH 3/3] feat: add Rockchip build config (secure boot, soong,
+ sysprop, version, envsetup)
+
+Change-Id: I38b52fe8d9ec1b4415e0c28b74d756789345ba54
+---
+ core/main.mk         | 19 ++++++++++++++++++-
+ core/soong_config.mk |  9 ++++++++-
+ core/sysprop.mk      | 18 +++++++++++++++---
+ core/version_util.mk |  3 +++
+ envsetup.sh          | 18 ++++++++++++++++++
+ 5 files changed, 62 insertions(+), 5 deletions(-)
+
+diff --git a/core/main.mk b/core/main.mk
+index c63c6dfde..a44477c71 100644
+--- a/core/main.mk
++++ b/core/main.mk
+@@ -16,6 +16,9 @@ PWD := $(shell pwd)
+ DEFAULT_GOAL := droid
+ $(DEFAULT_GOAL): droid_targets
+ 
++# Include prebuild.mk
++-include device/rockchip/common/prebuild.mk
++
+ .PHONY: droid_targets
+ droid_targets:
+ 
+@@ -40,6 +43,15 @@ include $(BUILD_SYSTEM)/clang/config.mk
+ # Write the build number to a file so it can be read back in
+ # without changing the command line every time.  Avoids rebuilds
+ # when using ninja.
++ifdef ROCKCHIP_BUILD_NUMBER
++$(shell mkdir -p $(SOONG_OUT_DIR) && \
++    echo -n $(ROCKCHIP_BUILD_NUMBER) > $(SOONG_OUT_DIR)/build_number.tmp; \
++    if ! cmp -s $(SOONG_OUT_DIR)/build_number.tmp $(SOONG_OUT_DIR)/build_number.txt; then \
++        mv $(SOONG_OUT_DIR)/build_number.tmp $(SOONG_OUT_DIR)/build_number.txt; \
++    else \
++        rm $(SOONG_OUT_DIR)/build_number.tmp; \
++    fi)
++else
+ $(shell mkdir -p $(SOONG_OUT_DIR) && \
+     echo -n $(BUILD_NUMBER) > $(SOONG_OUT_DIR)/build_number.tmp; \
+     if ! cmp -s $(SOONG_OUT_DIR)/build_number.tmp $(SOONG_OUT_DIR)/build_number.txt; then \
+@@ -47,6 +59,7 @@ $(shell mkdir -p $(SOONG_OUT_DIR) && \
+     else \
+         rm $(SOONG_OUT_DIR)/build_number.tmp; \
+     fi)
++endif
+ BUILD_NUMBER_FILE := $(SOONG_OUT_DIR)/build_number.txt
+ .KATI_READONLY := BUILD_NUMBER_FILE
+ $(KATI_obsolete_var BUILD_NUMBER,See https://android.googlesource.com/platform/build/+/master/Changes.md#BUILD_NUMBER)
+@@ -62,7 +75,11 @@ ifeq ($(strip $(HAS_BUILD_NUMBER)),false)
+   # it will change every time.  Pick a stable value.
+   FILE_NAME_TAG := eng.$(BUILD_USERNAME)
+ else
+-  FILE_NAME_TAG := $(file <$(BUILD_NUMBER_FILE))
++  ifdef ROCKCHIP_BUILD_NUMBER
++    FILE_NAME_TAG := $(ROCKCHIP_BUILD_NUMBER)
++  else
++    FILE_NAME_TAG := $(file <$(BUILD_NUMBER_FILE))
++  endif
+ endif
+ .KATI_READONLY := FILE_NAME_TAG
+ 
+diff --git a/core/soong_config.mk b/core/soong_config.mk
+index 16b7faecf..ca875566c 100644
+--- a/core/soong_config.mk
++++ b/core/soong_config.mk
+@@ -1,7 +1,7 @@
+ SOONG_MAKEVARS_MK := $(SOONG_OUT_DIR)/make_vars-$(TARGET_PRODUCT).mk
+ SOONG_VARIABLES := $(SOONG_OUT_DIR)/soong.variables
+ SOONG_ANDROID_MK := $(SOONG_OUT_DIR)/Android-$(TARGET_PRODUCT).mk
+-
++CAMERA_WITHOUT_GRALLOC4 ?= false
+ BINDER32BIT :=
+ ifneq ($(TARGET_USES_64_BIT_BINDER),true)
+ ifneq ($(TARGET_IS_64_BIT),true)
+@@ -224,6 +224,13 @@ $(call add_json_str,  DexpreoptGlobalConfig,             $(DEX_PREOPT_CONFIG))
+ 
+ $(call add_json_bool, WithDexpreopt,                     $(filter true,$(WITH_DEXPREOPT)))
+ 
++$(call add_json_bool, CameraSupportHDMI, 		 $(filter true,$(CAMERA_SUPPORT_HDMI)))
++$(call add_json_bool, CameraSupportHDMISubVideo, 	 $(filter true,$(CAMERA_SUPPORT_HDMI_SUBVIDEO)))
++$(call add_json_bool, CameraSupportOSD, 		 $(filter true,$(CAMERA_SUPPORT_OSD)))
++$(call add_json_bool, CameraSupportSubDevice, 	 	 $(filter true,$(CAMERA_SUPPORT_SUBDEVICE)))
++$(call add_json_bool, CameraWithGralloc4, 	 	 $(filter-out true,$(CAMERA_WITHOUT_GRALLOC4)))
++$(call add_json_bool, CameraWithOutGralloc4, 	 	 $(filter true,$(CAMERA_WITHOUT_GRALLOC4)))
++
+ $(call add_json_list, ManifestPackageNameOverrides,      $(PRODUCT_MANIFEST_PACKAGE_NAME_OVERRIDES))
+ $(call add_json_list, PackageNameOverrides,              $(PRODUCT_PACKAGE_NAME_OVERRIDES))
+ $(call add_json_list, CertificateOverrides,              $(PRODUCT_CERTIFICATE_OVERRIDES))
+diff --git a/core/sysprop.mk b/core/sysprop.mk
+index 570702a67..b491146fd 100644
+--- a/core/sysprop.mk
++++ b/core/sysprop.mk
+@@ -161,16 +161,28 @@ BUILD_KEYS := test-keys
+ else
+ BUILD_KEYS := dev-keys
+ endif
++
++# For user fingerprint
++ifeq ($(TARGET_BUILD_VARIANT),eng)
++BUILD_KEYS := test-keys
++else
++BUILD_KEYS := release-keys
++endif
++
+ BUILD_VERSION_TAGS += $(BUILD_KEYS)
+ BUILD_VERSION_TAGS := $(subst $(space),$(comma),$(sort $(BUILD_VERSION_TAGS)))
+ 
+ # BUILD_FINGERPRINT is used used to uniquely identify the combined build and
+ # product; used by the OTA server.
+ ifeq (,$(strip $(BUILD_FINGERPRINT)))
+-  ifeq ($(strip $(HAS_BUILD_NUMBER)),false)
+-    BF_BUILD_NUMBER := $(BUILD_USERNAME)$$($(DATE_FROM_FILE) +%m%d%H%M)
++  ifdef ROCKCHIP_BUILD_NUMBER
++    BF_BUILD_NUMBER := $(ROCKCHIP_BUILD_NUMBER)
+   else
+-    BF_BUILD_NUMBER := $(file <$(BUILD_NUMBER_FILE))
++    ifeq ($(strip $(HAS_BUILD_NUMBER)),false)
++      BF_BUILD_NUMBER := $(BUILD_USERNAME)$$($(DATE_FROM_FILE) +%m%d%H%M)
++    else
++      BF_BUILD_NUMBER := $(file <$(BUILD_NUMBER_FILE))
++    endif
+   endif
+   BUILD_FINGERPRINT := $(PRODUCT_BRAND)/$(TARGET_PRODUCT)/$(TARGET_DEVICE):$(PLATFORM_VERSION)/$(BUILD_ID)/$(BF_BUILD_NUMBER):$(TARGET_BUILD_VARIANT)/$(BUILD_VERSION_TAGS)
+ endif
+diff --git a/core/version_util.mk b/core/version_util.mk
+index 3a0d4b586..b68b76619 100644
+--- a/core/version_util.mk
++++ b/core/version_util.mk
+@@ -234,6 +234,9 @@ DATE := date -d @$(BUILD_DATETIME)
+ $(KATI_obsolete_var BUILD_DATETIME,Use BUILD_DATETIME_FROM_FILE)
+ 
+ HAS_BUILD_NUMBER := true
++ifdef ROCKCHIP_BUILD_NUMBER
++  BUILD_NUMBER := $(ROCKCHIP_BUILD_NUMBER)
++endif
+ ifndef BUILD_NUMBER
+   # BUILD_NUMBER should be set to the source control value that
+   # represents the current state of the source code.  E.g., a
+diff --git a/envsetup.sh b/envsetup.sh
+index be6061d67..5feca04ba 100644
+--- a/envsetup.sh
++++ b/envsetup.sh
+@@ -323,6 +323,24 @@ function setpaths()
+     unset ANDROID_TARGET_OUT_TESTCASES
+     export ANDROID_TARGET_OUT_TESTCASES=$(get_abs_build_var TARGET_OUT_TESTCASES)
+ 
++    unset TARGET_BOARD_PLATFORM
++    export TARGET_BOARD_PLATFORM=$(get_build_var TARGET_BOARD_PLATFORM)
++
++    unset TARGET_BOARD_PLATFORM_GPU
++    export TARGET_BOARD_PLATFORM_GPU=$(get_build_var TARGET_BOARD_PLATFORM_GPU)
++
++    unset BOARD_HS_DYNAMIC_AFBC_TARGET
++    export BOARD_HS_DYNAMIC_AFBC_TARGET=$(get_build_var BOARD_HS_DYNAMIC_AFBC_TARGET)
++
++    unset TARGET_RK_GRALLOC_VERSION
++    export TARGET_RK_GRALLOC_VERSION=$(get_build_var TARGET_RK_GRALLOC_VERSION)
++
++    unset BOARD_SUPPORT_MULTIAUDIO
++    export BOARD_SUPPORT_MULTIAUDIO=$(get_build_var BOARD_SUPPORT_MULTIAUDIO)
++
++    unset TARGET_BOARD_PLATFORM_EBOOK
++    export TARGET_BOARD_PLATFORM_EBOOK=$(get_build_var BUILD_WITH_RK_EBOOK)
++
+     # needed for building linux on MacOS
+     # TODO: fix the path
+     #export HOST_EXTRACFLAGS="-I "$T/system/kernel_headers/host_include
+-- 
+2.53.0
+

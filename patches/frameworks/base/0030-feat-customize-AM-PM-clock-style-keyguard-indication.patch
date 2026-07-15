@@ -1,0 +1,108 @@
+From dbb82b80977e8154999b93cf66043a08c2982fbc Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 17:26:38 +0800
+Subject: [PATCH] feat: customize AM/PM clock style, keyguard indication, and
+ SystemUI flags
+
+Change-Id: I933673c45b7c5e571d367ec2eee93afdff53770d
+
+diff --git a/packages/SystemUI/AndroidManifest.xml b/packages/SystemUI/AndroidManifest.xml
+index 5c369afc1fcd..59be7a895157 100644
+--- a/packages/SystemUI/AndroidManifest.xml
++++ b/packages/SystemUI/AndroidManifest.xml
+@@ -1011,5 +1011,16 @@
+             android:exported="true"
+             android:permission="android.permission.CUSTOMIZE_SYSTEM_UI"
+             />
++
++        <!-- TODO(b/278897602): Disable EmojiCompatInitializer until threading issues are fixed.
++             https://developer.android.com/reference/androidx/emoji2/text/EmojiCompatInitializer -->
++        <provider
++            android:name="androidx.startup.InitializationProvider"
++            android:authorities="${applicationId}.androidx-startup"
++            android:exported="false"
++            tools:node="merge">
++            <meta-data android:name="androidx.emoji2.text.EmojiCompatInitializer"
++                tools:node="remove" />
++        </provider>
+     </application>
+ </manifest>
+diff --git a/packages/SystemUI/src/com/android/systemui/assist/ui/InvocationLightsView.java b/packages/SystemUI/src/com/android/systemui/assist/ui/InvocationLightsView.java
+index ac39ed501811..3e53269f71dd 100644
+--- a/packages/SystemUI/src/com/android/systemui/assist/ui/InvocationLightsView.java
++++ b/packages/SystemUI/src/com/android/systemui/assist/ui/InvocationLightsView.java
+@@ -286,6 +286,8 @@ public class InvocationLightsView extends View
+ 
+             NavigationBar navBar = controller.getDefaultNavigationBar();
+             if (navBar == null) {
++                Log.w(TAG, "navBar is null, prefer to use default color.");
++                setColors(0xFF4185F4, 0xFF3AA853, 0xFFEA4234, 0xFFFBBC06);
+                 return;
+             }
+ 
+diff --git a/packages/SystemUI/src/com/android/systemui/flags/Flags.kt b/packages/SystemUI/src/com/android/systemui/flags/Flags.kt
+index 2cd822ab8fb3..b4a30583f492 100644
+--- a/packages/SystemUI/src/com/android/systemui/flags/Flags.kt
++++ b/packages/SystemUI/src/com/android/systemui/flags/Flags.kt
+@@ -104,7 +104,7 @@ object Flags {
+     // TODO(b/260335638): Tracking Bug
+     @JvmField
+     val NOTIFICATION_INLINE_REPLY_ANIMATION =
+-        unreleasedFlag(174148361, "notification_inline_reply_animation")
++        releasedFlag(174148361, "notification_inline_reply_animation")
+ 
+     val FILTER_UNSEEN_NOTIFS_ON_KEYGUARD =
+         releasedFlag(254647461, "filter_unseen_notifs_on_keyguard", teamfood = true)
+diff --git a/packages/SystemUI/src/com/android/systemui/statusbar/KeyguardIndicationController.java b/packages/SystemUI/src/com/android/systemui/statusbar/KeyguardIndicationController.java
+index b08e1b555dee..d5751f4a349f 100644
+--- a/packages/SystemUI/src/com/android/systemui/statusbar/KeyguardIndicationController.java
++++ b/packages/SystemUI/src/com/android/systemui/statusbar/KeyguardIndicationController.java
+@@ -185,7 +185,6 @@ public class KeyguardIndicationController {
+ 
+     private boolean mPowerCharged;
+     private boolean mBatteryOverheated;
+-    private boolean mBatteryDead;
+     private boolean mEnableBatteryDefender;
+     private int mChargingSpeed;
+     private int mChargingWattage;
+@@ -903,11 +902,6 @@ public class KeyguardIndicationController {
+             return mContext.getResources().getString(R.string.keyguard_charged);
+         }
+ 
+-        String percentage = NumberFormat.getPercentInstance().format(mBatteryLevel / 100f);
+-        if (mBatteryDead) {
+-            return mContext.getResources().getString(R.string.keyguard_plugged_in, percentage);
+-        }
+-
+         final boolean hasChargingTime = mChargingTimeRemaining > 0;
+         if (mPowerPluggedInWired) {
+             switch (mChargingSpeed) {
+@@ -941,6 +935,7 @@ public class KeyguardIndicationController {
+                     : R.string.keyguard_plugged_in;
+         }
+ 
++        String percentage = NumberFormat.getPercentInstance().format(mBatteryLevel / 100f);
+         if (hasChargingTime) {
+             String chargingTimeFormatted = Formatter.formatShortElapsedTimeRoundingUpToMinutes(
+                     mContext, mChargingTimeRemaining);
+@@ -1068,7 +1063,6 @@ public class KeyguardIndicationController {
+             mBatteryLevel = status.level;
+             mBatteryPresent = status.present;
+             mBatteryOverheated = status.isOverheated();
+-            mBatteryDead = status.isDead();
+             // when the battery is overheated, device doesn't charge so only guard on pluggedIn:
+             mEnableBatteryDefender = mBatteryOverheated && status.isPluggedIn();
+ 
+diff --git a/packages/SystemUI/src/com/android/systemui/statusbar/policy/Clock.java b/packages/SystemUI/src/com/android/systemui/statusbar/policy/Clock.java
+index 6875b523a962..2ae37783f6c1 100644
+--- a/packages/SystemUI/src/com/android/systemui/statusbar/policy/Clock.java
++++ b/packages/SystemUI/src/com/android/systemui/statusbar/policy/Clock.java
+@@ -136,7 +136,7 @@ public class Clock extends TextView implements
+                 R.styleable.Clock,
+                 0, 0);
+         try {
+-            mAmPmStyle = a.getInt(R.styleable.Clock_amPmStyle, AM_PM_STYLE_GONE);
++            mAmPmStyle = a.getInt(R.styleable.Clock_amPmStyle, AM_PM_STYLE_NORMAL);
+             mNonAdaptedColor = getCurrentTextColor();
+         } finally {
+             a.recycle();

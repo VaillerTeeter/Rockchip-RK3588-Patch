@@ -1,0 +1,36 @@
+From 2d0cbde926602ef9a8d6221d90f4ae1b7f0fc883 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 17:26:14 +0800
+Subject: [PATCH] feat: customize fold AOD animation state handling
+
+Change-Id: Ic4021c96a98fb83153a8b0a999c5b2a765ddc2e5
+
+diff --git a/packages/SystemUI/src/com/android/systemui/unfold/FoldAodAnimationController.kt b/packages/SystemUI/src/com/android/systemui/unfold/FoldAodAnimationController.kt
+index 641cc45e01d8..29f67188d59d 100644
+--- a/packages/SystemUI/src/com/android/systemui/unfold/FoldAodAnimationController.kt
++++ b/packages/SystemUI/src/com/android/systemui/unfold/FoldAodAnimationController.kt
+@@ -150,10 +150,6 @@ constructor(
+                 pendingScrimReadyCallback = onReady
+             }
+         } else if (isFolded && !isFoldHandled && alwaysOnEnabled && isDozing) {
+-            // Screen turning on for the first time after folding and we are already dozing
+-            // We should play the folding to AOD animation
+-            isFoldHandled = true
+-
+             setAnimationState(playing = true)
+             centralSurfaces.notificationPanelViewController.prepareFoldToAodAnimation()
+ 
+@@ -169,6 +165,13 @@ constructor(
+             // No animation, call ready callback immediately
+             onReady.run()
+         }
++
++        if (isFolded) {
++            // Any time the screen turns on, this state needs to be reset if the device has been
++            // folded. Reaching this line implies AOD has been shown in one way or another,
++            // if enabled
++            isFoldHandled = true
++        }
+     }
+ 
+     /** Called when keyguard scrim opaque changed */

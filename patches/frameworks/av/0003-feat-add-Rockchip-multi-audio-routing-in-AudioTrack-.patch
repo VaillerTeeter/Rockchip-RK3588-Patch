@@ -1,0 +1,241 @@
+From 84f059209ec507bef17f15ec3b52cae5b9c68f77 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 15:00:16 +0800
+Subject: [PATCH] feat: add Rockchip multi-audio routing in AudioTrack and
+ frame counter overflow fix
+
+Change-Id: I93b9fde1b77610ac6c9f483891f31161d1929297
+
+diff --git a/media/libaudioclient/AudioTrack.cpp b/media/libaudioclient/AudioTrack.cpp
+index b8999512bf..53e334abe7 100644
+--- a/media/libaudioclient/AudioTrack.cpp
++++ b/media/libaudioclient/AudioTrack.cpp
+@@ -40,6 +40,10 @@
+ #include <media/MediaMetricsItem.h>
+ #include <media/TypeConverter.h>
+ 
++#if SUPPORT_MULTIAUDIO
++#include <binder/PermissionController.h>
++#endif
++
+ #define WAIT_PERIOD_MS                  10
+ #define WAIT_STREAM_END_TIMEOUT_SEC     120
+ static const int kMaxLoopCountNotifications = 32;
+@@ -557,6 +561,68 @@ status_t AudioTrack::set(
+     uid_t uid = VALUE_OR_FATAL(aidl2legacy_int32_t_uid_t(attributionSource.uid));
+     pid_t pid = VALUE_OR_FATAL(aidl2legacy_int32_t_pid_t(attributionSource.pid));
+     std::string errorMessage;
++#if SUPPORT_MULTIAUDIO
++#if MultiAudioTest
++    Vector<String16> packages;
++    PermissionController{}.getPackagesForUid(uid, packages);
++    if(!packages.isEmpty()) {
++        ALOGD("RKMultiAudio:package name: %s uid %d",String8(packages[0]).string(),uid);
++        mPackageName = packages[0];
++    } else {
++        mPackageName = String16("default");
++    }
++    String8 tmp = String8(mPackageName);
++    unsigned int numPorts;
++    unsigned int generation1;
++    unsigned int generation;
++    struct audio_port_v7 *audioPorts = nullptr;
++    int attempts = 10;
++    do {
++        if (attempts-- < 0) {
++            free(audioPorts);
++            ALOGE("Query audio ports time out");
++            break;
++        }
++        numPorts = 0;
++        status = AudioSystem::listAudioPorts(
++                AUDIO_PORT_ROLE_SINK, AUDIO_PORT_TYPE_DEVICE, &numPorts, nullptr,
++                &generation1);
++        if (numPorts == 0 || status != NO_ERROR) {
++            free(audioPorts);
++            ALOGE("Number of audio ports should not be zero");
++            break;
++        }
++        audioPorts = (struct audio_port_v7 *)realloc(
++                    audioPorts, numPorts * sizeof(struct audio_port_v7));
++        status = AudioSystem::listAudioPorts(
++                AUDIO_PORT_ROLE_SINK, AUDIO_PORT_TYPE_DEVICE, &numPorts, audioPorts,
++                &generation);
++        if (status != NO_ERROR) {
++            free(audioPorts);
++            ALOGE("Query audio ports failed");
++        }
++    } while (generation1 != generation);
++    for (int i = 0 ; i < numPorts; i++) {
++        ALOGD("listDeviceType: %d type:0x%x addr:%s id:%d", i,
++            audioPorts[i].ext.device.type, audioPorts[i].ext.device.address, audioPorts[i].id);
++        if (strstr(audioPorts[i].ext.device.address, "speaker0") != nullptr
++            && audioPorts[i].ext.device.type == AUDIO_DEVICE_OUT_SPEAKER
++            && strstr(tmp.string(), "RockVideoPlayer")) {
++           if (streamType == AUDIO_STREAM_MUSIC) {
++                selectedDeviceId = audioPorts[i].id;
++                ALOGD("select id:%d", selectedDeviceId);
++           }
++        } else if (audioPorts[i].ext.device.type == AUDIO_DEVICE_OUT_HDMI
++                        && strstr(tmp.string(), "gallery3d") != nullptr) {
++           if (streamType == AUDIO_STREAM_MUSIC) {
++                selectedDeviceId = audioPorts[i].id;
++                ALOGD("select id:%d", selectedDeviceId);
++           }
++        }
++    }
++    free(audioPorts);
++#endif
++#endif
+     // Note mPortId is not valid until the track is created, so omit mPortId in ALOG for set.
+     ALOGV("%s(): streamType %d, sampleRate %u, format %#x, channelMask %#x, frameCount %zu, "
+           "flags #%x, notificationFrames %d, sessionId %d, transferType %d, uid %d, pid %d",
+@@ -1791,6 +1857,12 @@ status_t AudioTrack::setOutputDevice(audio_port_handle_t deviceId) {
+     AutoMutex lock(mLock);
+     ALOGV("%s(%d): deviceId=%d mSelectedDeviceId=%d mRoutedDeviceId %d",
+             __func__, mPortId, deviceId, mSelectedDeviceId, mRoutedDeviceId);
++#if SUPPORT_MULTIAUDIO
++#if MultiAudioTest
++    if (deviceId == AUDIO_PORT_HANDLE_NONE)
++        return NO_ERROR;
++#endif
++#endif
+     if (mSelectedDeviceId != deviceId) {
+         mSelectedDeviceId = deviceId;
+         if (mStatus == NO_ERROR && mSelectedDeviceId != mRoutedDeviceId) {
+@@ -1959,6 +2031,7 @@ status_t AudioTrack::createTrack_l()
+         input.speed  = !isPurePcmData_l() || isOffloadedOrDirect_l() ? 1.0f :
+                         max(mMaxRequiredSpeed, mPlaybackRate.mSpeed);
+     }
++
+     input.flags = mFlags;
+     input.frameCount = mReqFrameCount;
+     input.notificationFrameCount = mNotificationFramesReq;
+diff --git a/media/libaudioclient/include/media/AudioTrack.h b/media/libaudioclient/include/media/AudioTrack.h
+index ee81ef82e8..196de14a60 100644
+--- a/media/libaudioclient/include/media/AudioTrack.h
++++ b/media/libaudioclient/include/media/AudioTrack.h
+@@ -35,6 +35,7 @@
+ #include "android/media/IAudioTrack.h"
+ #include "android/media/IAudioTrackCallback.h"
+ 
++#define MultiAudioTest 1
+ namespace android {
+ 
+ using content::AttributionSourceState;
+@@ -1555,7 +1556,9 @@ private:
+     MediaMetrics mMediaMetrics;
+     std::string mMetricsId;  // GUARDED_BY(mLock), could change in createTrack_l().
+     std::string mCallerName; // for example "aaudio"
+-
++#if MultiAudioTest
++    String16    mPackageName;
++#endif
+     // report error to mediametrics.
+     void reportError(status_t status, const char *event, const char *message) const;
+ 
+diff --git a/media/libmediaplayerservice/MediaPlayerService.cpp b/media/libmediaplayerservice/MediaPlayerService.cpp
+index e654bce2e7..f17aab3d44 100644
+--- a/media/libmediaplayerservice/MediaPlayerService.cpp
++++ b/media/libmediaplayerservice/MediaPlayerService.cpp
+@@ -84,6 +84,7 @@
+ #include "TestPlayerStub.h"
+ #include <nuplayer/NuPlayerDriver.h>
+ 
++#include "RemoteDisplay.h"
+ 
+ static const int kDumpLockRetries = 50;
+ static const int kDumpLockSleepUs = 20000;
+@@ -520,12 +521,13 @@ sp<IMediaCodecList> MediaPlayerService::getCodecList() const {
+ }
+ 
+ sp<IRemoteDisplay> MediaPlayerService::listenForRemoteDisplay(
+-        const String16 &/*opPackageName*/,
+-        const sp<IRemoteDisplayClient>& /*client*/,
+-        const String8& /*iface*/) {
+-    ALOGE("listenForRemoteDisplay is no longer supported!");
++        const String16 &opPackageName,
++        const sp<IRemoteDisplayClient>& client, const String8& iface) {
++    if (!checkPermission("android.permission.CONTROL_WIFI_DISPLAY")) {
++        return NULL;
++    }
+ 
+-    return NULL;
++    return new RemoteDisplay(opPackageName, client, iface.string());
+ }
+ 
+ status_t MediaPlayerService::AudioOutput::dump(int fd, const Vector<String16>& args) const
+@@ -1824,7 +1826,9 @@ MediaPlayerService::AudioOutput::AudioOutput(audio_session_t sessionId,
+       mSelectedDeviceId(AUDIO_PORT_HANDLE_NONE),
+       mRoutedDeviceId(AUDIO_PORT_HANDLE_NONE),
+       mDeviceCallbackEnabled(false),
+-      mDeviceCallback(deviceCallback)
++      mDeviceCallback(deviceCallback),
++      mNumFramesPlayedHighBit(0),
++      mLastNumFramesPlayed(0)
+ {
+     ALOGV("AudioOutput(%d)", sessionId);
+     if (attr != NULL) {
+@@ -1940,6 +1944,7 @@ int64_t MediaPlayerService::AudioOutput::getPlayedOutDurationUs(int64_t nowUs) c
+ 
+     uint32_t numFramesPlayed;
+     int64_t numFramesPlayedAtUs;
++    int64_t totalNumFramesPlayed;
+     AudioTimestamp ts;
+ 
+     status_t res = mTrack->getTimestamp(ts);
+@@ -1960,9 +1965,14 @@ int64_t MediaPlayerService::AudioOutput::getPlayedOutDurationUs(int64_t nowUs) c
+         //ALOGD("getPosition: %u %lld", numFramesPlayed, (long long)numFramesPlayedAtUs);
+     }
+ 
++    if (numFramesPlayed < mLastNumFramesPlayed) {
++        mNumFramesPlayedHighBit++;
++    }
++    totalNumFramesPlayed = (mNumFramesPlayedHighBit << 32) + numFramesPlayed;
++
+     // CHECK_EQ(numFramesPlayed & (1 << 31), 0);  // can't be negative until 12.4 hrs, test
+     // TODO: remove the (int32_t) casting below as it may overflow at 12.4 hours.
+-    int64_t durationUs = (int64_t)((int32_t)numFramesPlayed * 1000000LL / mSampleRateHz)
++    int64_t durationUs = (int64_t)(totalNumFramesPlayed * 1000000LL / mSampleRateHz)
+             + nowUs - numFramesPlayedAtUs;
+     if (durationUs < 0) {
+         // Occurs when numFramesPlayed position is very small and the following:
+@@ -1975,6 +1985,8 @@ int64_t MediaPlayerService::AudioOutput::getPlayedOutDurationUs(int64_t nowUs) c
+         ALOGV("getPlayedOutDurationUs: negative duration %lld set to zero", (long long)durationUs);
+         durationUs = 0;
+     }
++    mLastNumFramesPlayed = numFramesPlayed;
++
+     ALOGV("getPlayedOutDurationUs(%lld) nowUs(%lld) frames(%u) framesAt(%lld)",
+             (long long)durationUs, (long long)nowUs,
+             numFramesPlayed, (long long)numFramesPlayedAtUs);
+@@ -2467,7 +2479,14 @@ void MediaPlayerService::AudioOutput::flush()
+ {
+     ALOGV("flush");
+     Mutex::Autolock lock(mLock);
+-    if (mTrack != 0) mTrack->flush();
++    if (mTrack != 0) {
++        if ((mTrack->getFlags()
++            & (AUDIO_OUTPUT_FLAG_COMPRESS_OFFLOAD | AUDIO_OUTPUT_FLAG_DIRECT)) == 0) {
++            mNumFramesPlayedHighBit = 0;
++            mLastNumFramesPlayed = 0;
++        }
++        mTrack->flush();
++    }
+ }
+ 
+ void MediaPlayerService::AudioOutput::pause()
+diff --git a/media/libmediaplayerservice/MediaPlayerService.h b/media/libmediaplayerservice/MediaPlayerService.h
+index 86be3fe10c..830aaf4bc0 100644
+--- a/media/libmediaplayerservice/MediaPlayerService.h
++++ b/media/libmediaplayerservice/MediaPlayerService.h
+@@ -187,6 +187,9 @@ class MediaPlayerService : public BnMediaPlayerService
+         static bool             mIsOnEmulator;
+         static int              mMinBufferCount;  // 12 for emulator; otherwise 4
+ 
++        mutable int64_t         mNumFramesPlayedHighBit;
++        mutable uint32_t        mLastNumFramesPlayed;
++
+         // CallbackData is what is passed to the AudioTrack as the "user" data.
+         // We need to be able to target this to a different Output on the fly,
+         // so we can't use the Output itself for this.

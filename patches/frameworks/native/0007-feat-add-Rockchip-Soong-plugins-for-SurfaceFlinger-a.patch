@@ -1,0 +1,83 @@
+From 0e8b00dce9d2d40ee0634914ecb0a08290c2af57 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 15:37:26 +0800
+Subject: [PATCH] feat: add Rockchip Soong plugins for SurfaceFlinger and
+ CompositionEngine
+
+Change-Id: I3ec261959122b850e34e855aa1fb4d7e90bdcf00
+
+diff --git a/services/surfaceflinger/Android.bp b/services/surfaceflinger/Android.bp
+index 000a2cb0d3..39d82bee44 100644
+--- a/services/surfaceflinger/Android.bp
++++ b/services/surfaceflinger/Android.bp
+@@ -7,6 +7,27 @@ package {
+     default_applicable_licenses: ["frameworks_native_license"],
+ }
+ 
++bootstrap_go_package {
++    name: "soong-libsurfaceflinger",
++    pkgPath: "android/soong/libsurfaceflinger",
++    deps: [
++        "blueprint",
++        "blueprint-pathtools",
++        "soong",
++        "soong-android",
++        "soong-cc",
++        "soong-genrule",
++    ],
++    srcs: [
++          "Android.go",
++    ],
++    pluginFor: ["soong_build"],
++}
++
++cc_libsurfaceflinger{
++  name: "cc_libsurfaceflinger_defaults"
++}
++
+ cc_defaults {
+     name: "surfaceflinger_defaults",
+     cflags: [
+@@ -26,6 +47,7 @@ cc_defaults {
+     defaults: [
+         "surfaceflinger_defaults",
+         "skia_renderengine_deps",
++        "cc_libsurfaceflinger_defaults",
+     ],
+     cflags: [
+         "-DLOG_TAG=\"SurfaceFlinger\"",
+diff --git a/services/surfaceflinger/CompositionEngine/Android.bp b/services/surfaceflinger/CompositionEngine/Android.bp
+index 11a9e19db8..2d465061b4 100644
+--- a/services/surfaceflinger/CompositionEngine/Android.bp
++++ b/services/surfaceflinger/CompositionEngine/Android.bp
+@@ -7,9 +7,29 @@ package {
+     default_applicable_licenses: ["frameworks_native_license"],
+ }
+ 
++bootstrap_go_package {
++    name: "soong-libcompositionengine",
++    pkgPath: "android/soong/libcompositionengine",
++    deps: [
++        "blueprint",
++        "blueprint-pathtools",
++        "soong",
++        "soong-android",
++        "soong-cc",
++        "soong-genrule",
++    ],
++    srcs: [
++          "Android.go",
++    ],
++    pluginFor: ["soong_build"],
++}
++cc_libcompositionengine {
++    name: "cc_libcompositionengine_defaults"
++}
++
+ cc_defaults {
+     name: "libcompositionengine_defaults",
+-    defaults: ["surfaceflinger_defaults"],
++    defaults: ["surfaceflinger_defaults", "cc_libcompositionengine_defaults"],
+     cflags: [
+         "-DLOG_TAG=\"CompositionEngine\"",
+         "-DATRACE_TAG=ATRACE_TAG_GRAPHICS",

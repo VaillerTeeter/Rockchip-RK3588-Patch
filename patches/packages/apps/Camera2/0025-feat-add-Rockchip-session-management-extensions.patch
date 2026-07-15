@@ -1,0 +1,191 @@
+From 9055927137b844b65b664bc009a6bba513c68865 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Sat, 11 Jul 2026 02:55:54 +0800
+Subject: [PATCH 26/27] feat: add Rockchip session management extensions
+
+Change-Id: I73a8c9647ee87b07acf337332573614a76ad43b3
+---
+ .../camera/session/CaptureSessionImpl.java    |  5 +++
+ .../session/CaptureSessionManagerImpl.java    | 10 +++++
+ .../camera/session/PlaceholderManager.java    | 37 +++++++++++--------
+ 3 files changed, 36 insertions(+), 16 deletions(-)
+
+diff --git a/src/com/android/camera/session/CaptureSessionImpl.java b/src/com/android/camera/session/CaptureSessionImpl.java
+index a97a42313..70a38369f 100644
+--- a/src/com/android/camera/session/CaptureSessionImpl.java
++++ b/src/com/android/camera/session/CaptureSessionImpl.java
+@@ -198,6 +198,7 @@ public class CaptureSessionImpl implements CaptureSession {
+     @Override
+     public synchronized void startEmpty(@Nullable ImageLifecycleListener listener,
+           @Nonnull Size pictureSize) {
++        Log.d(TAG, "startEmpty :" + mIsFinished);
+         if (mIsFinished) {
+             return;
+         }
+@@ -218,6 +219,7 @@ public class CaptureSessionImpl implements CaptureSession {
+     @Override
+     public synchronized void startSession(@Nullable ImageLifecycleListener listener,
+           @Nonnull Bitmap placeholder, int progressMessageId) {
++        Log.d(TAG, "startSession1 :" + mIsFinished);
+         if (mIsFinished) {
+             return;
+         }
+@@ -239,6 +241,7 @@ public class CaptureSessionImpl implements CaptureSession {
+     @Override
+     public synchronized void startSession(@Nullable ImageLifecycleListener listener,
+           @Nonnull byte[] placeholder, int progressMessageId) {
++        Log.d(TAG, "startSession2 :" + mIsFinished);
+         if (mIsFinished) {
+             return;
+         }
+@@ -264,6 +267,7 @@ public class CaptureSessionImpl implements CaptureSession {
+     @Override
+     public synchronized void startSession(@Nullable ImageLifecycleListener listener,
+           @Nonnull Uri uri, int progressMessageId) {
++        Log.d(TAG, "startSession3 :" + mIsFinished);
+         if (listener != null) {
+             mImageLifecycleListener = listener;
+             mImageLifecycleListener.onCaptureStarted();
+@@ -296,6 +300,7 @@ public class CaptureSessionImpl implements CaptureSession {
+     @Override
+     public synchronized ListenableFuture<Optional<Uri>> saveAndFinish(byte[] data, int width,
+           int height, int orientation, ExifInterface exif) {
++        Log.d(TAG,"saveAndFinish");
+         final SettableFuture<Optional<Uri>> futureResult = SettableFuture.create();
+ 
+         if (mImageLifecycleListener != null) {
+diff --git a/src/com/android/camera/session/CaptureSessionManagerImpl.java b/src/com/android/camera/session/CaptureSessionManagerImpl.java
+index 641287398..bbd5fa4fd 100644
+--- a/src/com/android/camera/session/CaptureSessionManagerImpl.java
++++ b/src/com/android/camera/session/CaptureSessionManagerImpl.java
+@@ -70,6 +70,7 @@ public class CaptureSessionManagerImpl implements CaptureSessionManager {
+             mMainHandler.execute(new Runnable() {
+                 @Override
+                 public void run() {
++                    Log.d(TAG,"notifyTaskQueued");
+                     synchronized (mTaskListeners) {
+                         for (SessionListener listener : mTaskListeners) {
+                             listener.onSessionQueued(uri);
+@@ -88,6 +89,7 @@ public class CaptureSessionManagerImpl implements CaptureSessionManager {
+             mMainHandler.execute(new Runnable() {
+                 @Override
+                 public void run() {
++                    Log.d(TAG,"notifyTaskDone");
+                     synchronized (mTaskListeners) {
+                         for (SessionListener listener : mTaskListeners) {
+                             listener.onSessionDone(uri);
+@@ -108,6 +110,7 @@ public class CaptureSessionManagerImpl implements CaptureSessionManager {
+             mMainHandler.execute(new Runnable() {
+                 @Override
+                 public void run() {
++                    Log.d(TAG,"notifyTaskFailed");
+                     synchronized (mTaskListeners) {
+                         for (SessionListener listener : mTaskListeners) {
+                             listener.onSessionFailed(uri, failureMessageId, removeFromFilmstrip);
+@@ -123,6 +126,7 @@ public class CaptureSessionManagerImpl implements CaptureSessionManager {
+             mMainHandler.execute(new Runnable() {
+                 @Override
+                 public void run() {
++                    Log.d(TAG,"notifyTaskCanceled");
+                     synchronized (mTaskListeners) {
+                         for (SessionListener listener : mTaskListeners) {
+                             listener.onSessionCanceled(uri);
+@@ -142,6 +146,7 @@ public class CaptureSessionManagerImpl implements CaptureSessionManager {
+             mMainHandler.execute(new Runnable() {
+                 @Override
+                 public void run() {
++                    Log.d(TAG,"notifyTaskProgress");
+                     synchronized (mTaskListeners) {
+                         for (SessionListener listener : mTaskListeners) {
+                             listener.onSessionProgress(uri, progressPercent);
+@@ -160,6 +165,7 @@ public class CaptureSessionManagerImpl implements CaptureSessionManager {
+             mMainHandler.execute(new Runnable() {
+                 @Override
+                 public void run() {
++                    Log.d(TAG,"notifyTaskProgressText");
+                     synchronized (mTaskListeners) {
+                         for (SessionListener listener : mTaskListeners) {
+                             listener.onSessionProgressText(uri, messageId);
+@@ -178,6 +184,7 @@ public class CaptureSessionManagerImpl implements CaptureSessionManager {
+             mMainHandler.execute(new Runnable() {
+                 @Override
+                 public void run() {
++                    Log.d(TAG,"notifySessionUpdated");
+                     synchronized (mTaskListeners) {
+                         for (SessionListener listener : mTaskListeners) {
+                             listener.onSessionUpdated(uri);
+@@ -201,6 +208,7 @@ public class CaptureSessionManagerImpl implements CaptureSessionManager {
+             mMainHandler.execute(new Runnable() {
+                 @Override
+                 public void run() {
++                    Log.d(TAG,"notifySessionCaptureIndicatorAvailable");
+                     synchronized (mTaskListeners) {
+                         for (SessionListener listener : mTaskListeners) {
+                             listener.onSessionCaptureIndicatorUpdate(indicator, rotationDegrees);
+@@ -215,6 +223,7 @@ public class CaptureSessionManagerImpl implements CaptureSessionManager {
+             mMainHandler.execute(new Runnable() {
+                 @Override
+                 public void run() {
++                    Log.d(TAG,"notifySessionThumbnailAvailable");
+                     synchronized (mTaskListeners) {
+                         for (SessionListener listener : mTaskListeners) {
+                             listener.onSessionThumbnailUpdate(thumbnail);
+@@ -230,6 +239,7 @@ public class CaptureSessionManagerImpl implements CaptureSessionManager {
+             mMainHandler.execute(new Runnable() {
+                 @Override
+                 public void run() {
++                    Log.d(TAG,"notifySessionPictureDataAvailable");
+                     synchronized (mTaskListeners) {
+                         for (SessionListener listener : mTaskListeners) {
+                             listener.onSessionPictureDataUpdate(pictureData, orientation);
+diff --git a/src/com/android/camera/session/PlaceholderManager.java b/src/com/android/camera/session/PlaceholderManager.java
+index a4742507a..6cefeb1e2 100644
+--- a/src/com/android/camera/session/PlaceholderManager.java
++++ b/src/com/android/camera/session/PlaceholderManager.java
+@@ -184,22 +184,27 @@ public class PlaceholderManager {
+                 new String[] {
+                         MediaStore.Images.Media.DATE_TAKEN, MediaStore.Images.Media.DISPLAY_NAME,
+                 }, null, null, null);
+-        // The count could be 0 if the original media item was deleted before
+-        // the session was created.
+-        if (cursor == null || cursor.getCount() == 0) {
+-            return null;
++        try {
++            // The count could be 0 if the original media item was deleted before
++            // the session was created.
++            if (cursor == null || cursor.getCount() == 0) {
++                return null;
++            }
++            int dateIndex = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATE_TAKEN);
++            int nameIndex = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DISPLAY_NAME);
++
++            cursor.moveToFirst();
++            long date = cursor.getLong(dateIndex);
++            String name = cursor.getString(nameIndex);
++
++            if (name.toLowerCase().endsWith(Storage.JPEG_POSTFIX)) {
++                name = name.substring(0, name.length() - Storage.JPEG_POSTFIX.length());
++            }
++
++            return new Placeholder(name, uri, date);
++        } finally {
++            if (cursor != null)
++                cursor.close();
+         }
+-        int dateIndex = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATE_TAKEN);
+-        int nameIndex = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DISPLAY_NAME);
+-
+-        cursor.moveToFirst();
+-        long date = cursor.getLong(dateIndex);
+-        String name = cursor.getString(nameIndex);
+-
+-        if (name.toLowerCase().endsWith(Storage.JPEG_POSTFIX)) {
+-            name = name.substring(0, name.length() - Storage.JPEG_POSTFIX.length());
+-        }
+-
+-        return new Placeholder(name, uri, date);
+     }
+ }
+-- 
+2.53.0
+

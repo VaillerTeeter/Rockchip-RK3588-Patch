@@ -1,0 +1,112 @@
+From bfc95f99ae5a7d8e8b522bf39c9218d24776d916 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 13:19:14 +0800
+Subject: [PATCH 4/5] feat: add Rockchip Soong camera variables and DANDROID_13
+ flag
+
+Change-Id: I321bf7ba8411c5e98caa03191b78b51abeadfd67
+---
+ android/variable.go | 67 +++++++++++++++++++++++++++++++++++++++++++++
+ cc/config/global.go |  1 +
+ 2 files changed, 68 insertions(+)
+
+diff --git a/android/variable.go b/android/variable.go
+index 8d96e31cb..34af3bece 100644
+--- a/android/variable.go
++++ b/android/variable.go
+@@ -173,6 +173,66 @@ type variableProperties struct {
+ 			Srcs         []string `android:"arch_variant"`
+ 			Exclude_srcs []string `android:"arch_variant"`
+ 		} `android:"arch_variant"`
++
++		CameraSupportHDMI struct {
++			Cflags          []string
++			Cppflags        []string
++			Init_rc         []string
++			Required        []string
++			Host_required   []string
++			Target_required []string
++		}
++		CameraSupportVirtual struct {
++			Cflags          []string
++			Cppflags        []string
++			Init_rc         []string
++			Required        []string
++			Host_required   []string
++			Target_required []string
++		}
++		CameraSupportHDMISubVideo struct {
++			Cflags          []string
++			Cppflags        []string
++			Init_rc         []string
++			Required        []string
++			Host_required   []string
++			Target_required []string
++		}
++
++		CameraSupportOSD struct {
++			Cflags          []string
++			Cppflags        []string
++			Init_rc         []string
++			Required        []string
++			Host_required   []string
++			Target_required []string
++		}
++		CameraSupportSubDevice struct {
++			Cflags          []string
++			Cppflags        []string
++			Init_rc         []string
++			Required        []string
++			Host_required   []string
++			Target_required []string
++		}
++		CameraWithGralloc4 struct {
++			Cflags          []string
++			Cppflags        []string
++			Srcs            []string
++			Init_rc         []string
++			Required        []string
++			Host_required   []string
++			Target_required []string
++		}
++		CameraWithOutGralloc4 struct {
++			Cflags          []string
++			Cppflags        []string
++			Srcs            []string
++			Init_rc         []string
++			Required        []string
++			Host_required   []string
++			Target_required []string
++		}
+ 	} `android:"arch_variant"`
+ }
+ 
+@@ -271,6 +331,13 @@ type productVariables struct {
+ 	UseRBED8                     *bool    `json:",omitempty"`
+ 	Debuggable                   *bool    `json:",omitempty"`
+ 	Eng                          *bool    `json:",omitempty"`
++	CameraWithGralloc4           *bool    `json:",omitempty"`
++	CameraWithOutGralloc4        *bool    `json:",omitempty"`
++	CameraSupportHDMI            *bool    `json:",omitempty"`
++	CameraSupportHDMISubVideo    *bool    `json:",omitempty"`
++	CameraSupportVirtual         *bool    `json:",omitempty"`
++	CameraSupportSubDevice       *bool    `json:",omitempty"`
++	CameraSupportOSD             *bool    `json:",omitempty"`
+ 	Treble_linker_namespaces     *bool    `json:",omitempty"`
+ 	Enforce_vintf_manifest       *bool    `json:",omitempty"`
+ 	Uml                          *bool    `json:",omitempty"`
+diff --git a/cc/config/global.go b/cc/config/global.go
+index 3caf32792..8f60ce745 100644
+--- a/cc/config/global.go
++++ b/cc/config/global.go
+@@ -30,6 +30,7 @@ var (
+ 	// will save bytes in build.ninja so they aren't repeated for every file
+ 	commonGlobalCflags = []string{
+ 		"-DANDROID",
++		"-DANDROID_13",
+ 		"-fmessage-length=0",
+ 		"-W",
+ 		"-Wall",
+-- 
+2.53.0
+

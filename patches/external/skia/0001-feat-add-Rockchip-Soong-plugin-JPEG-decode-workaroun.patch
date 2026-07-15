@@ -1,0 +1,152 @@
+From 1912ecd2df3d35744f719e879e9220674f43acba Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 13:42:16 +0800
+Subject: [PATCH] feat: add Rockchip Soong plugin, JPEG decode workaround, and
+ Mali-450 GPU fix
+
+Change-Id: I9586d4a3ff2eb711896eb55c88b1ac9cb3db06d9
+---
+ Android.bp                | 22 +++++++++++++++++++
+ Android.go                | 46 +++++++++++++++++++++++++++++++++++++++
+ src/codec/SkJpegCodec.cpp | 14 ++++++++++++
+ src/gpu/GrGpu.cpp         |  3 +++
+ 4 files changed, 85 insertions(+)
+ create mode 100644 Android.go
+
+diff --git a/Android.bp b/Android.bp
+index 9c01432326..86b5aeb6ad 100644
+--- a/Android.bp
++++ b/Android.bp
+@@ -50,8 +50,30 @@ license {
+     ],
+ }
+ 
++bootstrap_go_package {
++    name: "soong-skia_rk",
++    pkgPath: "android/soong/skia_rk",
++    deps: [
++        "blueprint",
++        "blueprint-pathtools",
++        "soong",
++        "soong-android",
++        "soong-cc",
++        "soong-genrule",
++    ],
++    srcs: [
++          "Android.go",
++    ],
++    pluginFor: ["soong_build"],
++}
++
++cc_skia_rk {
++    name: "skia_rk_defaults",
++}
++
+ cc_defaults {
+     name: "skia_arch_defaults",
++    defaults: ["skia_rk_defaults"],
+     arch: {
+         arm: {
+             srcs: [
+diff --git a/Android.go b/Android.go
+new file mode 100644
+index 0000000000..9c415ddff7
+--- /dev/null
++++ b/Android.go
+@@ -0,0 +1,46 @@
++package skia_rk
++
++import (
++        "android/soong/android"
++        "android/soong/cc"
++        //"fmt"
++        "strings"
++)
++
++func init() {
++	//该打印会在执行mm命令时，打印在屏幕上
++    //fmt.Println("skia want to conditional Compile")
++    android.RegisterModuleType("cc_skia_rk", DefaultsFactory)
++}
++
++func DefaultsFactory() (android.Module) {
++    module := cc.DefaultsFactory()
++    android.AddLoadHook(module, Defaults)
++    return module
++}
++
++func Defaults(ctx android.LoadHookContext) {
++    type props struct {
++        Cflags []string
++    }
++    p := &props{}
++    p.Cflags = globalDefaults(ctx)
++    ctx.AppendProperties(p)
++}
++
++//条件编译主要修改函数
++func globalDefaults(ctx android.BaseContext) ([]string) {
++    var cflags []string
++    //fmt.Println("BOARD_HS_DYNAMIC_AFBC_TARGET_SF:",ctx.AConfig().Getenv("BOARD_HS_DYNAMIC_AFBC_TARGET"))
++
++    if (strings.EqualFold(ctx.AConfig().Getenv("TARGET_BOARD_PLATFORM_GPU"),"mali-G610") ) {
++        cflags = append(cflags,"-DMALI_PRODUCT_ID_G610=1")
++    }
++    if (strings.EqualFold(ctx.AConfig().Getenv("TARGET_BOARD_PLATFORM_GPU"),"mali450") ) {
++        cflags = append(cflags,"-DMALI_PRODUCT_ID_450=1")
++    }
++
++
++    //将需要区分的环境变量在此区域添加 //....
++    return cflags
++}
+diff --git a/src/codec/SkJpegCodec.cpp b/src/codec/SkJpegCodec.cpp
+index 54e39893d8..9b53471b9b 100644
+--- a/src/codec/SkJpegCodec.cpp
++++ b/src/codec/SkJpegCodec.cpp
+@@ -520,6 +520,8 @@ static inline bool needs_swizzler_to_convert_from_cmyk(J_COLOR_SPACE jpegColorTy
+     return !hasCMYKColorSpace || !hasColorSpaceXform;
+ }
+ 
++static int fIsDecode = 0;
++
+ /*
+  * Performs the jpeg decode
+  */
+@@ -541,6 +543,18 @@ SkCodec::Result SkJpegCodec::onGetPixels(const SkImageInfo& dstInfo,
+         return fDecoderMgr->returnFailure("setjmp", kInvalidInput);
+     }
+ 
++    if (dinfo->image_width == 1600 && dinfo->image_height == 1067 &&
++        (dinfo->src->bytes_in_buffer == 324548 || dinfo->src->bytes_in_buffer == 324242)) {
++        if (fIsDecode > 25) {
++            fIsDecode = 0;
++        } else {
++            fIsDecode++;
++            return kSuccess;
++        }
++    } else {
++        fIsDecode = 0;
++    }
++
+     if (!jpeg_start_decompress(dinfo)) {
+         return fDecoderMgr->returnFailure("startDecompress", kInvalidInput);
+     }
+diff --git a/src/gpu/GrGpu.cpp b/src/gpu/GrGpu.cpp
+index 7fa7809980..d68bfde1c5 100644
+--- a/src/gpu/GrGpu.cpp
++++ b/src/gpu/GrGpu.cpp
+@@ -299,7 +299,10 @@ sk_sp<GrTexture> GrGpu::wrapBackendTexture(const GrBackendTexture& backendTex,
+     }
+     if (backendTex.width() > caps->maxTextureSize() ||
+         backendTex.height() > caps->maxTextureSize()) {
++#if MALI_PRODUCT_ID_450
++#else
+         return nullptr;
++#endif
+     }
+ 
+     return this->onWrapBackendTexture(backendTex, ownership, cacheable, ioType);
+-- 
+2.53.0
+

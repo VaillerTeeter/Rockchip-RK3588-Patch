@@ -1,0 +1,424 @@
+From dcd9491e7ec33f6452648ae7a34c348a0b3835b6 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Sun, 12 Jul 2026 01:29:29 +0800
+Subject: [PATCH] feat: add EthernetManager IP configuration query APIs
+ (getIpAddress, getNetmask, getGateway, getDns) with API surface and service
+ tracker support for Rockchip Ethernet management
+
+Change-Id: I1dbe8b22b3d70e00dff29e9e1fa5c3bc2553a2af
+---
+ framework-t/api/module-lib-current.txt        |   7 ++
+ .../src/android/net/EthernetManager.java      |  73 ++++++++++-
+ .../src/android/net/IEthernetManager.aidl     |   5 +
+ .../ethernet/EthernetNetworkFactory.java      | 114 ++++++++++++++++++
+ .../server/ethernet/EthernetServiceImpl.java  |  55 +++++++++
+ .../server/ethernet/EthernetTracker.java      |  16 +++
+ 6 files changed, 266 insertions(+), 4 deletions(-)
+
+diff --git a/framework-t/api/module-lib-current.txt b/framework-t/api/module-lib-current.txt
+index 5a8d47b5f..19d737f00 100644
+--- a/framework-t/api/module-lib-current.txt
++++ b/framework-t/api/module-lib-current.txt
+@@ -44,9 +44,16 @@ package android.net {
+   public class EthernetManager {
+     method @RequiresPermission(android.Manifest.permission.ACCESS_NETWORK_STATE) public void addEthernetStateListener(@NonNull java.util.concurrent.Executor, @NonNull java.util.function.IntConsumer);
+     method @RequiresPermission(android.Manifest.permission.ACCESS_NETWORK_STATE) public void addInterfaceStateListener(@NonNull java.util.concurrent.Executor, @NonNull android.net.EthernetManager.InterfaceStateListener);
++    method @NonNull @RequiresPermission(android.Manifest.permission.ACCESS_NETWORK_STATE) public String[] getAvailableInterfaces();
++    method @NonNull @RequiresPermission(android.Manifest.permission.ACCESS_NETWORK_STATE) public android.net.IpConfiguration getConfiguration(@NonNull String);
++    method @NonNull @RequiresPermission(android.Manifest.permission.ACCESS_NETWORK_STATE) public String getDns(@NonNull String);
++    method @NonNull @RequiresPermission(android.Manifest.permission.ACCESS_NETWORK_STATE) public String getGateway(@NonNull String);
+     method @NonNull @RequiresPermission(android.Manifest.permission.ACCESS_NETWORK_STATE) public java.util.List<java.lang.String> getInterfaceList();
++    method @NonNull @RequiresPermission(android.Manifest.permission.ACCESS_NETWORK_STATE) public String getIpAddress(@NonNull String);
++    method @NonNull @RequiresPermission(android.Manifest.permission.ACCESS_NETWORK_STATE) public String getNetmask(@NonNull String);
+     method @RequiresPermission(android.Manifest.permission.ACCESS_NETWORK_STATE) public void removeEthernetStateListener(@NonNull java.util.function.IntConsumer);
+     method public void removeInterfaceStateListener(@NonNull android.net.EthernetManager.InterfaceStateListener);
++    method @NonNull @RequiresPermission(android.Manifest.permission.ACCESS_NETWORK_STATE) public void setConfiguration(@NonNull String, @NonNull android.net.IpConfiguration);
+     method @RequiresPermission(anyOf={android.net.NetworkStack.PERMISSION_MAINLINE_NETWORK_STACK, android.Manifest.permission.NETWORK_STACK, android.Manifest.permission.NETWORK_SETTINGS}) public void setEthernetEnabled(boolean);
+     method public void setIncludeTestInterfaces(boolean);
+     field public static final int ETHERNET_STATE_DISABLED = 0; // 0x0
+diff --git a/framework-t/src/android/net/EthernetManager.java b/framework-t/src/android/net/EthernetManager.java
+index 886d19499..e5ae03bdc 100644
+--- a/framework-t/src/android/net/EthernetManager.java
++++ b/framework-t/src/android/net/EthernetManager.java
+@@ -43,6 +43,7 @@ import java.util.List;
+ import java.util.Objects;
+ import java.util.concurrent.Executor;
+ import java.util.function.IntConsumer;
++import android.util.Log;
+ 
+ /**
+  * A class that manages and configures Ethernet interfaces.
+@@ -191,8 +192,10 @@ public class EthernetManager {
+      * @return the Ethernet Configuration, contained in {@link IpConfiguration}.
+      * @hide
+      */
+-    @UnsupportedAppUsage(maxTargetSdk = Build.VERSION_CODES.R, trackingBug = 170729553)
+-    public IpConfiguration getConfiguration(String iface) {
++    @RequiresPermission(android.Manifest.permission.ACCESS_NETWORK_STATE)
++    @SystemApi(client = MODULE_LIBRARIES)
++    @NonNull
++    public IpConfiguration getConfiguration(@NonNull String iface) {
+         try {
+             return mService.getConfiguration(iface);
+         } catch (RemoteException e) {
+@@ -204,7 +207,9 @@ public class EthernetManager {
+      * Set Ethernet configuration.
+      * @hide
+      */
+-    @UnsupportedAppUsage(maxTargetSdk = Build.VERSION_CODES.R, trackingBug = 170729553)
++    @RequiresPermission(android.Manifest.permission.ACCESS_NETWORK_STATE)
++    @SystemApi(client = MODULE_LIBRARIES)
++    @NonNull
+     public void setConfiguration(@NonNull String iface, @NonNull IpConfiguration config) {
+         try {
+             mService.setConfiguration(iface, config);
+@@ -237,6 +242,64 @@ public class EthernetManager {
+         }
+     }
+ 
++    /**
++     * @hide
++     */
++    @RequiresPermission(android.Manifest.permission.ACCESS_NETWORK_STATE)
++    @SystemApi(client = MODULE_LIBRARIES)
++    @NonNull
++    public String getIpAddress(@NonNull String iface) {
++        try {
++            return mService.getIpAddress(iface);
++        } catch (RemoteException e) {
++            throw e.rethrowFromSystemServer();
++        }
++    }
++
++
++    /**
++     * @hide
++     */
++    @RequiresPermission(android.Manifest.permission.ACCESS_NETWORK_STATE)
++    @SystemApi(client = MODULE_LIBRARIES)
++    @NonNull
++    public String getNetmask(@NonNull String iface) {
++        try {
++            return mService.getNetmask(iface);
++        } catch (RemoteException e) {
++            throw e.rethrowFromSystemServer();
++        }
++    }
++
++    /**
++     * @hide
++     */
++    @RequiresPermission(android.Manifest.permission.ACCESS_NETWORK_STATE)
++    @SystemApi(client = MODULE_LIBRARIES)
++    @NonNull
++    public String getGateway(@NonNull String iface) {
++        try {
++            return mService.getGateway(iface);
++        } catch (RemoteException e) {
++            throw e.rethrowFromSystemServer();
++        }
++    }
++
++    /**
++     * @hide
++     */
++    @RequiresPermission(android.Manifest.permission.ACCESS_NETWORK_STATE)
++    @SystemApi(client = MODULE_LIBRARIES)
++    @NonNull
++    public String getDns(@NonNull String iface) {
++        try {
++            return mService.getDns(iface);
++        } catch (RemoteException e) {
++            throw e.rethrowFromSystemServer();
++        }
++    }
++
++
+     /**
+      * Adds a listener.
+      * This has never been a supported API. Use {@link #addInterfaceStateListener} instead.
+@@ -318,7 +381,9 @@ public class EthernetManager {
+      * Returns an array of available Ethernet interface names.
+      * @hide
+      */
+-    @UnsupportedAppUsage(maxTargetSdk = Build.VERSION_CODES.R, trackingBug = 170729553)
++    @RequiresPermission(android.Manifest.permission.ACCESS_NETWORK_STATE)
++    @SystemApi(client = MODULE_LIBRARIES)
++    @NonNull
+     public String[] getAvailableInterfaces() {
+         try {
+             return mService.getAvailableInterfaces();
+diff --git a/framework-t/src/android/net/IEthernetManager.aidl b/framework-t/src/android/net/IEthernetManager.aidl
+index 42e4c1ac5..178ff8a69 100644
+--- a/framework-t/src/android/net/IEthernetManager.aidl
++++ b/framework-t/src/android/net/IEthernetManager.aidl
+@@ -36,6 +36,11 @@ interface IEthernetManager
+     IpConfiguration getConfiguration(String iface);
+     void setConfiguration(String iface, in IpConfiguration config);
+     boolean isAvailable(String iface);
++    boolean isInterfaceup(String iface);
++    String getIpAddress(String iface);
++    String getNetmask(String iface);
++    String getGateway(String iface);
++    String getDns(String iface);
+     void addListener(in IEthernetServiceListener listener);
+     void removeListener(in IEthernetServiceListener listener);
+     void setIncludeTestInterfaces(boolean include);
+diff --git a/service-t/src/com/android/server/ethernet/EthernetNetworkFactory.java b/service-t/src/com/android/server/ethernet/EthernetNetworkFactory.java
+index 81f4c94c4..3481b620d 100644
+--- a/service-t/src/com/android/server/ethernet/EthernetNetworkFactory.java
++++ b/service-t/src/com/android/server/ethernet/EthernetNetworkFactory.java
+@@ -20,6 +20,7 @@ import android.annotation.NonNull;
+ import android.annotation.Nullable;
+ import android.content.Context;
+ import android.net.ConnectivityManager;
++import android.net.EthernetManager;
+ import android.net.ConnectivityResources;
+ import android.net.EthernetManager;
+ import android.net.EthernetNetworkManagementException;
+@@ -28,12 +29,14 @@ import android.net.INetworkInterfaceOutcomeReceiver;
+ import android.net.IpConfiguration;
+ import android.net.IpConfiguration.IpAssignment;
+ import android.net.IpConfiguration.ProxySettings;
++import android.net.LinkAddress;
+ import android.net.LinkProperties;
+ import android.net.NetworkAgentConfig;
+ import android.net.NetworkCapabilities;
+ import android.net.NetworkProvider;
+ import android.net.NetworkRequest;
+ import android.net.NetworkScore;
++import android.net.RouteInfo;
+ import android.net.ip.IIpClient;
+ import android.net.ip.IpClientCallbacks;
+ import android.net.ip.IpClientManager;
+@@ -52,9 +55,13 @@ import android.util.SparseArray;
+ import com.android.connectivity.resources.R;
+ import com.android.internal.annotations.VisibleForTesting;
+ import com.android.internal.util.IndentingPrintWriter;
++import com.android.net.module.util.Inet4AddressUtils;
+ import com.android.net.module.util.InterfaceParams;
+ 
+ import java.io.FileDescriptor;
++import java.lang.reflect.Method;
++import java.net.Inet4Address;
++import java.net.InetAddress;
+ import java.util.Objects;
+ import java.util.Set;
+ import java.util.concurrent.ConcurrentHashMap;
+@@ -72,6 +79,7 @@ public class EthernetNetworkFactory {
+             new ConcurrentHashMap<>();
+     private final Handler mHandler;
+     private final Context mContext;
++	private EthernetManager mEthernetManager;
+     private final NetworkProvider mProvider;
+     final Dependencies mDeps;
+ 
+@@ -257,6 +265,112 @@ public class EthernetNetworkFactory {
+         return mTrackingInterfaces.containsKey(ifaceName);
+     }
+ 
++	String getIpAddress(String iface) {
++		if (mEthernetManager == null) {
++			mEthernetManager = (EthernetManager) mContext.getSystemService(Context.ETHERNET_SERVICE);
++		}
++        IpConfiguration config = mEthernetManager.getConfiguration(iface);
++        if (config.getIpAssignment() == IpAssignment.STATIC) {
++            return config.getStaticIpConfiguration().getIpAddress().getAddress().getHostAddress();
++        } else {
++            NetworkInterfaceState netState = mTrackingInterfaces.get(iface);
++            if (null != netState) {
++                for (LinkAddress l : netState.mLinkProperties.getLinkAddresses()) {
++                    InetAddress source = l.getAddress();
++                    //Log.d(TAG, "getIpAddress: " + source.getHostAddress());
++                    if (source instanceof Inet4Address) {
++                        return source.getHostAddress();
++                    }
++                }
++            }
++        }
++        return "";
++    }
++
++    private String prefix2netmask(int prefix) {
++        // convert prefix to netmask
++        if (true) {
++            int mask = 0xFFFFFFFF << (32 - prefix);
++            //Log.d(TAG, "mask = " + mask + " prefix = " + prefix);
++            return ((mask>>>24) & 0xff) + "." + ((mask>>>16) & 0xff) + "." + ((mask>>>8) & 0xff) + "." + ((mask) & 0xff);
++        } else {
++            int hostAddress = Inet4AddressUtils.prefixLengthToV4NetmaskIntHTL(prefix);
++            return Inet4AddressUtils.intToInet4AddressHTL(hostAddress).getHostName();
++        }
++    }
++
++    String getNetmask(String iface) {
++        IpConfiguration config = mEthernetManager.getConfiguration(iface);
++        if (config.getIpAssignment() == IpAssignment.STATIC) {
++            return prefix2netmask(config.getStaticIpConfiguration().getIpAddress().getPrefixLength());
++        } else {
++            NetworkInterfaceState netState = mTrackingInterfaces.get(iface);
++            if (null != netState) {
++                for (LinkAddress l : netState.mLinkProperties.getLinkAddresses()) {
++                    InetAddress source = l.getAddress();
++                    if (source instanceof Inet4Address) {
++                        return prefix2netmask(l.getPrefixLength());
++                    }
++                }
++            }
++        }
++        return "";
++    }
++
++    String getGateway(String iface) {
++        IpConfiguration config = mEthernetManager.getConfiguration(iface);
++        if (config.getIpAssignment() == IpAssignment.STATIC) {
++            return config.getStaticIpConfiguration().getGateway().getHostAddress();
++        } else {
++            NetworkInterfaceState netState = mTrackingInterfaces.get(iface);
++            if (null != netState) {
++                for (RouteInfo route : netState.mLinkProperties.getRoutes()) {
++                    if (route.hasGateway()) {
++                        InetAddress gateway = route.getGateway();
++                        Object isIPv4Default = invokeMethodNoParameter(route, "isIPv4Default");
++                        if (null != isIPv4Default && (Boolean)isIPv4Default) {
++                            return gateway.getHostAddress();
++                        }
++                    }
++                }
++            }
++        }
++        return "";
++    }
++
++    private Object invokeMethodNoParameter(Object object, String methodName) {
++        try {
++            Method method = object.getClass().getDeclaredMethod(methodName);
++            method.setAccessible(true);
++            return method.invoke(object);
++            //return method.invoke(object, paramTypes);
++        } catch (Exception e) {
++            Log.e(TAG, "invokeMethod->methodName:" + methodName + ", " + e);
++        }
++        return null;
++    }
++
++    /*
++     * return dns format: "8.8.8.8,4.4.4.4"
++     */
++    String getDns(String iface) {
++        String dns = "";
++        IpConfiguration config = mEthernetManager.getConfiguration(iface);
++        if (config.getIpAssignment() == IpAssignment.STATIC) {
++            for (InetAddress nameserver : config.getStaticIpConfiguration().getDnsServers()) {
++                dns += nameserver.getHostAddress() + ",";
++            }
++        } else {
++            NetworkInterfaceState netState = mTrackingInterfaces.get(iface);
++            if (null != netState) {
++                for (InetAddress nameserver : netState.mLinkProperties.getDnsServers()) {
++                    dns += nameserver.getHostAddress() + ",";
++                }
++            }
++        }
++        return dns;
++    }
++
+     private static void maybeSendNetworkManagementCallback(
+             @Nullable final INetworkInterfaceOutcomeReceiver listener,
+             @Nullable final String iface,
+diff --git a/service-t/src/com/android/server/ethernet/EthernetServiceImpl.java b/service-t/src/com/android/server/ethernet/EthernetServiceImpl.java
+index 5e830ad83..201637291 100644
+--- a/service-t/src/com/android/server/ethernet/EthernetServiceImpl.java
++++ b/service-t/src/com/android/server/ethernet/EthernetServiceImpl.java
+@@ -137,6 +137,61 @@ public class EthernetServiceImpl extends IEthernetManager.Stub {
+         return mTracker.isTrackingInterface(iface);
+     }
+ 
++    @Override
++    public boolean isInterfaceup(String iface) {
++        PermissionUtils.enforceAccessNetworkStatePermission(mContext, TAG);
++
++        if (mTracker.isRestrictedInterface(iface)) {
++            PermissionUtils.enforceRestrictedNetworkPermission(mContext, TAG);
++        }
++
++        return mTracker.isTrackingInterface(iface);
++    }
++
++    @Override
++    public String getIpAddress(String iface) {
++        PermissionUtils.enforceAccessNetworkStatePermission(mContext, TAG);
++
++        if (mTracker.isRestrictedInterface(iface)) {
++            PermissionUtils.enforceRestrictedNetworkPermission(mContext, TAG);
++        }
++
++        return mTracker.getIpAddress(iface);
++    }
++
++    @Override
++    public String getNetmask(String iface) {
++        PermissionUtils.enforceAccessNetworkStatePermission(mContext, TAG);
++
++        if (mTracker.isRestrictedInterface(iface)) {
++            PermissionUtils.enforceRestrictedNetworkPermission(mContext, TAG);
++        }
++
++        return mTracker.getNetmask(iface);
++    }
++
++    @Override
++    public String getGateway(String iface) {
++        PermissionUtils.enforceAccessNetworkStatePermission(mContext, TAG);
++
++        if (mTracker.isRestrictedInterface(iface)) {
++            PermissionUtils.enforceRestrictedNetworkPermission(mContext, TAG);
++        }
++
++        return mTracker.getGateway(iface);
++    }
++
++    @Override
++    public String getDns(String iface) {
++        PermissionUtils.enforceAccessNetworkStatePermission(mContext, TAG);
++
++        if (mTracker.isRestrictedInterface(iface)) {
++            PermissionUtils.enforceRestrictedNetworkPermission(mContext, TAG);
++        }
++
++        return mTracker.getDns(iface);
++    }
++
+     /**
+      * Adds a listener.
+      * @param listener A {@link IEthernetServiceListener} to add.
+diff --git a/service-t/src/com/android/server/ethernet/EthernetTracker.java b/service-t/src/com/android/server/ethernet/EthernetTracker.java
+index 1ab7515b8..7218e8f7b 100644
+--- a/service-t/src/com/android/server/ethernet/EthernetTracker.java
++++ b/service-t/src/com/android/server/ethernet/EthernetTracker.java
+@@ -306,6 +306,22 @@ public class EthernetTracker {
+         return mFactory.hasInterface(iface);
+     }
+ 
++	String getIpAddress(String iface) {
++        return mFactory.getIpAddress(iface);
++    }
++
++    String getNetmask(String iface) {
++        return mFactory.getNetmask(iface);
++    }
++
++    String getGateway(String iface) {
++        return mFactory.getGateway(iface);
++    }
++
++    String getDns(String iface) {
++        return mFactory.getDns(iface);
++    }
++
+     String[] getInterfaces(boolean includeRestricted) {
+         return mFactory.getAvailableInterfaces(includeRestricted);
+     }
+-- 
+2.53.0
+

@@ -1,0 +1,931 @@
+From a6af2d7171e1deda1b56f4c11ab3eee6e68e66ae Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Sat, 11 Jul 2026 02:24:24 +0800
+Subject: [PATCH 17/27] feat: add Rockchip Camera HAL2 extensions for ZSL, HDR,
+ preview size, and debug properties
+
+Change-Id: I5964b5cd42b8d42291c85839865210dfcb85d8c2
+---
+ .../camera/debug/DebugPropertyHelper.java     | 51 +++++++++++++
+ .../camera/one/CameraDirectionProvider.java   |  1 +
+ src/com/android/camera/one/OneCamera.java     | 75 +++++++++++++++++++
+ .../camera/one/OneCameraCaptureSetting.java   | 14 ++++
+ .../camera/one/OneCameraCharacteristics.java  |  6 ++
+ .../camera/one/PreviewSizeSelector.java       |  3 +-
+ .../config/OneCameraFeatureConfigCreator.java |  5 +-
+ .../one/v1/OneCameraCharacteristicsImpl.java  | 14 ++++
+ .../one/v2/Camera2OneCameraManagerImpl.java   |  9 +--
+ .../one/v2/Camera2OneCameraOpenerImpl.java    | 12 ++-
+ .../one/v2/OneCameraCharacteristicsImpl.java  | 65 +++++++++++++++-
+ .../camera/one/v2/OneCameraFactory.java       |  1 +
+ .../android/camera/one/v2/OneCameraImpl.java  |  6 ++
+ .../camera/one/v2/SimpleOneCameraFactory.java |  6 ++
+ .../camera/one/v2/ZslOneCameraFactory.java    |  2 +
+ .../one/v2/commands/PreviewCommand.java       |  4 +
+ .../one/v2/common/BasicCameraFactory.java     |  3 +
+ .../camera/one/v2/core/FrameServerImpl.java   |  3 +
+ .../one/v2/core/ObservableFrameServer.java    |  4 +
+ .../camera/one/v2/core/RequestTemplate.java   |  3 +
+ .../v2/core/TagDispatchCaptureSession.java    |  4 +-
+ .../v2/imagesaver/MostRecentImageSaver.java   |  3 +
+ .../imagesaver/YuvImageBackendImageSaver.java |  2 +
+ .../Camera2PreviewSizeSelector.java           |  5 +-
+ .../initialization/GenericOneCameraImpl.java  |  2 +-
+ .../photo/ConvergedImageCaptureCommand.java   |  5 ++
+ .../camera/one/v2/OneCameraCreator.java       |  1 +
+ 27 files changed, 295 insertions(+), 14 deletions(-)
+
+diff --git a/src/com/android/camera/debug/DebugPropertyHelper.java b/src/com/android/camera/debug/DebugPropertyHelper.java
+index 85c0955df..3581742b4 100644
+--- a/src/com/android/camera/debug/DebugPropertyHelper.java
++++ b/src/com/android/camera/debug/DebugPropertyHelper.java
+@@ -38,6 +38,25 @@ public class DebugPropertyHelper {
+     private static final String PROP_WRITE_CAPTURE_DATA = PREFIX + ".capture_write";
+     /** Is RAW support enabled. */
+     private static final String PROP_CAPTURE_DNG = PREFIX + ".capture_dng";
++    /** controll preview not rotate. */
++    private static final String PROP_PREVIEW_NOT_ROTATE = PREFIX + ".preview_norotate";
++    /** controll preview full size. */
++    private static final String PROP_PREVIEW_FULLSIZE_ON = PREFIX + ".preview_full";
++    /** controll banding mode. */
++    private static final String PROP_BANDING_MODE = PREFIX + ".banding";
++    /** controll if autofocus before capture. */
++    private static final String PROP_AF_BEFORE_CAPTURE = PREFIX + ".capture_af";
++    /** controll capture mode. 0:zsl&normal 1:normal-only 2:zsl-only */
++    private static final String PROP_CAPTURE_MODE = PREFIX + ".capture_mode";
++    public static final String ZSL_NORMAL_MODE = "0";
++    public static final String ONLY_NORMAL_MODE = "1";
++    public static final String ONLY_ZSL_MODE = "2";
++    /** controll debug on. */
++    private static final String PROP_DEBUG_ON = PREFIX + ".debug";
++    /** controll smile shutter auto on. */
++    private static final String PROP_SMILESHUTTER_AUTO = PREFIX + ".smile_auto";
++    /** controll video snapshot. */
++    private static final String PROP_VIDEO_SNAPSHOT = PREFIX + ".video_capture";
+     /** Redacting EXIF manufacturer and model name. */
+     private static final String PROP_REDACT_EXIF = PREFIX + ".redact_exif";
+ 
+@@ -61,6 +80,38 @@ public class DebugPropertyHelper {
+         return isPropertyOn(PROP_CAPTURE_DNG);
+     }
+ 
++    public static boolean isPreviewAutoRotate() {
++        return !isPropertyOn(PROP_PREVIEW_NOT_ROTATE);
++    }
++
++    public static String getDefaultBanding() {
++        return SystemProperties.get(PROP_BANDING_MODE, "auto");
++    }
++
++    public static boolean isPreviewFullSizeOn() {
++        return isPropertyOn(PROP_PREVIEW_FULLSIZE_ON);
++    }
++
++    public static boolean isAFDisabledBeforeCapture() {
++        return !isPropertyOn(PROP_AF_BEFORE_CAPTURE);
++    }
++
++    public static String getCaptureMode() {
++        return SystemProperties.get(PROP_CAPTURE_MODE, ZSL_NORMAL_MODE);
++    }
++
++    public static boolean isDebugOn() {
++        return isPropertyOn(PROP_DEBUG_ON);
++    }
++
++    public static boolean isSmileShutterAuto() {
++        return isPropertyOn(PROP_SMILESHUTTER_AUTO);
++    }
++
++    public static boolean isVideoSnapShotEnabled() {
++        return isPropertyOn(PROP_VIDEO_SNAPSHOT);
++    }
++
+     public static boolean isRedactExifEnabled() {
+         return isPropertyOn(PROP_REDACT_EXIF);
+     }
+diff --git a/src/com/android/camera/one/CameraDirectionProvider.java b/src/com/android/camera/one/CameraDirectionProvider.java
+index e8112aa76..add79ab9c 100644
+--- a/src/com/android/camera/one/CameraDirectionProvider.java
++++ b/src/com/android/camera/one/CameraDirectionProvider.java
+@@ -33,6 +33,7 @@ public class CameraDirectionProvider {
+         switch (mCharacteristics.get(CameraCharacteristics.LENS_FACING)) {
+             case CameraMetadata.LENS_FACING_BACK:
+                 return OneCamera.Facing.BACK;
++            case CameraMetadata.LENS_FACING_EXTERNAL:
+             case CameraMetadata.LENS_FACING_FRONT:
+                 return OneCamera.Facing.FRONT;
+         }
+diff --git a/src/com/android/camera/one/OneCamera.java b/src/com/android/camera/one/OneCamera.java
+index 07c368945..20ffef48a 100644
+--- a/src/com/android/camera/one/OneCamera.java
++++ b/src/com/android/camera/one/OneCamera.java
+@@ -326,6 +326,81 @@ public interface OneCamera {
+             }
+         }
+ 
++        public static enum WhiteBalance {
++            /**
++             * @see {@link android.hardware.Camera.Parameters#WHITE_BALANCE_AUTO}.
++             */
++            AUTO("auto"),
++            /**
++             * @see {@link android.hardware.Camera.Parameters#WHITE_BALANCE_CLOUDY_DAYLIGHT}.
++             */
++            CLOUDY_DAYLIGHT("cloudy-daylight"),
++            /**
++             * @see {@link android.hardware.Camera.Parameters#WHITE_BALANCE_DAYLIGHT}.
++             */
++            DAYLIGHT("daylight"),
++            /**
++             * @see {@link android.hardware.Camera.Parameters#WHITE_BALANCE_FLUORESCENT}.
++             */
++            FLUORESCENT("fluorescent"),
++            /**
++             * @see {@link android.hardware.Camera.Parameters#WHITE_BALANCE_INCANDESCENT}.
++             */
++            INCANDESCENT("incandescent"),
++            /**
++             * @see {@link android.hardware.Camera.Parameters#WHITE_BALANCE_SHADE}.
++             */
++            SHADE("shade"),
++            /**
++             * @see {@link android.hardware.Camera.Parameters#WHITE_BALANCE_TWILIGHT}.
++             */
++            TWILIGHT("twilight"),
++            /**
++             * @see {@link android.hardware.Camera.Parameters#WHITE_BALANCE_WARM_FLUORESCENT}.
++             */
++            WARM_FLUORESCENT("warm_fluorescent");
++
++            /**
++             * The machine-readable (via {@link #encodeSettingsString} and
++             * {@link #decodeSettingsString} string used to represent this flash
++             * mode in {@link SettingsManager}.
++             * <p>
++             * This must be in sync with R.arrays.pref_camera_flashmode_entryvalues.
++             */
++            private final String mSettingsString;
++
++            WhiteBalance(@Nonnull String settingsString) {
++                mSettingsString = settingsString;
++            }
++
++            @Nonnull
++            public String encodeSettingsString() {
++                return mSettingsString;
++            }
++
++            @Nonnull
++            public static WhiteBalance decodeSettingsString(@Nonnull String setting) {
++                if (AUTO.encodeSettingsString().equals(setting)) {
++                    return AUTO;
++                } else if (CLOUDY_DAYLIGHT.encodeSettingsString().equals(setting)) {
++                    return CLOUDY_DAYLIGHT;
++                } else if (DAYLIGHT.encodeSettingsString().equals(setting)) {
++                    return DAYLIGHT;
++                } else if (FLUORESCENT.encodeSettingsString().equals(setting)) {
++                    return FLUORESCENT;
++                } else if (INCANDESCENT.encodeSettingsString().equals(setting)) {
++                    return INCANDESCENT;
++                } else if (SHADE.encodeSettingsString().equals(setting)) {
++                    return SHADE;
++                } else if (TWILIGHT.encodeSettingsString().equals(setting)) {
++                    return TWILIGHT;
++                }  else if (WARM_FLUORESCENT.encodeSettingsString().equals(setting)) {
++                    return WARM_FLUORESCENT;
++                }
++                throw new IllegalArgumentException("Not a valid setting");
++            }
++        }
++
+         /** Called when the capture is completed or failed. */
+         public final PictureCallback callback;
+         public final PictureSaverCallback saverCallback;
+diff --git a/src/com/android/camera/one/OneCameraCaptureSetting.java b/src/com/android/camera/one/OneCameraCaptureSetting.java
+index bff9d64bc..6e34d6a66 100644
+--- a/src/com/android/camera/one/OneCameraCaptureSetting.java
++++ b/src/com/android/camera/one/OneCameraCaptureSetting.java
+@@ -18,6 +18,7 @@ package com.android.camera.one;
+ 
+ import com.android.camera.async.Observable;
+ import com.android.camera.async.Observables;
++import com.android.camera.debug.Log;
+ import com.android.camera.device.CameraId;
+ import com.android.camera.hardware.HardwareSpec;
+ import com.android.camera.one.OneCamera.Facing;
+@@ -35,16 +36,20 @@ import com.google.common.base.Function;
+ public class OneCameraCaptureSetting {
+     private final Size mCaptureSize;
+     private final Observable<OneCamera.PhotoCaptureParameters.Flash> mFlashSetting;
++    private final Observable<OneCamera.PhotoCaptureParameters.WhiteBalance> mWhiteBalanceSetting;
+     private final Observable<Integer> mExposureSetting;
+     private final Observable<Boolean> mHdrSceneSetting;
+     private final boolean mIsHdrPlusEnabled;
+ 
++    private static final Log.Tag TAG = new Log.Tag("OneCameraCaptureSetting");
++
+     public static OneCameraCaptureSetting create(
+             Size pictureSize,
+             SettingsManager settingsManager,
+             final HardwareSpec hardwareSpec,
+             String cameraSettingScope,
+             boolean isHdrPlusEnabled) {
++        Log.d(TAG, "OneCameraCaptureSetting.create()");
+         Observable<OneCamera.PhotoCaptureParameters.Flash> flashSetting;
+         if (hardwareSpec.isFlashSupported()) {
+             flashSetting = new FlashSetting(SettingObserver.ofString(
+@@ -61,9 +66,12 @@ public class OneCameraCaptureSetting {
+         } else {
+             hdrSceneSetting = Observables.of(false);
+         }
++        Observable<OneCamera.PhotoCaptureParameters.WhiteBalance> WbSetting = new WhiteBalanceSetting(
++                SettingObserver.ofString(settingsManager, cameraSettingScope, Keys.KEY_WHITEBALANCE));
+         return new OneCameraCaptureSetting(
+                 pictureSize,
+                 flashSetting,
++                WbSetting,
+                 exposureSetting,
+                 hdrSceneSetting,
+                 isHdrPlusEnabled);
+@@ -72,11 +80,13 @@ public class OneCameraCaptureSetting {
+     private OneCameraCaptureSetting(
+             Size captureSize,
+             Observable<OneCamera.PhotoCaptureParameters.Flash> flashSetting,
++            Observable<OneCamera.PhotoCaptureParameters.WhiteBalance> wbSetting,
+             Observable<Integer> exposureSetting,
+             Observable<Boolean> hdrSceneSetting,
+             boolean isHdrPlusEnabled) {
+         mCaptureSize = captureSize;
+         mFlashSetting = flashSetting;
++        mWhiteBalanceSetting = wbSetting;
+         mExposureSetting = exposureSetting;
+         mHdrSceneSetting = hdrSceneSetting;
+         mIsHdrPlusEnabled = isHdrPlusEnabled;
+@@ -90,6 +100,10 @@ public class OneCameraCaptureSetting {
+         return mFlashSetting;
+     }
+ 
++    public Observable<OneCamera.PhotoCaptureParameters.WhiteBalance> getWhiteBalanceSetting() {
++        return mWhiteBalanceSetting;
++    }
++
+     public Observable<Integer> getExposureSetting() {
+         return mExposureSetting;
+     }
+diff --git a/src/com/android/camera/one/OneCameraCharacteristics.java b/src/com/android/camera/one/OneCameraCharacteristics.java
+index 27504a243..f8e69e6b5 100644
+--- a/src/com/android/camera/one/OneCameraCharacteristics.java
++++ b/src/com/android/camera/one/OneCameraCharacteristics.java
+@@ -19,11 +19,13 @@ package com.android.camera.one;
+ import android.graphics.ImageFormat;
+ import android.graphics.Rect;
+ import android.hardware.camera2.CameraCharacteristics;
++import com.android.ex.camera2.portability.CameraCapabilities;
+ 
+ import com.android.camera.ui.motion.LinearScale;
+ import com.android.camera.util.Size;
+ 
+ import java.util.List;
++import java.util.Set;
+ 
+ /**
+  * The properties describing a OneCamera device. These properties are fixed for
+@@ -143,4 +145,8 @@ public interface OneCameraCharacteristics {
+      * @return true if this camera supports custom AutoExposure regions.
+      */
+     public boolean isAutoExposureSupported();
++
++    public boolean isWhiteBalanceSupported();
++
++    public Set<CameraCapabilities.WhiteBalance> getSupportedWhiteBalances();
+ }
+diff --git a/src/com/android/camera/one/PreviewSizeSelector.java b/src/com/android/camera/one/PreviewSizeSelector.java
+index 1064d6b50..aa6831cb1 100644
+--- a/src/com/android/camera/one/PreviewSizeSelector.java
++++ b/src/com/android/camera/one/PreviewSizeSelector.java
+@@ -17,6 +17,7 @@
+ package com.android.camera.one;
+ 
+ import com.android.camera.util.Size;
++import android.app.Activity;
+ 
+ /**
+  * Picks a preview size for a given image resolution choice.
+@@ -26,5 +27,5 @@ public interface PreviewSizeSelector {
+     /**
+      * Given an image capture resolution, pick a preview size.
+      */
+-    public Size pickPreviewSize(Size imageResolution);
++    public Size pickPreviewSize(Size imageResolution, Activity context);
+ }
+diff --git a/src/com/android/camera/one/config/OneCameraFeatureConfigCreator.java b/src/com/android/camera/one/config/OneCameraFeatureConfigCreator.java
+index dc7f9003f..f7a0f3c5e 100644
+--- a/src/com/android/camera/one/config/OneCameraFeatureConfigCreator.java
++++ b/src/com/android/camera/one/config/OneCameraFeatureConfigCreator.java
+@@ -118,9 +118,9 @@ public class OneCameraFeatureConfigCreator {
+ 
+                 // On LIMITED devices starting with L-MR1 we run a simple YUV
+                 // capture mode.
+-                if (supportedLevel == CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL_LIMITED) {
++                /*if (supportedLevel == CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL_LIMITED) {
+                     return CaptureSupportLevel.LIMITED_YUV;
+-                }
++                }*/
+ 
+                 // We should never get here. If we do, let's fall back to a mode
+                 // that should work on all non-LEGACY devices.
+@@ -169,6 +169,7 @@ public class OneCameraFeatureConfigCreator {
+                 int override = GservicesHelper.getCaptureSupportLevelOverrideBack(contentResolver);
+                 return CaptureSupportLevel.fromFlag(override);
+             }
++            case CameraCharacteristics.LENS_FACING_EXTERNAL:
+             case CameraCharacteristics.LENS_FACING_FRONT: {
+                 int override = GservicesHelper.getCaptureSupportLevelOverrideFront(contentResolver);
+                 return CaptureSupportLevel.fromFlag(override);
+diff --git a/src/com/android/camera/one/v1/OneCameraCharacteristicsImpl.java b/src/com/android/camera/one/v1/OneCameraCharacteristicsImpl.java
+index c525b572d..d6e029e29 100644
+--- a/src/com/android/camera/one/v1/OneCameraCharacteristicsImpl.java
++++ b/src/com/android/camera/one/v1/OneCameraCharacteristicsImpl.java
+@@ -16,6 +16,7 @@
+ 
+ package com.android.camera.one.v1;
+ 
++import com.android.ex.camera2.portability.CameraCapabilities.WhiteBalance;
+ import android.graphics.Rect;
+ import android.hardware.Camera;
+ 
+@@ -29,6 +30,7 @@ import com.android.camera.util.Size;
+ 
+ import java.util.ArrayList;
+ import java.util.List;
++import java.util.Set;
+ 
+ /**
+  * Describes a OneCamera device which is on top of camera1 API.
+@@ -185,4 +187,16 @@ public class OneCameraCharacteristicsImpl implements OneCameraCharacteristics {
+         // Custom AE is only supported on the back camera for legacy devices.
+         return getCameraDirection() == Facing.BACK;
+     }
++
++    @Override
++    public boolean isWhiteBalanceSupported() {
++        // TODO Auto-generated method stub
++        return false;
++    }
++
++    @Override
++    public Set<WhiteBalance> getSupportedWhiteBalances() {
++        // TODO Auto-generated method stub
++        return null;
++    }
+ }
+diff --git a/src/com/android/camera/one/v2/Camera2OneCameraManagerImpl.java b/src/com/android/camera/one/v2/Camera2OneCameraManagerImpl.java
+index d1e0b5b8d..35cc193ba 100644
+--- a/src/com/android/camera/one/v2/Camera2OneCameraManagerImpl.java
++++ b/src/com/android/camera/one/v2/Camera2OneCameraManagerImpl.java
+@@ -157,10 +157,9 @@ public class Camera2OneCameraManagerImpl implements OneCameraManager {
+         String cameraId = findFirstCameraIdFacing(CameraCharacteristics.LENS_FACING_BACK);
+         if (cameraId == null) {
+             Log.w(TAG, "No back-facing camera found.");
+-            cameraId = findFirstCameraIdFacing(CameraCharacteristics.LENS_FACING_EXTERNAL);
+-            if (cameraId == null) {
+-                Log.w(TAG, "No external camera found.");
+-            }
++            Log.d(TAG, "Getting First FRONT Camera");
++            //xcq add
++            cameraId = findFirstCameraIdFacing(CameraCharacteristics.LENS_FACING_FRONT);
+         }
+         return cameraId;
+     }
+@@ -170,7 +169,7 @@ public class Camera2OneCameraManagerImpl implements OneCameraManager {
+         Log.d(TAG, "Getting First FRONT Camera");
+         String cameraId = findFirstCameraIdFacing(CameraCharacteristics.LENS_FACING_FRONT);
+         if (cameraId == null) {
+-            Log.w(TAG, "No front-facing camera found.");
++            Log.w(TAG, "No front-facing camera found,try to find external facing camera.");
+             cameraId = findFirstCameraIdFacing(CameraCharacteristics.LENS_FACING_EXTERNAL);
+             if (cameraId == null) {
+                 Log.w(TAG, "No external camera found.");
+diff --git a/src/com/android/camera/one/v2/Camera2OneCameraOpenerImpl.java b/src/com/android/camera/one/v2/Camera2OneCameraOpenerImpl.java
+index 3529310e8..7ff2ae6a1 100644
+--- a/src/com/android/camera/one/v2/Camera2OneCameraOpenerImpl.java
++++ b/src/com/android/camera/one/v2/Camera2OneCameraOpenerImpl.java
+@@ -101,7 +101,7 @@ public class Camera2OneCameraOpenerImpl implements OneCameraOpener {
+ 
+     @Override
+     public void open(
+-            final CameraId cameraKey,
++            CameraId cameraKey,
+             final OneCameraCaptureSetting captureSetting,
+             final Handler handler,
+             final MainThread mainThread,
+@@ -111,6 +111,16 @@ public class Camera2OneCameraOpenerImpl implements OneCameraOpener {
+             final OpenCallback openCallback,
+             final FatalErrorHandler fatalErrorHandler) {
+         try {
++            boolean ActiveCameraEnable = false;
++            for(int i = 0 ; i<mCameraManager.getCameraIdList().length ; i++){
++                if(cameraKey.getValue().equals(mCameraManager.getCameraIdList()[i])){
++                    ActiveCameraEnable = true;
++                }
++            }
++            if (!ActiveCameraEnable){
++                cameraKey = CameraId.from(mCameraManager.getCameraIdList()[0]);
++            }
++
+             Log.i(TAG, "Opening Camera: " + cameraKey);
+ 
+             mActiveCameraDeviceTracker.onCameraOpening(cameraKey);
+diff --git a/src/com/android/camera/one/v2/OneCameraCharacteristicsImpl.java b/src/com/android/camera/one/v2/OneCameraCharacteristicsImpl.java
+index 77e9a8173..933f78fb4 100644
+--- a/src/com/android/camera/one/v2/OneCameraCharacteristicsImpl.java
++++ b/src/com/android/camera/one/v2/OneCameraCharacteristicsImpl.java
+@@ -18,6 +18,7 @@ package com.android.camera.one.v2;
+ 
+ import static com.google.common.base.Preconditions.checkNotNull;
+ 
++import com.android.ex.camera2.portability.CameraCapabilities.WhiteBalance;
+ import android.annotation.TargetApi;
+ import android.graphics.Rect;
+ import android.graphics.SurfaceTexture;
+@@ -38,7 +39,9 @@ import com.android.camera.util.Size;
+ import com.google.common.primitives.Floats;
+ 
+ import java.util.ArrayList;
++import java.util.EnumSet;
+ import java.util.List;
++import java.util.Set;
+ 
+ /**
+  * Describes a OneCamera device which is on top of camera2 API. This is
+@@ -202,7 +205,9 @@ public class OneCameraCharacteristicsImpl implements OneCameraCharacteristics {
+         }
+         Range<Integer> compensationRange =
+                 mCameraCharacteristics.get(CameraCharacteristics.CONTROL_AE_COMPENSATION_RANGE);
+-        return compensationRange.getLower() != 0 || compensationRange.getUpper() != 0;
++        boolean ae_lock_available = mCameraCharacteristics.get(
++                CameraCharacteristics.CONTROL_AE_LOCK_AVAILABLE);
++        return (compensationRange.getLower() != 0 || compensationRange.getUpper() != 0) && ae_lock_available;
+     }
+ 
+     @Override
+@@ -264,4 +269,62 @@ public class OneCameraCharacteristicsImpl implements OneCameraCharacteristics {
+         // Auto-Exposure is supported if the device supports one or more AE regions
+         return maxAeRegions != null && maxAeRegions > 0;
+     }
++
++    @Override
++    public boolean isWhiteBalanceSupported() {
++        // TODO Auto-generated method stub
++        boolean awb_lock_available = mCameraCharacteristics.get(
++                CameraCharacteristics.CONTROL_AWB_LOCK_AVAILABLE);
++        Set<WhiteBalance> SupportedWhiteBalances = getSupportedWhiteBalances();
++        boolean awb_supported = SupportedWhiteBalances != null && SupportedWhiteBalances.size() > 0;
++        return awb_lock_available && awb_supported;
++    }
++
++    @Override
++    public Set<WhiteBalance> getSupportedWhiteBalances() {
++        // TODO Auto-generated method stub
++        EnumSet<WhiteBalance> SupportedWhiteBalances =
++                EnumSet.noneOf(WhiteBalance.class);
++        int[] bals = mCameraCharacteristics.get(CameraCharacteristics.CONTROL_AWB_AVAILABLE_MODES);
++        if (bals != null) {
++            for (int bal : bals) {
++                WhiteBalance equiv = whiteBalanceFromInt(bal);
++                if (equiv != null) {
++                    SupportedWhiteBalances.add(equiv);
++                }
++            }
++        }
++        return SupportedWhiteBalances;
++    }
++
++    /**
++     * Converts the API-related integer representation of the white balance to
++     * the abstract representation.
++     *
++     * @param wb The integral representation.
++     * @return The balance represented by the input integer, or {@code null} if
++     *         it cannot be converted.
++     */
++    public WhiteBalance whiteBalanceFromInt(int wb) {
++        switch (wb) {
++            case CameraCharacteristics.CONTROL_AWB_MODE_AUTO:
++                return WhiteBalance.AUTO;
++            case CameraCharacteristics.CONTROL_AWB_MODE_CLOUDY_DAYLIGHT:
++                return WhiteBalance.CLOUDY_DAYLIGHT;
++            case CameraCharacteristics.CONTROL_AWB_MODE_DAYLIGHT:
++                return WhiteBalance.DAYLIGHT;
++            case CameraCharacteristics.CONTROL_AWB_MODE_FLUORESCENT:
++                return WhiteBalance.FLUORESCENT;
++            case CameraCharacteristics.CONTROL_AWB_MODE_INCANDESCENT:
++                return WhiteBalance.INCANDESCENT;
++            case CameraCharacteristics.CONTROL_AWB_MODE_SHADE:
++                return WhiteBalance.SHADE;
++            case CameraCharacteristics.CONTROL_AWB_MODE_TWILIGHT:
++                return WhiteBalance.TWILIGHT;
++            case CameraCharacteristics.CONTROL_AWB_MODE_WARM_FLUORESCENT:
++                return WhiteBalance.WARM_FLUORESCENT;
++        }
++        Log.w(TAG, "Unable to convert from API 2 white balance: " + wb);
++        return null;
++    }
+ }
+diff --git a/src/com/android/camera/one/v2/OneCameraFactory.java b/src/com/android/camera/one/v2/OneCameraFactory.java
+index e86e6faf8..b265a81ff 100644
+--- a/src/com/android/camera/one/v2/OneCameraFactory.java
++++ b/src/com/android/camera/one/v2/OneCameraFactory.java
+@@ -35,6 +35,7 @@ public interface OneCameraFactory {
+             Size pictureSize,
+             ImageSaver.Builder imageSaverBuilder,
+             Observable<OneCamera.PhotoCaptureParameters.Flash> flashSetting,
++            Observable<OneCamera.PhotoCaptureParameters.WhiteBalance> wbSetting,
+             Observable<Integer> exposureSetting,
+             Observable<Boolean> hdrSceneSetting,
+             BurstFacade burstController,
+diff --git a/src/com/android/camera/one/v2/OneCameraImpl.java b/src/com/android/camera/one/v2/OneCameraImpl.java
+index d9c6b03a3..ddedcee90 100644
+--- a/src/com/android/camera/one/v2/OneCameraImpl.java
++++ b/src/com/android/camera/one/v2/OneCameraImpl.java
+@@ -445,6 +445,12 @@ public class OneCameraImpl extends AbstractOneCamera {
+         } catch (CameraAccessException e) {
+             Log.e(TAG, "Could not abort captures in progress.");
+         }
++
++        if (mCaptureImageReader.getSurface() != null)
++            mCaptureImageReader.getSurface().release();
++
++        if (mPreviewSurface != null)
++            mPreviewSurface.release();
+         mIsClosed = true;
+         mCameraThread.quitSafely();
+         mDevice.close();
+diff --git a/src/com/android/camera/one/v2/SimpleOneCameraFactory.java b/src/com/android/camera/one/v2/SimpleOneCameraFactory.java
+index 38bd5eeb6..2438f3d8b 100644
+--- a/src/com/android/camera/one/v2/SimpleOneCameraFactory.java
++++ b/src/com/android/camera/one/v2/SimpleOneCameraFactory.java
+@@ -31,6 +31,7 @@ import com.android.camera.async.Observable;
+ import com.android.camera.async.Observables;
+ import com.android.camera.async.Updatable;
+ import com.android.camera.burst.BurstFacade;
++import com.android.camera.debug.Log;
+ import com.android.camera.debug.Loggers;
+ import com.android.camera.one.OneCamera;
+ import com.android.camera.one.OneCameraCharacteristics;
+@@ -83,6 +84,8 @@ public class SimpleOneCameraFactory implements OneCameraFactory {
+     private final int mMaxImageCount;
+     private final ImageRotationCalculator mImageRotationCalculator;
+ 
++    private final Log.Tag TAG = new Log.Tag("SimpleOneCameraFactory");
++
+     /**
+      * @param imageFormat The {@link ImageFormat} to use for full-size images to
+      *            be saved.
+@@ -104,6 +107,7 @@ public class SimpleOneCameraFactory implements OneCameraFactory {
+             final Size pictureSize,
+             final ImageSaver.Builder imageSaverBuilder,
+             final Observable<OneCamera.PhotoCaptureParameters.Flash> flashSetting,
++            final Observable<OneCamera.PhotoCaptureParameters.WhiteBalance> wbSetting,
+             final Observable<Integer> exposureSetting,
+             final Observable<Boolean> hdrSceneSetting,
+             final BurstFacade burstFacade,
+@@ -134,6 +138,7 @@ public class SimpleOneCameraFactory implements OneCameraFactory {
+                     Observable<Float> zoomState,
+                     Updatable<TotalCaptureResultProxy> metadataCallback,
+                     Updatable<Boolean> readyState) {
++                Log.d(TAG, "CameraStarter.CameraControls startCamera");
+                 // Create the FrameServer from the CaptureSession.
+                 FrameServerFactory frameServerComponent = new FrameServerFactory(
+                         new Lifetime(cameraLifetime), cameraCaptureSession, new HandlerFactory());
+@@ -184,6 +189,7 @@ public class SimpleOneCameraFactory implements OneCameraFactory {
+                         cameraCommandExecutor,
+                         new BasicPreviewCommandFactory(ephemeralFrameServer),
+                         flashSetting,
++                        wbSetting,
+                         exposureSetting,
+                         zoomState,
+                         hdrSceneSetting,
+diff --git a/src/com/android/camera/one/v2/ZslOneCameraFactory.java b/src/com/android/camera/one/v2/ZslOneCameraFactory.java
+index 050462fb1..bbaa9cc01 100644
+--- a/src/com/android/camera/one/v2/ZslOneCameraFactory.java
++++ b/src/com/android/camera/one/v2/ZslOneCameraFactory.java
+@@ -137,6 +137,7 @@ public class ZslOneCameraFactory implements OneCameraFactory {
+             Size pictureSize,
+             final ImageSaver.Builder imageSaverBuilder,
+             final Observable<OneCamera.PhotoCaptureParameters.Flash> flashSetting,
++            final Observable<OneCamera.PhotoCaptureParameters.WhiteBalance> wbSetting,
+             final Observable<Integer> exposureSetting,
+             final Observable<Boolean> hdrSceneSetting,
+             final BurstFacade burstFacade,
+@@ -237,6 +238,7 @@ public class ZslOneCameraFactory implements OneCameraFactory {
+                                 previewWarmupTemplate,
+                                 zslTemplate),
+                         flashSetting,
++                        wbSetting,
+                         exposureSetting,
+                         zoomState,
+                         hdrSceneSetting,
+diff --git a/src/com/android/camera/one/v2/commands/PreviewCommand.java b/src/com/android/camera/one/v2/commands/PreviewCommand.java
+index d85dbb2dc..6ccf45ffb 100644
+--- a/src/com/android/camera/one/v2/commands/PreviewCommand.java
++++ b/src/com/android/camera/one/v2/commands/PreviewCommand.java
+@@ -18,6 +18,7 @@ package com.android.camera.one.v2.commands;
+ 
+ import android.hardware.camera2.CameraAccessException;
+ 
++import com.android.camera.debug.Log;
+ import com.android.camera.one.v2.camera2proxy.CameraCaptureSessionClosedException;
+ import com.android.camera.one.v2.core.FrameServer;
+ import com.android.camera.one.v2.core.RequestBuilder;
+@@ -33,6 +34,8 @@ public class PreviewCommand implements CameraCommand {
+     private final RequestBuilder.Factory mBuilderFactory;
+     private final int mRequestType;
+ 
++    private final Log.Tag TAG = new Log.Tag("PreviewCommand");
++
+     /**
+      * Constructs a Preview. Note that it is the responsibility of the
+      * {@link RequestBuilder.Factory} to attach the relevant
+@@ -49,6 +52,7 @@ public class PreviewCommand implements CameraCommand {
+     public void run() throws InterruptedException, CameraAccessException,
+             CameraCaptureSessionClosedException, ResourceAcquisitionFailedException {
+         try (FrameServer.Session session = mFrameServer.createExclusiveSession()) {
++            Log.d(TAG, "PreviewCommand run");
+             RequestBuilder photoRequest = mBuilderFactory.create(mRequestType);
+             session.submitRequest(Arrays.asList(photoRequest.build()),
+                     FrameServer.RequestType.REPEATING);
+diff --git a/src/com/android/camera/one/v2/common/BasicCameraFactory.java b/src/com/android/camera/one/v2/common/BasicCameraFactory.java
+index c42f447ca..4576bd432 100644
+--- a/src/com/android/camera/one/v2/common/BasicCameraFactory.java
++++ b/src/com/android/camera/one/v2/common/BasicCameraFactory.java
+@@ -82,6 +82,7 @@ public class BasicCameraFactory {
+             CameraCommandExecutor cameraCommandExecutor,
+             PreviewCommandFactory previewCommandFactory,
+             Observable<OneCamera.PhotoCaptureParameters.Flash> flash,
++            Observable<OneCamera.PhotoCaptureParameters.WhiteBalance> wbSetting,
+             Observable<Integer> exposure,
+             Observable<Float> zoom,
+             Observable<Boolean> hdrSceneSetting,
+@@ -95,6 +96,8 @@ public class BasicCameraFactory {
+ 
+         requestTemplate.setParam(
+               CaptureRequest.CONTROL_AE_MODE, new FlashBasedAEMode(flash, hdrSceneSetting));
++        requestTemplate.setParam(
++                CaptureRequest.CONTROL_AWB_MODE, new WhiteBalanceMode(wbSetting));
+         requestTemplate.setParam(
+               CaptureRequest.CONTROL_AE_EXPOSURE_COMPENSATION, exposure);
+ 
+diff --git a/src/com/android/camera/one/v2/core/FrameServerImpl.java b/src/com/android/camera/one/v2/core/FrameServerImpl.java
+index 7826f5d13..ee174c786 100644
+--- a/src/com/android/camera/one/v2/core/FrameServerImpl.java
++++ b/src/com/android/camera/one/v2/core/FrameServerImpl.java
+@@ -20,6 +20,7 @@ import static com.google.common.base.Preconditions.checkState;
+ 
+ import android.hardware.camera2.CameraAccessException;
+ 
++import com.android.camera.debug.Log;
+ import com.android.camera.one.v2.camera2proxy.CameraCaptureSessionClosedException;
+ 
+ import java.util.List;
+@@ -36,6 +37,7 @@ public final class FrameServerImpl implements FrameServer {
+     public class Session implements FrameServer.Session {
+         private final Object mLock;
+         private boolean mClosed;
++        private final Log.Tag TAG = new Log.Tag("FrameServerImpl");
+ 
+         private Session() {
+             mLock = new Object();
+@@ -46,6 +48,7 @@ public final class FrameServerImpl implements FrameServer {
+         public void submitRequest(List<Request> burstRequests, RequestType type)
+                 throws CameraAccessException, InterruptedException,
+                 CameraCaptureSessionClosedException, ResourceAcquisitionFailedException {
++            Log.d(TAG, "submitRequest type:" + type.name());
+             synchronized (mLock) {
+                 try {
+                     if (mClosed) {
+diff --git a/src/com/android/camera/one/v2/core/ObservableFrameServer.java b/src/com/android/camera/one/v2/core/ObservableFrameServer.java
+index 1f42f6e84..fa6dab832 100644
+--- a/src/com/android/camera/one/v2/core/ObservableFrameServer.java
++++ b/src/com/android/camera/one/v2/core/ObservableFrameServer.java
+@@ -21,6 +21,7 @@ import android.hardware.camera2.CameraAccessException;
+ import com.android.camera.async.ConcurrentState;
+ import com.android.camera.async.Observable;
+ import com.android.camera.async.SafeCloseable;
++import com.android.camera.debug.Log;
+ import com.android.camera.one.v2.camera2proxy.CameraCaptureSessionClosedException;
+ 
+ import java.util.List;
+@@ -48,6 +49,8 @@ final class ObservableFrameServer implements FrameServer, Observable<Boolean> {
+     private final ConcurrentState<Boolean> mAvailability;
+     private final FrameServer mDelegate;
+ 
++    private final Log.Tag TAG = new Log.Tag("ObservableFrameServer");
++
+     private class SessionImpl implements Session {
+         private final AtomicBoolean mClosed;
+         private final Session mDelegate;
+@@ -61,6 +64,7 @@ final class ObservableFrameServer implements FrameServer, Observable<Boolean> {
+         public void submitRequest(List<Request> burstRequests, RequestType type)
+                 throws CameraAccessException, InterruptedException,
+                 CameraCaptureSessionClosedException, ResourceAcquisitionFailedException {
++            Log.d(TAG, "submitRequest type:" + type.name());
+             mDelegate.submitRequest(burstRequests, type);
+         }
+ 
+diff --git a/src/com/android/camera/one/v2/core/RequestTemplate.java b/src/com/android/camera/one/v2/core/RequestTemplate.java
+index 7e70cc000..0145de10c 100644
+--- a/src/com/android/camera/one/v2/core/RequestTemplate.java
++++ b/src/com/android/camera/one/v2/core/RequestTemplate.java
+@@ -24,6 +24,7 @@ import java.util.Set;
+ import android.hardware.camera2.CameraAccessException;
+ import android.hardware.camera2.CaptureRequest;
+ 
++import com.android.camera.debug.Log;
+ import com.google.common.base.Optional;
+ import com.google.common.base.Supplier;
+ import com.google.common.base.Suppliers;
+@@ -40,6 +41,7 @@ import com.google.common.base.Suppliers;
+  * metering regions, auto-focus state listener, etc. applied.
+  */
+ public class RequestTemplate implements RequestBuilder.Factory, ResponseManager {
++    private static final Log.Tag TAG = new Log.Tag("RequestTemplate");
+     private static class Parameter<T> {
+         private final CaptureRequest.Key<T> key;
+         private final Supplier<T> value;
+@@ -50,6 +52,7 @@ public class RequestTemplate implements RequestBuilder.Factory, ResponseManager
+         }
+ 
+         public void addToBuilder(RequestBuilder builder) {
++            Log.d(TAG, "builder.setParam:" + key + "," + value.get());
+             builder.setParam(key, value.get());
+         }
+     }
+diff --git a/src/com/android/camera/one/v2/core/TagDispatchCaptureSession.java b/src/com/android/camera/one/v2/core/TagDispatchCaptureSession.java
+index db186bf60..51473d332 100644
+--- a/src/com/android/camera/one/v2/core/TagDispatchCaptureSession.java
++++ b/src/com/android/camera/one/v2/core/TagDispatchCaptureSession.java
+@@ -24,6 +24,7 @@ import android.hardware.camera2.CaptureResult;
+ import android.hardware.camera2.TotalCaptureResult;
+ import android.os.Handler;
+ 
++import com.android.camera.debug.Log;
+ import com.android.camera.one.v2.camera2proxy.CameraCaptureSessionClosedException;
+ import com.android.camera.one.v2.camera2proxy.CameraCaptureSessionProxy;
+ import com.android.camera.one.v2.camera2proxy.CaptureRequestBuilderProxy;
+@@ -42,6 +43,7 @@ import java.util.Map;
+  */
+ @VisibleForTesting
+ public class TagDispatchCaptureSession implements FrameServer.Session {
++    private final Log.Tag TAG = new Log.Tag("TagDispatchCaptureSession");
+     private static class CaptureCallback implements CameraCaptureSessionProxy.CaptureCallback {
+         private final Map<Object, ResponseListener> mListeners;
+ 
+@@ -137,7 +139,7 @@ public class TagDispatchCaptureSession implements FrameServer.Session {
+         try {
+             Map<Object, ResponseListener> tagListenerMap = new HashMap<Object, ResponseListener>();
+             List<CaptureRequest> captureRequests = new ArrayList<>(burstRequests.size());
+-
++            Log.d(TAG, "submitRequest list:" + burstRequests.size());
+             for (Request request : burstRequests) {
+                 Object tag = generateTag();
+ 
+diff --git a/src/com/android/camera/one/v2/imagesaver/MostRecentImageSaver.java b/src/com/android/camera/one/v2/imagesaver/MostRecentImageSaver.java
+index 59d80888a..651eac84e 100644
+--- a/src/com/android/camera/one/v2/imagesaver/MostRecentImageSaver.java
++++ b/src/com/android/camera/one/v2/imagesaver/MostRecentImageSaver.java
+@@ -16,6 +16,8 @@
+ 
+ package com.android.camera.one.v2.imagesaver;
+ 
++import com.android.camera.debug.Log;
++import com.android.camera.debug.Log.Tag;
+ import com.android.camera.one.v2.camera2proxy.ImageProxy;
+ import com.android.camera.one.v2.camera2proxy.TotalCaptureResultProxy;
+ import com.google.common.base.Optional;
+@@ -76,6 +78,7 @@ public class MostRecentImageSaver implements ImageSaver {
+                 mThumbnails.remove(thumbnail.getTimestamp());
+             }
+ 
++            Log.d(new Tag("MostRecentImageSaver"), "MostRecentImageSaver saveAndCloseImage");
+             mSingleImageSaver.saveAndCloseImage(fullSize, Optional.fromNullable(thumbnail),
+                     fullSize.getMetadata());
+         } finally {
+diff --git a/src/com/android/camera/one/v2/imagesaver/YuvImageBackendImageSaver.java b/src/com/android/camera/one/v2/imagesaver/YuvImageBackendImageSaver.java
+index b81083a13..e48d6ab0b 100644
+--- a/src/com/android/camera/one/v2/imagesaver/YuvImageBackendImageSaver.java
++++ b/src/com/android/camera/one/v2/imagesaver/YuvImageBackendImageSaver.java
+@@ -22,6 +22,7 @@ import android.graphics.Rect;
+ import android.net.Uri;
+ 
+ import com.android.camera.app.OrientationManager;
++import com.android.camera.debug.Log;
+ import com.android.camera.one.OneCamera;
+ import com.android.camera.one.v2.camera2proxy.ImageProxy;
+ import com.android.camera.one.v2.camera2proxy.TotalCaptureResultProxy;
+@@ -75,6 +76,7 @@ public class YuvImageBackendImageSaver implements ImageSaver.Builder {
+                 ListenableFuture<TotalCaptureResultProxy> metadata) {
+             // TODO Use thumbnail to speedup RGB thumbnail creation whenever
+             // possible.
++            Log.d(new Log.Tag("YuvImageBackendImageSaver"), "saveAndCloseImage");
+             if (thumbnail.isPresent()) {
+                 thumbnail.get().close();
+             }
+diff --git a/src/com/android/camera/one/v2/initialization/Camera2PreviewSizeSelector.java b/src/com/android/camera/one/v2/initialization/Camera2PreviewSizeSelector.java
+index 379a99c2f..22561d02d 100644
+--- a/src/com/android/camera/one/v2/initialization/Camera2PreviewSizeSelector.java
++++ b/src/com/android/camera/one/v2/initialization/Camera2PreviewSizeSelector.java
+@@ -19,6 +19,7 @@ package com.android.camera.one.v2.initialization;
+ import com.android.camera.CaptureModuleUtil;
+ import com.android.camera.one.PreviewSizeSelector;
+ import com.android.camera.util.Size;
++import android.app.Activity;
+ 
+ import java.util.ArrayList;
+ import java.util.Collections;
+@@ -36,7 +37,7 @@ class Camera2PreviewSizeSelector implements PreviewSizeSelector {
+         mSupportedPreviewSizes = new ArrayList<>(supportedPreviewSizes);
+     }
+ 
+-    public Size pickPreviewSize(Size pictureSize) {
++    public Size pickPreviewSize(Size pictureSize, Activity context) {
+         if (pictureSize == null) {
+             // TODO The default should be selected by the caller, and
+             // pictureSize should never be null.
+@@ -46,7 +47,7 @@ class Camera2PreviewSizeSelector implements PreviewSizeSelector {
+ 
+         Size size = CaptureModuleUtil.getOptimalPreviewSize(
+                 (Size[]) mSupportedPreviewSizes.toArray(new Size[mSupportedPreviewSizes.size()]),
+-                pictureAspectRatio, null);
++                pictureAspectRatio, context);
+         return size;
+     }
+ 
+diff --git a/src/com/android/camera/one/v2/initialization/GenericOneCameraImpl.java b/src/com/android/camera/one/v2/initialization/GenericOneCameraImpl.java
+index da66d6fee..5991ad618 100644
+--- a/src/com/android/camera/one/v2/initialization/GenericOneCameraImpl.java
++++ b/src/com/android/camera/one/v2/initialization/GenericOneCameraImpl.java
+@@ -185,6 +185,6 @@ class GenericOneCameraImpl implements OneCamera {
+ 
+     @Override
+     public Size pickPreviewSize(Size pictureSize, Activity context) {
+-        return mPreviewSizeSelector.pickPreviewSize(pictureSize);
++        return mPreviewSizeSelector.pickPreviewSize(pictureSize, context);
+     }
+ }
+diff --git a/src/com/android/camera/one/v2/photo/ConvergedImageCaptureCommand.java b/src/com/android/camera/one/v2/photo/ConvergedImageCaptureCommand.java
+index a9cf4204a..88414bf99 100644
+--- a/src/com/android/camera/one/v2/photo/ConvergedImageCaptureCommand.java
++++ b/src/com/android/camera/one/v2/photo/ConvergedImageCaptureCommand.java
+@@ -26,6 +26,7 @@ import android.os.Build;
+ 
+ import com.android.camera.async.BufferQueue;
+ import com.android.camera.async.Updatable;
++import com.android.camera.debug.Log;
+ import com.android.camera.one.v2.autofocus.AETriggerResult;
+ import com.android.camera.one.v2.autofocus.AFTriggerResult;
+ import com.android.camera.one.v2.camera2proxy.CameraCaptureSessionClosedException;
+@@ -53,6 +54,7 @@ import javax.annotation.ParametersAreNonnullByDefault;
+ @ParametersAreNonnullByDefault
+ @TargetApi(Build.VERSION_CODES.LOLLIPOP)
+ class ConvergedImageCaptureCommand implements ImageCaptureCommand {
++    private static final Log.Tag TAG = new Log.Tag("ConvergedImageCaptureCommand");
+     private final ManagedImageReader mImageReader;
+     private final FrameServer mFrameServer;
+     private final RequestBuilder.Factory mScanRequestTemplate;
+@@ -153,9 +155,11 @@ class ConvergedImageCaptureCommand implements ImageCaptureCommand {
+         try (FrameServer.Session session = mFrameServer.createExclusiveSession()) {
+             try (ImageStream imageStream = mImageReader.createPreallocatedStream(mBurst.size())) {
+                 if (mWaitForAFConvergence) {
++                    Log.d(TAG, "waitForAFConvergence");
+                     waitForAFConvergence(session);
+                 }
+                 if (mWaitForAEConvergence) {
++                    Log.d(TAG, "waitForAEConvergence");
+                     waitForAEConvergence(session);
+                 }
+                 captureBurst(session, imageStream, imageExposureUpdatable, imageSaver);
+@@ -221,6 +225,7 @@ class ConvergedImageCaptureCommand implements ImageCaptureCommand {
+             imageExposureUpdatable, ImageSaver imageSaver) throws CameraAccessException,
+             InterruptedException, ResourceAcquisitionFailedException,
+             CameraCaptureSessionClosedException {
++        Log.d(TAG, "captureBurst size:" + mBurst.size());
+         List<Request> burstRequest = new ArrayList<>(mBurst.size());
+         List<ListenableFuture<TotalCaptureResultProxy>> metadata = new ArrayList<>(mBurst.size());
+         boolean first = true;
+diff --git a/src_pd/com/android/camera/one/v2/OneCameraCreator.java b/src_pd/com/android/camera/one/v2/OneCameraCreator.java
+index 0f93706d0..ad351c98e 100644
+--- a/src_pd/com/android/camera/one/v2/OneCameraCreator.java
++++ b/src_pd/com/android/camera/one/v2/OneCameraCreator.java
+@@ -124,6 +124,7 @@ public class OneCameraCreator {
+                 configuration.getNativeOutputSize(),
+                 imageSaverBuilder,
+                 captureSetting.getFlashSetting(),
++                captureSetting.getWhiteBalanceSetting(),
+                 captureSetting.getExposureSetting(),
+                 captureSetting.getHdrSceneSetting(),
+                 burstController,
+-- 
+2.53.0
+

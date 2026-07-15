@@ -1,0 +1,25 @@
+From 33123d0f54cfac1300c8a07ba3286cb3b2ebbb29 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 17:27:35 +0800
+Subject: [PATCH] feat: add Camera.isReleased() method
+
+Change-Id: I6b9a7107a0f7abfde817eef7e9278d22ff8b1cef
+
+diff --git a/core/java/android/hardware/Camera.java b/core/java/android/hardware/Camera.java
+index ccc39b6080d7..f6697134bfa6 100644
+--- a/core/java/android/hardware/Camera.java
++++ b/core/java/android/hardware/Camera.java
+@@ -589,6 +589,13 @@ public class Camera {
+         releaseAppOps();
+     }
+ 
++    /**
++     **@hide
++     **/
++     public final boolean isReleased() {
++       return (mNativeContext == 0);
++    }
++
+     /**
+      * Unlocks the camera to allow another process to access it.
+      * Normally, the camera is locked to the process with an active Camera

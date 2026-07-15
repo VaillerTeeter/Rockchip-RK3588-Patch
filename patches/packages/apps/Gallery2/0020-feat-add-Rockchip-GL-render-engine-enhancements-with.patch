@@ -1,0 +1,205 @@
+From 5bd1ed41e755f4659222e6be12466904dfcb92ee Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Sat, 11 Jul 2026 13:58:33 +0800
+Subject: [PATCH 47/51] feat: add Rockchip GL render engine enhancements with
+ focus management and texture upload optimizations
+
+Change-Id: I16f3b2a50d912efbef0802b101ec59e4321840a6
+---
+ .../gallery3d/glrenderer/GLES20Canvas.java    |  1 +
+ .../gallery3d/glrenderer/UploadedTexture.java | 15 ++++++--
+ src/com/android/gallery3d/ui/GLRootView.java  | 34 ++++++++++++++-----
+ src/com/android/gallery3d/ui/GLView.java      | 16 +++++++++
+ 4 files changed, 54 insertions(+), 12 deletions(-)
+
+diff --git a/src/com/android/gallery3d/glrenderer/GLES20Canvas.java b/src/com/android/gallery3d/glrenderer/GLES20Canvas.java
+index 4ead1315e..b2049b6e9 100644
+--- a/src/com/android/gallery3d/glrenderer/GLES20Canvas.java
++++ b/src/com/android/gallery3d/glrenderer/GLES20Canvas.java
+@@ -290,6 +290,7 @@ public class GLES20Canvas implements GLCanvas {
+                 mOesTextureParameters);
+         mMeshProgram = assembleProgram(meshVertexShader, textureFragmentShader, mMeshParameters);
+         GLES20.glBlendFunc(GLES20.GL_ONE, GLES20.GL_ONE_MINUS_SRC_ALPHA);
++        GLES20.glPixelStorei(GLES20.GL_UNPACK_ALIGNMENT, 2);
+         checkError();
+     }
+ 
+diff --git a/src/com/android/gallery3d/glrenderer/UploadedTexture.java b/src/com/android/gallery3d/glrenderer/UploadedTexture.java
+index 417102a38..bc301e66c 100644
+--- a/src/com/android/gallery3d/glrenderer/UploadedTexture.java
++++ b/src/com/android/gallery3d/glrenderer/UploadedTexture.java
+@@ -59,7 +59,7 @@ public abstract class UploadedTexture extends BasicTexture {
+     private static int sUploadedCount;
+     private static final int UPLOAD_LIMIT = 100;
+ 
+-    protected Bitmap mBitmap;
++    public Bitmap mBitmap;
+     private int mBorder;
+ 
+     protected UploadedTexture() {
+@@ -134,6 +134,9 @@ public abstract class UploadedTexture extends BasicTexture {
+     private Bitmap getBitmap() {
+         if (mBitmap == null) {
+             mBitmap = onGetBitmap();
++            if(mBitmap == null){
++                return null;
++            }
+             int w = mBitmap.getWidth() + mBorder * 2;
+             int h = mBitmap.getHeight() + mBorder * 2;
+             if (mWidth == UNSPECIFIED) {
+@@ -144,7 +147,10 @@ public abstract class UploadedTexture extends BasicTexture {
+     }
+ 
+     private void freeBitmap() {
+-        Utils.assertTrue(mBitmap != null);
++//        Utils.assertTrue(mBitmap != null);
++        if(mBitmap == null){
++            return;
++        }
+         onFreeBitmap(mBitmap);
+         mBitmap = null;
+     }
+@@ -191,6 +197,9 @@ public abstract class UploadedTexture extends BasicTexture {
+             uploadToCanvas(canvas);
+         } else if (!mContentValid) {
+             Bitmap bitmap = getBitmap();
++            if(bitmap == null){
++                return;
++            }
+             int format = GLUtils.getInternalFormat(bitmap);
+             int type = GLUtils.getType(bitmap);
+             canvas.texSubImage2D(this, mBorder, mBorder, bitmap, format, type);
+@@ -266,7 +275,7 @@ public abstract class UploadedTexture extends BasicTexture {
+             mContentValid = true;
+         } else {
+             mState = STATE_ERROR;
+-            throw new RuntimeException("Texture load fail, no bitmap");
++            //throw new RuntimeException("Texture load fail, no bitmap");
+         }
+     }
+ 
+diff --git a/src/com/android/gallery3d/ui/GLRootView.java b/src/com/android/gallery3d/ui/GLRootView.java
+index dc898d83d..afcceb390 100644
+--- a/src/com/android/gallery3d/ui/GLRootView.java
++++ b/src/com/android/gallery3d/ui/GLRootView.java
+@@ -60,7 +60,7 @@ import javax.microedition.khronos.opengles.GL11;
+ // (2) The public methods of CameraHeadUpDisplay
+ // (3) The overridden methods in GLRootView.
+ public class GLRootView extends GLSurfaceView
+-        implements GLSurfaceView.Renderer, GLRoot {
++        implements GLSurfaceView.Renderer, GLRoot, View.OnGenericMotionListener {
+     private static final String TAG = "GLRootView";
+ 
+     private static final boolean DEBUG_FPS = false;
+@@ -120,20 +120,24 @@ public class GLRootView extends GLSurfaceView
+         mFlags |= FLAG_INITIALIZED;
+         setBackgroundDrawable(null);
+         setEGLContextClientVersion(ApiHelper.HAS_GLES20_REQUIRED ? 2 : 1);
+-        if (ApiHelper.USE_888_PIXEL_FORMAT) {
++        /*if (ApiHelper.USE_888_PIXEL_FORMAT) {
+             setEGLConfigChooser(8, 8, 8, 0, 0, 0);
+         } else {
+             setEGLConfigChooser(5, 6, 5, 0, 0, 0);
+-        }
++        }*/
++        setEGLConfigChooser(8, 8, 8, 8, 16, 0);
+         setRenderer(this);
+-        if (ApiHelper.USE_888_PIXEL_FORMAT) {
++        /*if (ApiHelper.USE_888_PIXEL_FORMAT) {
+             getHolder().setFormat(PixelFormat.RGB_888);
+         } else {
+             getHolder().setFormat(PixelFormat.RGB_565);
+-        }
++        }*/
++        getHolder().setFormat(PixelFormat.RGBA_8888);
+ 
+         // Uncomment this to enable gl error check.
+         // setDebugFlags(DEBUG_CHECK_GL_ERROR);
++
++        setOnGenericMotionListener(this);
+     }
+ 
+     @Override
+@@ -353,7 +357,11 @@ public class GLRootView extends GLSurfaceView
+ 
+         try {
+             onDrawFrameLocked(gl);
+-        } finally {
++        }
++        catch (NullPointerException e){
++            //e.printStackTrace();
++        }
++        finally {
+             mRenderLock.unlock();
+         }
+ 
+@@ -399,11 +407,12 @@ public class GLRootView extends GLSurfaceView
+ 
+         mRenderRequested = false;
+ 
+-        if ((mOrientationSource != null
++        /*if ((mOrientationSource != null
+                 && mDisplayRotation != mOrientationSource.getDisplayRotation())
+                 || (mFlags & FLAG_NEED_LAYOUT) != 0) {
+             layoutContentPane();
+-        }
++        }*/
++        if ((mFlags & FLAG_NEED_LAYOUT) != 0) layoutContentPane();
+ 
+         mCanvas.save(GLCanvas.SAVE_FLAG_ALL);
+         rotateCanvas(-mCompensation);
+@@ -457,9 +466,16 @@ public class GLRootView extends GLSurfaceView
+     }
+ 
+     @Override
+-    public boolean dispatchTouchEvent(MotionEvent event) {
++    public boolean onGenericMotion(View v, MotionEvent event) {
+         if (!isEnabled()) return false;
++        if(mContentView!=null)
++        mContentView.dispatchGenericMotion(v,event);
++        return false;
++    }
+ 
++    @Override
++    public boolean dispatchTouchEvent(MotionEvent event) {
++        if (!isEnabled()) return false;
+         int action = event.getAction();
+         if (action == MotionEvent.ACTION_CANCEL
+                 || action == MotionEvent.ACTION_UP) {
+diff --git a/src/com/android/gallery3d/ui/GLView.java b/src/com/android/gallery3d/ui/GLView.java
+index 83de19fe4..95c9cc844 100644
+--- a/src/com/android/gallery3d/ui/GLView.java
++++ b/src/com/android/gallery3d/ui/GLView.java
+@@ -19,6 +19,7 @@ package com.android.gallery3d.ui;
+ import android.graphics.Rect;
+ import android.os.SystemClock;
+ import android.view.MotionEvent;
++import android.view.View;
+ 
+ import com.android.gallery3d.anim.CanvasAnimation;
+ import com.android.gallery3d.anim.StateTransitionAnimation;
+@@ -292,6 +293,21 @@ public class GLView {
+         return false;
+     }
+ 
++    protected boolean onGenericMotion(View v, MotionEvent event){
++        return false;
++    }
++
++    protected boolean dispatchGenericMotion(View v, MotionEvent event) {
++        for (int i = getComponentCount() - 1; i >= 0; --i) {
++            GLView component = getComponent(i);
++            if (component.getVisibility() != GLView.VISIBLE) continue;
++            if (component.onGenericMotion(v, event)) {
++                return true;
++            }
++        }
++        return onGenericMotion(v,event);
++    }
++
+     protected boolean dispatchTouchEvent(MotionEvent event,
+             int x, int y, GLView component, boolean checkBounds) {
+         Rect rect = component.mBounds;
+-- 
+2.53.0
+

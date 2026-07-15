@@ -1,0 +1,37 @@
+From 500d203ceecef91afb09c4395a894dd85d4ced71 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Sat, 11 Jul 2026 22:37:53 +0800
+Subject: [PATCH] fix: allow Gallery3D package to bypass mutation restriction
+ for Rockchip media provider compatibility
+
+Change-Id: Ia3b4fabd89955b345b9e98ad353896b5edbc65f0
+---
+ src/com/android/providers/media/MediaProvider.java | 12 ++++++++----
+ 1 file changed, 8 insertions(+), 4 deletions(-)
+
+diff --git a/src/com/android/providers/media/MediaProvider.java b/src/com/android/providers/media/MediaProvider.java
+index 9ae9c6f7f..b0f26aa8f 100644
+--- a/src/com/android/providers/media/MediaProvider.java
++++ b/src/com/android/providers/media/MediaProvider.java
+@@ -7041,10 +7041,14 @@ public class MediaProvider extends ContentProvider {
+                     } else if (isPending.get()) {
+                         // Mutation relaxed while pending
+                     } else {
+-                        Log.w(TAG, "Ignoring mutation of " + column + " from "
+-                                + getCallingPackageOrSelf());
+-                        initialValues.remove(column);
+-                        triggerScan = true;
++                        String callingPackage = getCallingPackageOrSelf();
++                        if ("com.android.gallery3d".equals(callingPackage)) {
++
++                        } else {
++                            Log.w(TAG, "Ignoring mutation of " + column + " from " + callingPackage);
++                            initialValues.remove(column);
++                            triggerScan = true;
++                        }
+                     }
+ 
+                     // If we're publishing this item, perform a blocking scan to
+-- 
+2.53.0
+

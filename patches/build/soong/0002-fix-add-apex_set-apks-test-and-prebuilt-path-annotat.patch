@@ -1,0 +1,73 @@
+From d35b4bfd6e340520b25c338375fd8d22e63d932d Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 13:19:45 +0800
+Subject: [PATCH 5/5] fix: add apex_set apks test and prebuilt path annotations
+
+Change-Id: I001677a05e7005d763a7f062ae22347e07933e6e
+---
+ apex/apex_test.go | 22 ++++++++++++++++++++++
+ apex/prebuilt.go  |  8 ++++----
+ 2 files changed, 26 insertions(+), 4 deletions(-)
+
+diff --git a/apex/apex_test.go b/apex/apex_test.go
+index 0351cb8a3..36d53064f 100644
+--- a/apex/apex_test.go
++++ b/apex/apex_test.go
+@@ -7264,6 +7264,28 @@ func TestAppSetBundlePrebuilt(t *testing.T) {
+ 	android.AssertStringEquals(t, "myapex input", extractorOutput, copiedApex.Input.String())
+ }
+ 
++func TestApexSetApksModuleAssignment(t *testing.T) {
++	ctx := testApex(t, `
++		apex_set {
++			name: "myapex",
++			set: ":myapex_apks_file",
++		}
++
++		filegroup {
++			name: "myapex_apks_file",
++			srcs: ["myapex.apks"],
++		}
++	`)
++
++	m := ctx.ModuleForTests("myapex.apex.extractor", "android_common")
++
++	// Check that the extractor produces the correct apks file from the input module
++	extractorOutput := "out/soong/.intermediates/myapex.apex.extractor/android_common/extracted/myapex.apks"
++	extractedApex := m.Output(extractorOutput)
++
++	android.AssertArrayString(t, "extractor input", []string{"myapex.apks"}, extractedApex.Inputs.Strings())
++}
++
+ func testNoUpdatableJarsInBootImage(t *testing.T, errmsg string, preparer android.FixturePreparer, fragments ...java.ApexVariantReference) {
+ 	t.Helper()
+ 
+diff --git a/apex/prebuilt.go b/apex/prebuilt.go
+index 03ee11ef5..e9261c0f3 100644
+--- a/apex/prebuilt.go
++++ b/apex/prebuilt.go
+@@ -842,17 +842,17 @@ type ApexSet struct {
+ 
+ type ApexExtractorProperties struct {
+ 	// the .apks file path that contains prebuilt apex files to be extracted.
+-	Set *string
++	Set *string `android:"path"`
+ 
+ 	Sanitized struct {
+ 		None struct {
+-			Set *string
++			Set *string `android:"path"`
+ 		}
+ 		Address struct {
+-			Set *string
++			Set *string `android:"path"`
+ 		}
+ 		Hwaddress struct {
+-			Set *string
++			Set *string `android:"path"`
+ 		}
+ 	}
+ 
+-- 
+2.53.0
+

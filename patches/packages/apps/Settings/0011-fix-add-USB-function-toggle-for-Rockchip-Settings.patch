@@ -1,0 +1,26 @@
+From bbce543a414ae423f73b5fa1e56b0eab22eaecd7 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Sat, 11 Jul 2026 21:05:30 +0800
+Subject: [PATCH 67/67] fix: add USB function toggle for Rockchip Settings
+
+Change-Id: I736f6b042327bb4dc415510994d4b9d601ace2fa
+---
+ .../connecteddevice/usb/UsbDetailsFunctionsController.java      | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/com/android/settings/connecteddevice/usb/UsbDetailsFunctionsController.java b/src/com/android/settings/connecteddevice/usb/UsbDetailsFunctionsController.java
+index b887bd704f..dd5143310f 100644
+--- a/src/com/android/settings/connecteddevice/usb/UsbDetailsFunctionsController.java
++++ b/src/com/android/settings/connecteddevice/usb/UsbDetailsFunctionsController.java
+@@ -102,7 +102,7 @@ public class UsbDetailsFunctionsController extends UsbDetailsController
+             Log.d(TAG, "refresh() connected : " + connected + ", functions : " + functions
+                     + ", powerRole : " + powerRole + ", dataRole : " + dataRole);
+         }
+-        if (!connected || dataRole != DATA_ROLE_DEVICE) {
++        if (!connected) {
+             mProfilesContainer.setEnabled(false);
+         } else {
+             // Functions are only available in device mode
+-- 
+2.53.0
+

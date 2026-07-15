@@ -1,0 +1,199 @@
+From c2594345294c35718c7176f2bc319b951bc70197 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 17:22:01 +0800
+Subject: [PATCH] feat: add per-package UiMode override via fitUiMode for box
+ products
+
+Change-Id: If8b33adbd2bfcd54318cea225df1da46d8ccc7b7
+
+diff --git a/core/java/android/app/ResourcesManager.java b/core/java/android/app/ResourcesManager.java
+index d275c8336251..97d8e0c8e9b4 100644
+--- a/core/java/android/app/ResourcesManager.java
++++ b/core/java/android/app/ResourcesManager.java
+@@ -23,6 +23,7 @@ import static android.view.Display.INVALID_DISPLAY;
+ import android.annotation.NonNull;
+ import android.annotation.Nullable;
+ import android.compat.annotation.UnsupportedAppUsage;
++import android.app.AppGlobals;
+ import android.content.pm.ActivityInfo;
+ import android.content.pm.ApplicationInfo;
+ import android.content.res.ApkAssets;
+@@ -35,15 +36,20 @@ import android.content.res.ResourcesImpl;
+ import android.content.res.ResourcesKey;
+ import android.content.res.loader.ResourcesLoader;
+ import android.hardware.display.DisplayManagerGlobal;
++import android.os.Binder;
++import android.os.Environment;
+ import android.os.IBinder;
+ import android.os.Process;
++import android.os.RemoteException;
+ import android.os.Trace;
++import android.text.TextUtils;
+ import android.util.ArrayMap;
+ import android.util.ArraySet;
+ import android.util.DisplayMetrics;
+ import android.util.Log;
+ import android.util.Pair;
+ import android.util.Slog;
++import android.util.Xml;
+ import android.view.Display;
+ import android.view.DisplayAdjustments;
+ import android.view.DisplayInfo;
+@@ -53,6 +59,13 @@ import com.android.internal.annotations.VisibleForTesting;
+ import com.android.internal.util.ArrayUtils;
+ import com.android.internal.util.IndentingPrintWriter;
+ 
++import org.xmlpull.v1.XmlPullParser;
++import org.xmlpull.v1.XmlPullParserException;
++
++import java.io.File;
++import java.io.FileInputStream;
++import java.io.FileOutputStream;
++import java.io.InputStream;
+ import java.io.IOException;
+ import java.io.PrintWriter;
+ import java.lang.ref.Reference;
+@@ -71,6 +84,7 @@ import java.util.function.Function;
+ public class ResourcesManager {
+     static final String TAG = "ResourcesManager";
+     private static final boolean DEBUG = false;
++    private static final boolean DEBUG_UIMODE = Log.isLoggable(TAG, Log.DEBUG);
+ 
+     private static ResourcesManager sResourcesManager;
+ 
+@@ -637,14 +651,55 @@ public class ResourcesManager {
+ 
+         final Configuration config = generateConfig(key);
+         final DisplayMetrics displayMetrics = getDisplayMetrics(generateDisplayId(key), daj);
++        if (android.os.SystemProperties.get("ro.target.product", "unknown").equals("box")) {
++            config.uiMode = fitUiMode(config);
++        }
+         final ResourcesImpl impl = new ResourcesImpl(assets, displayMetrics, config, daj);
+-
+         if (DEBUG) {
+             Slog.d(TAG, "- creating impl=" + impl + " with key: " + key);
+         }
+         return impl;
+     }
+ 
++    private String getPackageName() {
++        try {
++            if (AppGlobals.getPackageManager() != null) {
++                String[] packageNames = AppGlobals.getPackageManager().getPackagesForUid(Binder.getCallingUid());
++                if(packageNames != null && packageNames.length > 0 && !packageNames[0].equals("")) {
++                    if (DEBUG_UIMODE) {
++                        Slog.d(TAG, "getPackageName : " + packageNames[0]);
++                    }
++                    return packageNames[0];
++                } else {
++                    return null;
++                }
++            }
++        } catch (RemoteException e) {
++            Slog.i(TAG, "remoteException " + e.getMessage());
++        }
++        return null;
++    }
++
++    private int fitUiMode(Configuration configuration) {
++        int uiMode = configuration.uiMode;
++        try {
++            if (AppGlobals.getPackageManager() != null) {
++               uiMode = AppGlobals.getPackageManager().getPackageUiModeType(getPackageName());
++            }
++        } catch (RemoteException e) {
++            e.printStackTrace();
++        }
++        if (uiMode == -1) {
++            uiMode = configuration.uiMode;
++        } else {
++            uiMode |= configuration.uiMode & Configuration.UI_MODE_NIGHT_MASK;
++        }
++        if (DEBUG_UIMODE) {
++            Slog.d(TAG, "uiMode = " + uiMode);
++        }
++        return uiMode;
++    }
++
+     /**
+      * Finds a cached ResourcesImpl object that matches the given ResourcesKey.
+      *
+diff --git a/core/java/android/app/UiModeManager.java b/core/java/android/app/UiModeManager.java
+index ecab37db4ba7..79c9daa35415 100644
+--- a/core/java/android/app/UiModeManager.java
++++ b/core/java/android/app/UiModeManager.java
+@@ -26,6 +26,7 @@ import android.annotation.SystemApi;
+ import android.annotation.SystemService;
+ import android.annotation.TestApi;
+ import android.compat.annotation.UnsupportedAppUsage;
++import android.app.AppGlobals;
+ import android.content.Context;
+ import android.content.res.Configuration;
+ import android.os.Binder;
+@@ -93,6 +94,7 @@ public class UiModeManager {
+ 
+     private static final String TAG = "UiModeManager";
+ 
++    private static final boolean DEBUG_UIMODE = false;
+     /**
+      * Broadcast sent when the device's UI has switched to car mode, either
+      * by being placed in a car dock or explicit action of the user.  After
+@@ -491,6 +493,18 @@ public class UiModeManager {
+     public int getCurrentModeType() {
+         if (mService != null) {
+             try {
++                if (android.os.SystemProperties.get("ro.target.product", "unknown").equals("box")) {
++                    int uiMode = mService.getCurrentModeType();
++                    if (AppGlobals.getPackageManager() != null) {
++                        uiMode = AppGlobals.getPackageManager().getPackageUiModeType(getPackageName());
++                    }
++                    if (uiMode != -1) {
++                        if (DEBUG_UIMODE) {
++                            Slog.d(TAG, "uiMode = " + uiMode);
++                        }
++                        return uiMode;
++                    }
++                }
+                 return mService.getCurrentModeType();
+             } catch (RemoteException e) {
+                 throw e.rethrowFromSystemServer();
+@@ -499,6 +513,26 @@ public class UiModeManager {
+         return Configuration.UI_MODE_TYPE_NORMAL;
+     }
+ 
++    private String getPackageName() {
++        try {
++            if (AppGlobals.getPackageManager() != null) {
++                String[] packageNames = AppGlobals.getPackageManager().getPackagesForUid(Binder.getCallingUid());
++                if(packageNames != null && packageNames.length > 0 && !packageNames[0].equals("")) {
++                    if (DEBUG_UIMODE) {
++                        Slog.d(TAG, "getPackageName : " + packageNames[0]);
++                    }
++                    return packageNames[0];
++                } else {
++                    return null;
++                }
++            }
++        } catch (RemoteException e) {
++            Slog.i(TAG, "remoteException " + e.getMessage());
++        }
++        return null;
++    }
++
++
+     /**
+      * Sets the system-wide night mode.
+      * <p>
+diff --git a/core/java/android/window/ConfigurationHelper.java b/core/java/android/window/ConfigurationHelper.java
+index e32adcf23a3b..269ce083d205 100644
+--- a/core/java/android/window/ConfigurationHelper.java
++++ b/core/java/android/window/ConfigurationHelper.java
+@@ -106,7 +106,7 @@ public class ConfigurationHelper {
+      * @see WindowManager#getCurrentWindowMetrics()
+      * @see WindowManager#getMaximumWindowMetrics()
+      */
+-    private static boolean shouldUpdateWindowMetricsBounds(@NonNull Configuration currentConfig,
++    public static boolean shouldUpdateWindowMetricsBounds(@NonNull Configuration currentConfig,
+             @NonNull Configuration newConfig) {
+         final Rect currentBounds = currentConfig.windowConfiguration.getBounds();
+         final Rect newBounds = newConfig.windowConfiguration.getBounds();

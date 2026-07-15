@@ -1,0 +1,389 @@
+From ef99e148c4debba11ba024a0ad9f6549a39b7518 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 15:35:59 +0800
+Subject: [PATCH] feat: add Rockchip CompositionEngine extensions
+ (HWC2On1Adapter, NO_AFBC, buffer cache limit, handwrite bypass)
+
+Change-Id: I8fa006f77ba080583cdb0705d7d04bceaaa1531d
+
+diff --git a/services/surfaceflinger/CompositionEngine/include/compositionengine/Output.h b/services/surfaceflinger/CompositionEngine/include/compositionengine/Output.h
+index 2203639b1a..ca7dc7e784 100644
+--- a/services/surfaceflinger/CompositionEngine/include/compositionengine/Output.h
++++ b/services/surfaceflinger/CompositionEngine/include/compositionengine/Output.h
+@@ -271,6 +271,11 @@ public:
+     // Enables overriding the 170M trasnfer function as sRGB
+     virtual void setTreat170mAsSrgb(bool) = 0;
+ 
++    /* For HWC2 adpter to HWC1 */
++    virtual void updateInfoForHwc2On1Adapter(const CompositionRefreshArgs&) = 0;
++    virtual void presentForHwc2On1Adapter(const CompositionRefreshArgs&) = 0;
++    virtual void postBufferForHwc2On1Adapter(const CompositionRefreshArgs&) = 0;
++
+ protected:
+     virtual void setDisplayColorProfile(std::unique_ptr<DisplayColorProfile>) = 0;
+     virtual void setRenderSurface(std::unique_ptr<RenderSurface>) = 0;
+diff --git a/services/surfaceflinger/CompositionEngine/include/compositionengine/OutputLayer.h b/services/surfaceflinger/CompositionEngine/include/compositionengine/OutputLayer.h
+index bf5184e997..d1d96140f7 100644
+--- a/services/surfaceflinger/CompositionEngine/include/compositionengine/OutputLayer.h
++++ b/services/surfaceflinger/CompositionEngine/include/compositionengine/OutputLayer.h
+@@ -132,6 +132,8 @@ public:
+ 
+     // Debugging
+     virtual void dump(std::string& result) const = 0;
++
++    virtual int32_t getCacheLimitSize() { return 0; }
+ };
+ 
+ } // namespace compositionengine
+diff --git a/services/surfaceflinger/CompositionEngine/include/compositionengine/RenderSurface.h b/services/surfaceflinger/CompositionEngine/include/compositionengine/RenderSurface.h
+index 9ee779cca1..d974f75be5 100644
+--- a/services/surfaceflinger/CompositionEngine/include/compositionengine/RenderSurface.h
++++ b/services/surfaceflinger/CompositionEngine/include/compositionengine/RenderSurface.h
+@@ -84,6 +84,9 @@ public:
+     virtual std::shared_ptr<renderengine::ExternalTexture> dequeueBuffer(
+             base::unique_fd* bufferFence) = 0;
+ 
++    // RK: Call NativeWindows perform interface
++    virtual int perform(int operation, uint64_t usage) = 0;
++
+     // Queues the drawn buffer for consumption by HWC. readyFence is the fence
+     // which will fire when the buffer is ready for consumption.
+     virtual void queueBuffer(base::unique_fd readyFence) = 0;
+diff --git a/services/surfaceflinger/CompositionEngine/include/compositionengine/impl/Output.h b/services/surfaceflinger/CompositionEngine/include/compositionengine/impl/Output.h
+index 428c19fe02..252307ca27 100644
+--- a/services/surfaceflinger/CompositionEngine/include/compositionengine/impl/Output.h
++++ b/services/surfaceflinger/CompositionEngine/include/compositionengine/impl/Output.h
+@@ -123,6 +123,11 @@ public:
+             std::optional<android::HWComposer::DeviceRequestedChanges>*);
+     virtual void resetCompositionStrategy();
+ 
++    /* For HWC2 adpter to HWC1 */
++    void updateInfoForHwc2On1Adapter(const CompositionRefreshArgs&) override;
++    void presentForHwc2On1Adapter(const CompositionRefreshArgs&) override;
++    void postBufferForHwc2On1Adapter(const CompositionRefreshArgs&) override;
++
+ protected:
+     std::unique_ptr<compositionengine::OutputLayer> createOutputLayer(const sp<LayerFE>&) const;
+     std::optional<size_t> findCurrentOutputLayerForLayer(
+diff --git a/services/surfaceflinger/CompositionEngine/include/compositionengine/impl/OutputCompositionState.h b/services/surfaceflinger/CompositionEngine/include/compositionengine/impl/OutputCompositionState.h
+index 7709b967b6..f160f6a8a1 100644
+--- a/services/surfaceflinger/CompositionEngine/include/compositionengine/impl/OutputCompositionState.h
++++ b/services/surfaceflinger/CompositionEngine/include/compositionengine/impl/OutputCompositionState.h
+@@ -63,6 +63,9 @@ struct OutputCompositionState {
+     // If true, the current frame reused the buffer from a previous client composition
+     bool reusedClientComposition{false};
+ 
++    // RK: If true, the client target should be used afbc format
++    bool useNoAfbcClientTarget{false};
++
+     // The conditions for including a layer on this output
+     ui::LayerFilter layerFilter;
+ 
+diff --git a/services/surfaceflinger/CompositionEngine/include/compositionengine/impl/OutputLayer.h b/services/surfaceflinger/CompositionEngine/include/compositionengine/impl/OutputLayer.h
+index ecd432f629..1dd8d1c45c 100644
+--- a/services/surfaceflinger/CompositionEngine/include/compositionengine/impl/OutputLayer.h
++++ b/services/surfaceflinger/CompositionEngine/include/compositionengine/impl/OutputLayer.h
+@@ -26,6 +26,7 @@
+ #include <ui/Rect.h>
+ 
+ #include <ui/DisplayIdentification.h>
++#include <cutils/properties.h>
+ 
+ #include <aidl/android/hardware/graphics/composer3/Composition.h>
+ 
+@@ -115,7 +116,11 @@ std::unique_ptr<BaseOutputLayer> createOutputLayerTemplated(const Output& output
+ #pragma clang diagnostic pop
+ 
+         OutputLayer(const Output& output, const sp<LayerFE>& layerFE)
+-              : mOutput(output), mLayerFE(layerFE) {}
++              : mOutput(output), mLayerFE(layerFE) {
++            char value[PROPERTY_VALUE_MAX];
++            property_get("vendor.hwc.video_buf_cache_max_size", value, "0");
++            mCacheLimitSize = atoi(value);
++        }
+         ~OutputLayer() override = default;
+ 
+     private:
+@@ -128,9 +133,12 @@ std::unique_ptr<BaseOutputLayer> createOutputLayerTemplated(const Output& output
+         // compositionengine::impl::OutputLayer overrides
+         void dumpState(std::string& out) const override { mState.dump(out); }
+ 
++        int32_t getCacheLimitSize() override { return mCacheLimitSize; }
++
+         const Output& mOutput;
+         const sp<LayerFE> mLayerFE;
+         OutputLayerCompositionState mState;
++        int32_t mCacheLimitSize;
+     };
+ 
+     return std::make_unique<OutputLayer>(output, layerFE);
+diff --git a/services/surfaceflinger/CompositionEngine/include/compositionengine/impl/RenderSurface.h b/services/surfaceflinger/CompositionEngine/include/compositionengine/impl/RenderSurface.h
+index e4cb113645..e6ef14f583 100644
+--- a/services/surfaceflinger/CompositionEngine/include/compositionengine/impl/RenderSurface.h
++++ b/services/surfaceflinger/CompositionEngine/include/compositionengine/impl/RenderSurface.h
+@@ -60,6 +60,7 @@ public:
+     void prepareFrame(bool usesClientComposition, bool usesDeviceComposition) override;
+     std::shared_ptr<renderengine::ExternalTexture> dequeueBuffer(
+             base::unique_fd* bufferFence) override;
++    int perform(int operation, uint64_t usage) override;
+     void queueBuffer(base::unique_fd readyFence) override;
+     void onPresentDisplayCompleted() override;
+     void flip() override;
+diff --git a/services/surfaceflinger/CompositionEngine/include/compositionengine/mock/Output.h b/services/surfaceflinger/CompositionEngine/include/compositionengine/mock/Output.h
+index 2a04949cff..5f730a5a9e 100644
+--- a/services/surfaceflinger/CompositionEngine/include/compositionengine/mock/Output.h
++++ b/services/surfaceflinger/CompositionEngine/include/compositionengine/mock/Output.h
+@@ -130,6 +130,11 @@ public:
+                  void(const Region&, std::vector<LayerFE::LayerSettings>&));
+     MOCK_METHOD1(setExpensiveRenderingExpected, void(bool));
+     MOCK_METHOD1(cacheClientCompositionRequests, void(uint32_t));
++    /* For HWC2 adpter to HWC1 */
++    MOCK_METHOD1(updateInfoForHwc2On1Adapter, void(const compositionengine::CompositionRefreshArgs&));
++    MOCK_METHOD1(presentForHwc2On1Adapter, void(const compositionengine::CompositionRefreshArgs&));
++    MOCK_METHOD1(postBufferForHwc2On1Adapter, void(const compositionengine::CompositionRefreshArgs&));
++
+     MOCK_METHOD1(canPredictCompositionStrategy, bool(const CompositionRefreshArgs&));
+     MOCK_METHOD1(setPredictCompositionStrategy, void(bool));
+     MOCK_METHOD1(setTreat170mAsSrgb, void(bool));
+diff --git a/services/surfaceflinger/CompositionEngine/include/compositionengine/mock/RenderSurface.h b/services/surfaceflinger/CompositionEngine/include/compositionengine/mock/RenderSurface.h
+index e12aebb50c..e02bb805a8 100644
+--- a/services/surfaceflinger/CompositionEngine/include/compositionengine/mock/RenderSurface.h
++++ b/services/surfaceflinger/CompositionEngine/include/compositionengine/mock/RenderSurface.h
+@@ -40,6 +40,7 @@ public:
+     MOCK_METHOD1(beginFrame, status_t(bool mustRecompose));
+     MOCK_METHOD2(prepareFrame, void(bool, bool));
+     MOCK_METHOD1(dequeueBuffer, std::shared_ptr<renderengine::ExternalTexture>(base::unique_fd*));
++    MOCK_METHOD2(perform, int(int,uint64_t));
+     MOCK_METHOD1(queueBuffer, void(base::unique_fd));
+     MOCK_METHOD0(onPresentDisplayCompleted, void());
+     MOCK_METHOD0(flip, void());
+diff --git a/services/surfaceflinger/CompositionEngine/src/ClientCompositionRequestCache.cpp b/services/surfaceflinger/CompositionEngine/src/ClientCompositionRequestCache.cpp
+index 7e020ee1c1..bd38573ff2 100644
+--- a/services/surfaceflinger/CompositionEngine/src/ClientCompositionRequestCache.cpp
++++ b/services/surfaceflinger/CompositionEngine/src/ClientCompositionRequestCache.cpp
+@@ -62,8 +62,14 @@ inline bool equalIgnoringBuffer(const renderengine::LayerSettings& lhs,
+ }
+ 
+ bool layerSettingsAreEqual(const LayerFE::LayerSettings& lhs, const LayerFE::LayerSettings& rhs) {
+-    return lhs.bufferId == rhs.bufferId && lhs.frameNumber == rhs.frameNumber &&
+-            equalIgnoringBuffer(lhs, rhs);
++    // RK Support: 如果出现需要忽略cache的图层，则直接返回false
++    if(!rhs.name.empty() && strstr(rhs.name.c_str(), "rk_handwrite_sf")){
++      return false;
++    }
++
++    return lhs.bufferId == rhs.bufferId &&
++           lhs.frameNumber == rhs.frameNumber &&
++           equalIgnoringBuffer(lhs, rhs);
+ }
+ 
+ } // namespace
+diff --git a/services/surfaceflinger/CompositionEngine/src/CompositionEngine.cpp b/services/surfaceflinger/CompositionEngine/src/CompositionEngine.cpp
+index 6203dc6737..3dbb22124c 100644
+--- a/services/surfaceflinger/CompositionEngine/src/CompositionEngine.cpp
++++ b/services/surfaceflinger/CompositionEngine/src/CompositionEngine.cpp
+@@ -106,10 +106,32 @@ void CompositionEngine::present(CompositionRefreshArgs& args) {
+     }
+ 
+     updateLayerStateFromFE(args);
+-
++#if USE_HWC2ON1ADAPTER
++    /*
++     * For HWC2 adapter to HWC1 on RK platform.
++     * Android 11.0 SurfaceFlinger call HWC by the following software process :
++     *   1. Primary display: updateInfo(Primary display) -> prepareFrame -> hwc-perpare -> postFramebuffer -> hwc-set
++     *   2. Extend  display: updateInfo(Extend display) -> prepareFrame -> hwc-perpare -> postFramebuffer -> hwc-set
++     * It's not suitable for HWC1 version,so amended to the following process:
++     *   1. updateInfo(Primary) -> updateInfo(Extend)
++     *   2. prepareFrame -> hwc-prepare (Primary and Extend display)
++     *   3. postFramebuffer -> hwc-set (Primary and Extend display)
++     */
++    for (const auto& output : args.outputs) {
++        output->updateInfoForHwc2On1Adapter(args);
++    }
++    for (const auto& output : args.outputs) {
++        output->presentForHwc2On1Adapter(args);
++    }
++    for (const auto& output : args.outputs) {
++        output->postBufferForHwc2On1Adapter(args);
++    }
++#else
+     for (const auto& output : args.outputs) {
+         output->present(args);
+     }
++#endif /* #if USE_HWC2ON1ADAPTER */
++
+ }
+ 
+ void CompositionEngine::updateCursorAsync(CompositionRefreshArgs& args) {
+diff --git a/services/surfaceflinger/CompositionEngine/src/Display.cpp b/services/surfaceflinger/CompositionEngine/src/Display.cpp
+index 163d9a3748..0ea7edac70 100644
+--- a/services/surfaceflinger/CompositionEngine/src/Display.cpp
++++ b/services/surfaceflinger/CompositionEngine/src/Display.cpp
+@@ -327,6 +327,10 @@ void Display::applyDisplayRequests(const DisplayRequests& displayRequests) {
+     state.flipClientTarget = (static_cast<uint32_t>(displayRequests) &
+                               static_cast<uint32_t>(hal::DisplayRequest::FLIP_CLIENT_TARGET)) != 0;
+     // Note: HWC2::DisplayRequest::WriteClientTargetToOutput is currently ignored.
++
++    // RK: Reuse FLIP_CLIENT_TARGET definition to implement FramebufferSurface feature.
++    state.useNoAfbcClientTarget = (static_cast<uint32_t>(displayRequests) &
++                              static_cast<uint32_t>(hal::DisplayRequest::FLIP_CLIENT_TARGET)) != 0;
+ }
+ 
+ void Display::applyLayerRequestsToLayers(const LayerRequests& layerRequests) {
+diff --git a/services/surfaceflinger/CompositionEngine/src/Output.cpp b/services/surfaceflinger/CompositionEngine/src/Output.cpp
+index d0c5803d42..39b152e9fd 100644
+--- a/services/surfaceflinger/CompositionEngine/src/Output.cpp
++++ b/services/surfaceflinger/CompositionEngine/src/Output.cpp
+@@ -51,6 +51,8 @@
+ 
+ #include "TracedOrdinal.h"
+ 
++#include <gui/Surface.h>
++
+ using aidl::android::hardware::graphics::composer3::Composition;
+ 
+ namespace android::compositionengine {
+@@ -58,6 +60,12 @@ namespace android::compositionengine {
+ Output::~Output() = default;
+ 
+ namespace impl {
++
++// MALI_GRALLOC_USAGE_NO_AFBC 是 arm_gralloc 扩展的 私有的 usage_bit_flag,
++// 定义在 hardware/rockchip/libgralloc/bifrost/src/mali_gralloc_usages.h 中
++#define GRALLOC_USAGE_PRIVATE_1 1ULL << 29
++#define MALI_GRALLOC_USAGE_NO_AFBC GRALLOC_USAGE_PRIVATE_1
++
+ using CompositionStrategyPredictionState =
+         OutputCompositionState::CompositionStrategyPredictionState;
+ namespace {
+@@ -451,6 +459,45 @@ void Output::present(const compositionengine::CompositionRefreshArgs& refreshArg
+     renderCachedSets(refreshArgs);
+ }
+ 
++/* For HWC2 adapter to HWC1 */
++void Output::updateInfoForHwc2On1Adapter(const compositionengine::CompositionRefreshArgs& refreshArgs) {
++    ATRACE_CALL();
++    ALOGV(__FUNCTION__);
++
++    updateColorProfile(refreshArgs);
++    updateCompositionState(refreshArgs);
++    planComposition();
++    writeCompositionState(refreshArgs);
++    setColorTransform(refreshArgs);
++}
++
++void Output::presentForHwc2On1Adapter(const compositionengine::CompositionRefreshArgs& refreshArgs) {
++    ATRACE_CALL();
++    ALOGV(__FUNCTION__);
++
++    beginFrame();
++
++    GpuCompositionResult result;
++    const bool predictCompositionStrategy = canPredictCompositionStrategy(refreshArgs);
++    if (predictCompositionStrategy) {
++        result = prepareFrameAsync(refreshArgs);
++    } else {
++        prepareFrame();
++    }
++
++    devOptRepaintFlash(refreshArgs);
++    finishFrame(refreshArgs, std::move(result));
++}
++
++void Output::postBufferForHwc2On1Adapter(const compositionengine::CompositionRefreshArgs& refreshArgs) {
++    ATRACE_CALL();
++    ALOGV(__FUNCTION__);
++
++    postFramebuffer();
++    renderCachedSets(refreshArgs);
++}
++/*  */
++
+ void Output::rebuildLayerStacks(const compositionengine::CompositionRefreshArgs& refreshArgs,
+                                 LayerFESet& layerFESet) {
+     ATRACE_CALL();
+@@ -1161,6 +1208,21 @@ bool Output::dequeueRenderBuffer(base::unique_fd* bufferFence,
+     // flipClientTarget request for this frame on this output, we still need to
+     // dequeue a buffer.
+     if (outputState.usesClientComposition || outputState.flipClientTarget) {
++        /*
++        * RK: Support use MALI_GRALLOC_USAGE_NO_AFBC usage to enable/disable
++        *     FramebufferSurface AFBC compression format. This usage is
++        *     set true from HWC.
++        */
++        if(outputState.useNoAfbcClientTarget)
++            mRenderSurface->perform(NATIVE_WINDOW_SET_USAGE,
++                                    MALI_GRALLOC_USAGE_NO_AFBC | GRALLOC_USAGE_HW_FB |
++                                    GRALLOC_USAGE_HW_COMPOSER | GRALLOC_USAGE_HW_RENDER);
++        else
++            mRenderSurface->perform(NATIVE_WINDOW_SET_USAGE,
++                                    GRALLOC_USAGE_HW_FB | GRALLOC_USAGE_HW_COMPOSER |
++                                    GRALLOC_USAGE_HW_RENDER);
++        // RK: end.
++
+         *tex = mRenderSurface->dequeueBuffer(bufferFence);
+         if (*tex == nullptr) {
+             ALOGW("Dequeuing buffer for display [%s] failed, bailing out of "
+diff --git a/services/surfaceflinger/CompositionEngine/src/OutputLayer.cpp b/services/surfaceflinger/CompositionEngine/src/OutputLayer.cpp
+index 1bb9d0eb63..57921e8c69 100644
+--- a/services/surfaceflinger/CompositionEngine/src/OutputLayer.cpp
++++ b/services/surfaceflinger/CompositionEngine/src/OutputLayer.cpp
+@@ -631,6 +631,19 @@ void OutputLayer::writeBufferStateToHWC(HWC2::Layer* hwcLayer,
+         slot = HwcBufferCache::FLATTENER_CACHING_SLOT;
+     }
+ 
++    /*
++     * In order to avoid OOM caused by HwcBufferCache, we limit the maximum buffer
++     * size (Width * Height). When the limit size is exceeded, we only use slot 0
++     * to cache.
++     */
++    int32_t cacheLimitSize = getCacheLimitSize();
++    if (cacheLimitSize > 0 && buffer->getPixelFormat() != PIXEL_FORMAT_RGBA_8888) {
++        int32_t pixelSize = (int32_t)(buffer->getWidth() * buffer->getHeight());
++        if (pixelSize > cacheLimitSize) {
++            slot = 0;
++        }
++    }
++
+     ALOGV("Writing buffer %p", buffer.get());
+ 
+     uint32_t hwcSlot = 0;
+@@ -734,7 +747,7 @@ void OutputLayer::detectDisallowedCompositionTypeChange(Composition from, Compos
+     }
+ 
+     if (!result) {
+-        ALOGE("[%s] Invalid device requested composition type change: %s (%d) --> %s (%d)",
++        ALOGV("[%s] Invalid device requested composition type change: %s (%d) --> %s (%d)",
+               getLayerFE().getDebugName(), to_string(from).c_str(), static_cast<int>(from),
+               to_string(to).c_str(), static_cast<int>(to));
+     }
+@@ -773,8 +786,9 @@ void OutputLayer::applyDeviceLayerRequest(hal::LayerRequest request) {
+             break;
+ 
+         default:
+-            ALOGE("[%s] Unknown device layer request %s (%d)", getLayerFE().getDebugName(),
+-                  toString(request).c_str(), static_cast<int>(request));
++        // RK: ignore request==0, because RK AFBC/no AFBC feature for FramebufferSurface
++        ALOGE_IF(static_cast<int>(request)!=0,"[%s] Unknown device layer request %s (%d)",
++                getLayerFE().getDebugName(),toString(request).c_str(), static_cast<int>(request));
+             break;
+     }
+ }
+diff --git a/services/surfaceflinger/CompositionEngine/src/RenderSurface.cpp b/services/surfaceflinger/CompositionEngine/src/RenderSurface.cpp
+index 5a3af7bfea..d5189cdec5 100644
+--- a/services/surfaceflinger/CompositionEngine/src/RenderSurface.cpp
++++ b/services/surfaceflinger/CompositionEngine/src/RenderSurface.cpp
+@@ -198,6 +198,12 @@ std::shared_ptr<renderengine::ExternalTexture> RenderSurface::dequeueBuffer(
+     return mTexture;
+ }
+ 
++int RenderSurface::perform(int operation, uint64_t usage) {
++    ALOGV("RenderSurface::perform operation = %d, usage=%" PRIx64 ,operation,usage);
++    int result = mNativeWindow->perform(mNativeWindow.get(),operation,usage);  //0x10001a00
++    return result;
++}
++
+ void RenderSurface::queueBuffer(base::unique_fd readyFence) {
+     auto& state = mDisplay.getState();
+ 

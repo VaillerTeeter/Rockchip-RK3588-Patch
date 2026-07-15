@@ -1,0 +1,171 @@
+From a16bb7669105c6b2f1ad18bddf3e4f2dadd1139c Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 17:20:26 +0800
+Subject: [PATCH] fix: CEC standby broadcast, chi to zho language mapping,
+ WAKEUP option, and TextViewOn
+
+Change-Id: Ibe5bb49e6b6fbd12217040b3f30e252014033848
+
+diff --git a/services/core/java/com/android/server/hdmi/HdmiCecController.java b/services/core/java/com/android/server/hdmi/HdmiCecController.java
+index 1a568c30c899..ba6898ee7bce 100644
+--- a/services/core/java/com/android/server/hdmi/HdmiCecController.java
++++ b/services/core/java/com/android/server/hdmi/HdmiCecController.java
+@@ -664,6 +664,12 @@ final class HdmiCecController {
+                         cecMessage.getSource(), cecMessage.getDestination(), body);
+                     if (errorCode == SendMessageResult.SUCCESS) {
+                         break;
++                    } else {
++                        /* If send msg failed, we need delay before retransmission */
++                        try {
++                           Thread.sleep(300);
++                        } catch (InterruptedException ignore) {
++                        }
+                     }
+                 } while (retransmissionCount++ < HdmiConfig.RETRANSMISSION_COUNT);
+ 
+diff --git a/services/core/java/com/android/server/hdmi/HdmiCecLocalDevicePlayback.java b/services/core/java/com/android/server/hdmi/HdmiCecLocalDevicePlayback.java
+index 576a5ff4305e..56dee9ae77d5 100644
+--- a/services/core/java/com/android/server/hdmi/HdmiCecLocalDevicePlayback.java
++++ b/services/core/java/com/android/server/hdmi/HdmiCecLocalDevicePlayback.java
+@@ -119,6 +119,11 @@ public class HdmiCecLocalDevicePlayback extends HdmiCecLocalDeviceSource {
+                     });
+         }
+         launchDeviceDiscovery();
++        /* add one touch play after hdmi plug in and cec initialization */
++        mService.sendCecCommand(HdmiCecMessageBuilder.buildActiveSource(
++                getDeviceInfo().getLogicalAddress(), mService.getPhysicalAddress()));
++        mService.sendCecCommand(HdmiCecMessageBuilder.buildTextViewOn(
++                getDeviceInfo().getLogicalAddress(), Constants.ADDR_TV));
+         startQueuedActions();
+     }
+ 
+@@ -248,11 +253,10 @@ public class HdmiCecLocalDevicePlayback extends HdmiCecLocalDeviceSource {
+         }
+         boolean wasActiveSource = isActiveSource();
+         // Invalidate the internal active source record when going to standby
+-        mService.setActiveSource(Constants.ADDR_INVALID, Constants.INVALID_PHYSICAL_ADDRESS,
+-                "HdmiCecLocalDevicePlayback#onStandby()");
+-        if (!wasActiveSource) {
++        mService.setActiveSource(Constants.ADDR_INVALID, Constants.INVALID_PHYSICAL_ADDRESS,"HdmiCecLocalDevicePlayback#onStandby()");
++        /*if (!wasActiveSource) {
+             return;
+-        }
++        }*/
+         if (initiatedByCec) {
+             mService.sendCecCommand(
+                     HdmiCecMessageBuilder.buildInactiveSource(
+@@ -265,6 +269,8 @@ public class HdmiCecLocalDevicePlayback extends HdmiCecLocalDeviceSource {
+                 @HdmiControlManager.PowerControlMode
+                 String powerControlMode = mService.getHdmiCecConfig().getStringValue(
+                         HdmiControlManager.CEC_SETTING_NAME_POWER_CONTROL_MODE);
++	    /* cec cts specification requires that standby message must be broadcast */
++		mService.sendCecCommand(HdmiCecMessageBuilder.buildStandby(getDeviceInfo().getLogicalAddress(), Constants.ADDR_BROADCAST));
+                 switch (powerControlMode) {
+                     case HdmiControlManager.POWER_CONTROL_MODE_TV:
+                         mService.sendCecCommand(
+@@ -336,7 +342,7 @@ public class HdmiCecLocalDevicePlayback extends HdmiCecLocalDeviceSource {
+     private ActiveWakeLock getWakeLock() {
+         assertRunOnServiceThread();
+         if (mWakeLock == null) {
+-            if (SystemProperties.getBoolean(Constants.PROPERTY_KEEP_AWAKE, true)) {
++            if (SystemProperties.getBoolean(Constants.PROPERTY_KEEP_AWAKE, false)) {
+                 mWakeLock = new SystemWakeLock();
+             } else {
+                 // Create a stub lock object that doesn't do anything about wake lock,
+@@ -396,6 +402,11 @@ public class HdmiCecLocalDevicePlayback extends HdmiCecLocalDeviceSource {
+         try {
+             String iso3Language = new String(message.getParams(), 0, 3, "US-ASCII");
+             Locale currentLocale = mService.getContext().getResources().getConfiguration().locale;
++	    /* android recognizes all chinese as zho */
++            if (iso3Language.equals("chi")) {
++                Slog.i(TAG, "android set all chinese zho");
++                iso3Language = "zho";
++            }
+             String curIso3Language = mService.localeToMenuLanguage(currentLocale);
+             HdmiLogger.debug("handleSetMenuLanguage " + iso3Language + " cur:" + curIso3Language);
+             if (curIso3Language.equals(iso3Language)) {
+@@ -540,6 +551,15 @@ public class HdmiCecLocalDevicePlayback extends HdmiCecLocalDeviceSource {
+         return Constants.ADDR_TV;
+     }
+ 
++    @ServiceThreadOnly
++    protected void sendStandby(int deviceId) {
++        assertRunOnServiceThread();
++
++        /* cec cts specification requires that standby message must be broadcast */
++        int targetAddress = Constants.ADDR_BROADCAST;
++        mService.sendCecCommand(HdmiCecMessageBuilder.buildStandby(getDeviceInfo().getLogicalAddress(), targetAddress));
++    }
++
+     @Override
+     @ServiceThreadOnly
+     protected void disableDevice(boolean initiatedByCec, PendingActionClearedCallback callback) {
+diff --git a/services/core/java/com/android/server/hdmi/HdmiCecLocalDeviceTv.java b/services/core/java/com/android/server/hdmi/HdmiCecLocalDeviceTv.java
+index 9bce471fd0cb..9ec1bb3d76a8 100644
+--- a/services/core/java/com/android/server/hdmi/HdmiCecLocalDeviceTv.java
++++ b/services/core/java/com/android/server/hdmi/HdmiCecLocalDeviceTv.java
+@@ -1608,7 +1608,9 @@ final class HdmiCecLocalDeviceTv extends HdmiCecLocalDevice {
+         if (targetDevice == null) {
+             return;
+         }
+-        int targetAddress = targetDevice.getLogicalAddress();
++	/* cec cts specification requires that standby message must be broadcast */
++	int targetAddress = Constants.ADDR_BROADCAST;
++        //int targetAddress = targetDevice.getLogicalAddress();
+         mService.sendCecCommand(
+                 HdmiCecMessageBuilder.buildStandby(
+                         getDeviceInfo().getLogicalAddress(), targetAddress));
+diff --git a/services/core/java/com/android/server/hdmi/HdmiControlService.java b/services/core/java/com/android/server/hdmi/HdmiControlService.java
+index f8a74f4f3f55..7f909422517f 100644
+--- a/services/core/java/com/android/server/hdmi/HdmiControlService.java
++++ b/services/core/java/com/android/server/hdmi/HdmiControlService.java
+@@ -729,9 +729,11 @@ public class HdmiControlService extends SystemService {
+                 new HdmiCecConfig.SettingChangeListener() {
+                     @Override
+                     public void onChange(String setting) {
+-                        if (isTvDeviceEnabled()) {
+-                            setCecOption(OptionKey.WAKEUP, tv().getAutoWakeup());
+-                        }
++                        //if (isTvDeviceEnabled()) {
++                            setCecOption(OptionKey.WAKEUP, getHdmiCecConfig().getIntValue(
++                                    HdmiControlManager.CEC_SETTING_NAME_TV_WAKE_ON_ONE_TOUCH_PLAY)
++                                      == HdmiControlManager.TV_WAKE_ON_ONE_TOUCH_PLAY_ENABLED);//tv().getAutoWakeup());
++                        //}
+                     }
+                 }, mServiceThreadExecutor);
+     }
+@@ -853,9 +855,9 @@ public class HdmiControlService extends SystemService {
+         updatePowerStatusOnInitializeCecComplete();
+         mWakeUpMessageReceived = false;
+ 
+-        if (isTvDeviceEnabled()) {
+-            mCecController.setOption(OptionKey.WAKEUP, tv().getAutoWakeup());
+-        }
++        //if (isTvDeviceEnabled()) {
++            mCecController.setOption(OptionKey.WAKEUP, true);//tv().getAutoWakeup());
++        //}
+         int reason = -1;
+         switch (initiatedBy) {
+             case INITIATED_BY_BOOT_UP:
+@@ -3613,7 +3615,6 @@ public class HdmiControlService extends SystemService {
+         mCecController.setOption(OptionKey.ENABLE_CEC, true);
+         mCecController.setOption(OptionKey.SYSTEM_CEC_CONTROL, true);
+         mMhlController.setOption(OPTION_MHL_ENABLE, ENABLED);
+-
+         initializeCec(INITIATED_BY_ENABLE_CEC);
+     }
+ 
+diff --git a/services/core/java/com/android/server/hdmi/OneTouchPlayAction.java b/services/core/java/com/android/server/hdmi/OneTouchPlayAction.java
+index 3dcf72eb38d6..74d2e7123ce5 100644
+--- a/services/core/java/com/android/server/hdmi/OneTouchPlayAction.java
++++ b/services/core/java/com/android/server/hdmi/OneTouchPlayAction.java
+@@ -152,6 +152,9 @@ final class OneTouchPlayAction extends HdmiCecFeatureAction {
+                 broadcastActiveSource();
+                 finishWithCallback(HdmiControlManager.RESULT_SUCCESS);
+             }
++
++            if (status == HdmiControlManager.POWER_STATUS_STANDBY)
++                sendCommand(HdmiCecMessageBuilder.buildTextViewOn(getSourceAddress(), mTargetAddress));
+             return true;
+         }
+         return false;

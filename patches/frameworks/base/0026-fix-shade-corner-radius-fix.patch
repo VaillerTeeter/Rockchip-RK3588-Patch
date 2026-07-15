@@ -1,0 +1,87 @@
+From 492620aecdc897e439b8ee28f0ed2d23c6ac53cd Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 17:52:40 +0800
+Subject: [PATCH] fix: shade corner radius fix
+
+Change-Id: Ic536c491f69717aee2ac80c6abcdade12a880b61
+
+diff --git a/packages/SystemUI/src/com/android/systemui/shade/NotificationsQuickSettingsContainer.java b/packages/SystemUI/src/com/android/systemui/shade/NotificationsQuickSettingsContainer.java
+index f6d98977744f..f73dde632051 100644
+--- a/packages/SystemUI/src/com/android/systemui/shade/NotificationsQuickSettingsContainer.java
++++ b/packages/SystemUI/src/com/android/systemui/shade/NotificationsQuickSettingsContainer.java
+@@ -54,7 +54,6 @@ public class NotificationsQuickSettingsContainer extends ConstraintLayout
+     private Consumer<QS> mQSFragmentAttachedListener = qs -> {};
+     private QS mQs;
+     private View mQSContainer;
+-    private int mLastQSPaddingBottom;
+ 
+     @Nullable
+     private Consumer<Configuration> mConfigurationChangedListener;
+@@ -76,10 +75,6 @@ public class NotificationsQuickSettingsContainer extends ConstraintLayout
+         mQs = (QS) fragment;
+         mQSFragmentAttachedListener.accept(mQs);
+         mQSContainer = mQs.getView().findViewById(R.id.quick_settings_container);
+-        // We need to restore the bottom padding as the fragment may have been recreated due to
+-        // some special Configuration change, so we apply the last known padding (this will be
+-        // correct even if it has changed while the fragment was destroyed and re-created).
+-        setQSContainerPaddingBottom(mLastQSPaddingBottom);
+     }
+ 
+     @Override
+@@ -106,7 +101,6 @@ public class NotificationsQuickSettingsContainer extends ConstraintLayout
+     }
+ 
+     public void setQSContainerPaddingBottom(int paddingBottom) {
+-        mLastQSPaddingBottom = paddingBottom;
+         if (mQSContainer != null) {
+             mQSContainer.setPadding(
+                     mQSContainer.getPaddingLeft(),
+diff --git a/packages/SystemUI/src/com/android/systemui/shade/QuickSettingsController.java b/packages/SystemUI/src/com/android/systemui/shade/QuickSettingsController.java
+index 19d83340dc28..69ef15d625a4 100644
+--- a/packages/SystemUI/src/com/android/systemui/shade/QuickSettingsController.java
++++ b/packages/SystemUI/src/com/android/systemui/shade/QuickSettingsController.java
+@@ -83,6 +83,7 @@ import com.android.systemui.statusbar.phone.ScrimController;
+ import com.android.systemui.statusbar.phone.StatusBarKeyguardViewManager;
+ import com.android.systemui.statusbar.phone.StatusBarTouchableRegionManager;
+ import com.android.systemui.statusbar.phone.dagger.CentralSurfacesComponent;
++import com.android.systemui.statusbar.policy.CastController;
+ import com.android.systemui.statusbar.policy.KeyguardStateController;
+ import com.android.systemui.util.LargeScreenUtils;
+ 
+@@ -127,6 +128,7 @@ public class QuickSettingsController {
+     private final FalsingCollector mFalsingCollector;
+     private final LockscreenGestureLogger mLockscreenGestureLogger;
+     private final ShadeLogger mShadeLog;
++    private final CastController mCastController;
+     private final FeatureFlags mFeatureFlags;
+     private final InteractionJankMonitor mInteractionJankMonitor;
+     private final FalsingManager mFalsingManager;
+@@ -306,7 +308,8 @@ public class QuickSettingsController {
+             MetricsLogger metricsLogger,
+             FeatureFlags featureFlags,
+             InteractionJankMonitor interactionJankMonitor,
+-            ShadeLogger shadeLog
++            ShadeLogger shadeLog,
++            CastController castController
+     ) {
+         mPanelViewControllerLazy = panelViewControllerLazy;
+         mPanelView = panelView;
+@@ -345,6 +348,7 @@ public class QuickSettingsController {
+         mLockscreenGestureLogger = lockscreenGestureLogger;
+         mMetricsLogger = metricsLogger;
+         mShadeLog = shadeLog;
++        mCastController = castController;
+         mFeatureFlags = featureFlags;
+         mInteractionJankMonitor = interactionJankMonitor;
+ 
+@@ -1132,7 +1136,9 @@ public class QuickSettingsController {
+         mLastClipBounds.set(left, top, right, bottom);
+         if (mIsFullWidth) {
+             clipStatusView = qsVisible;
+-            float screenCornerRadius = mRecordingController.isRecording() ? 0 : mScreenCornerRadius;
++            float screenCornerRadius =
++                    mRecordingController.isRecording() || mCastController.hasConnectedCastDevice()
++                            ? 0 : mScreenCornerRadius;
+             radius = (int) MathUtils.lerp(screenCornerRadius, mScrimCornerRadius,
+                     Math.min(top / (float) mScrimCornerRadius, 1f));
+         }

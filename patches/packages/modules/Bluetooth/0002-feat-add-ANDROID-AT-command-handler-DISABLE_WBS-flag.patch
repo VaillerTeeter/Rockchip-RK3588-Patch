@@ -1,0 +1,80 @@
+From 252f62b30506e9bdfb672bf6eadf7deff62d15ea Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Sun, 12 Jul 2026 01:14:42 +0800
+Subject: [PATCH 83/89] feat: add +ANDROID AT command handler, DISABLE_WBS
+ flag, ESCO_DATA_PATH guard, and force-enable ProfileService for Rockchip BT
+ compatibility
+
+Change-Id: I95885655029281eb525e2304dc6942d573439301
+---
+ .../src/com/android/bluetooth/btservice/ProfileService.java   | 1 +
+ .../src/com/android/bluetooth/hfp/HeadsetStateMachine.java    | 2 ++
+ system/btif/src/btif_hf.cc                                    | 4 ++++
+ system/device/include/esco_parameters.h                       | 3 +++
+ 4 files changed, 10 insertions(+)
+
+diff --git a/android/app/src/com/android/bluetooth/btservice/ProfileService.java b/android/app/src/com/android/bluetooth/btservice/ProfileService.java
+index 7178ae3039..020fac1ce7 100644
+--- a/android/app/src/com/android/bluetooth/btservice/ProfileService.java
++++ b/android/app/src/com/android/bluetooth/btservice/ProfileService.java
+@@ -252,6 +252,7 @@ public abstract class ProfileService extends Service {
+         if (component == null) {
+             return;
+         }
++        enable = true;
+         getPackageManager().setComponentEnabledSetting(
+                 component,
+                 enable ? PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+diff --git a/android/app/src/com/android/bluetooth/hfp/HeadsetStateMachine.java b/android/app/src/com/android/bluetooth/hfp/HeadsetStateMachine.java
+index 52f2949d4d..03ea3fac43 100644
+--- a/android/app/src/com/android/bluetooth/hfp/HeadsetStateMachine.java
++++ b/android/app/src/com/android/bluetooth/hfp/HeadsetStateMachine.java
+@@ -2096,6 +2096,8 @@ public class HeadsetStateMachine extends StateMachine {
+             processAtCpbs(atCommand.substring(5), commandType, device);
+         } else if (atCommand.startsWith("+CPBR")) {
+             processAtCpbr(atCommand.substring(5), commandType, device);
++        } else if (atCommand.startsWith("+ANDROID")) {
++            processAndroidAt(atCommand, device);
+         } else {
+             processVendorSpecificAt(atCommand, device);
+         }
+diff --git a/system/btif/src/btif_hf.cc b/system/btif/src/btif_hf.cc
+index 4d5aa1e1b1..245763daed 100644
+--- a/system/btif/src/btif_hf.cc
++++ b/system/btif/src/btif_hf.cc
+@@ -774,6 +774,10 @@ class HeadsetInterface : Interface {
+ 
+ bt_status_t HeadsetInterface::Init(Callbacks* callbacks, int max_hf_clients,
+                                    bool inband_ringing_enabled) {
++#if (DISABLE_WBS == TRUE)
++  btif_hf_features &= ~BTA_AG_FEAT_CODEC;
++#endif
++
+   if (inband_ringing_enabled) {
+     btif_hf_features |= BTA_AG_FEAT_INBAND;
+   } else {
+diff --git a/system/device/include/esco_parameters.h b/system/device/include/esco_parameters.h
+index 52b51f19b8..c067636819 100644
+--- a/system/device/include/esco_parameters.h
++++ b/system/device/include/esco_parameters.h
+@@ -19,6 +19,7 @@
+ #pragma once
+ 
+ #include <stdint.h>
++#include "bdroid_buildcfg.h"
+ 
+ /*******************
+  * SCO Codec Types
+@@ -59,7 +60,9 @@ typedef uint8_t esco_coding_format_t;
+ typedef uint8_t esco_pcm_data_format_t;
+ 
+ // SCO Data Path
++#ifndef ESCO_DATA_PATH_PCM
+ #define ESCO_DATA_PATH_PCM 1                /* 0x01-0xFE (PCM Chan) */
++#endif
+ #define ESCO_DATA_PATH_HCI 0                /* HCI-0, 0x01-0xFE (PCM Chan) */
+ typedef uint8_t esco_data_path_t;
+ 
+-- 
+2.53.0
+

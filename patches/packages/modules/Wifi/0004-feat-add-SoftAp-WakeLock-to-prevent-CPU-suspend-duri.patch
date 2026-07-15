@@ -1,0 +1,65 @@
+From 71d5af7d3f9b2455d7ea98af2566e7f92ab37a3d Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Sun, 12 Jul 2026 01:47:53 +0800
+Subject: [PATCH 94/95] feat: add SoftAp WakeLock to prevent CPU suspend during
+ SoftAP operation for Rockchip WiFi
+
+Change-Id: Idff9a92aa4666707f2fe5cdc396ade39b7749f6a
+---
+ .../java/com/android/server/wifi/SoftApManager.java  | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/service/java/com/android/server/wifi/SoftApManager.java b/service/java/com/android/server/wifi/SoftApManager.java
+index a15ebae421..8ce9f06240 100644
+--- a/service/java/com/android/server/wifi/SoftApManager.java
++++ b/service/java/com/android/server/wifi/SoftApManager.java
+@@ -45,6 +45,7 @@ import android.os.BatteryManager;
+ import android.os.Handler;
+ import android.os.Looper;
+ import android.os.Message;
++import android.os.PowerManager;
+ import android.os.SystemClock;
+ import android.os.UserHandle;
+ import android.os.WorkSource;
+@@ -157,6 +158,7 @@ public class SoftApManager implements ActiveModeManager {
+     private boolean mBridgedModeOpportunisticsShutdownTimeoutEnabled = false;
+ 
+     private final SarManager mSarManager;
++    private PowerManager.WakeLock mSoftApWakeLock;
+ 
+     private String mStartTimestamp;
+ 
+@@ -413,6 +415,8 @@ public class SoftApManager implements ActiveModeManager {
+         mRole = role;
+         enableVerboseLogging(verboseLoggingEnabled);
+         mStateMachine.sendMessage(SoftApStateMachine.CMD_START, requestorWs);
++	PowerManager powerManager = (PowerManager) mContext.getSystemService(Context.POWER_SERVICE);
++	mSoftApWakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "SoftAp");
+     }
+ 
+     @Override
+@@ -757,6 +761,10 @@ public class SoftApManager implements ActiveModeManager {
+ 
+         mWifiDiagnostics.startLogging(mApInterfaceName);
+         mStartTimestamp = FORMATTER.format(new Date(System.currentTimeMillis()));
++	if (!mSoftApWakeLock.isHeld()) {
++		Log.d(TAG,"---- mSoftApWakeLock.acquire ----");
++		mSoftApWakeLock.acquire();
++	}
+         Log.d(getTag(), "Soft AP is started ");
+ 
+         return SUCCESS;
+@@ -780,6 +788,10 @@ public class SoftApManager implements ActiveModeManager {
+         disconnectAllClients();
+         mWifiDiagnostics.stopLogging(mApInterfaceName);
+         mWifiNative.teardownInterface(mApInterfaceName);
++	if (mSoftApWakeLock.isHeld()) {
++		Log.d(TAG,"---- mSoftApWakeLock.release ----");
++		mSoftApWakeLock.release();
++	}
+         Log.d(getTag(), "Soft AP is stopped");
+     }
+ 
+-- 
+2.53.0
+

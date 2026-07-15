@@ -1,0 +1,439 @@
+From e3ccab2d1709c048321d82a5476d8d10e72be752 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 15:33:41 +0800
+Subject: [PATCH] feat: add Rockchip SurfaceFlinger core and DisplayHardware
+ (AFBC, virtual display, HWC2 adapter, FPS debug)
+
+Change-Id: Ifce28a90601a289a2fdbd02223b95eb4a59330a8
+
+diff --git a/services/surfaceflinger/DisplayHardware/AidlComposerHal.cpp b/services/surfaceflinger/DisplayHardware/AidlComposerHal.cpp
+index 79dcd159d3..fb5f0cb30f 100644
+--- a/services/surfaceflinger/DisplayHardware/AidlComposerHal.cpp
++++ b/services/surfaceflinger/DisplayHardware/AidlComposerHal.cpp
+@@ -765,6 +765,7 @@ Error AidlComposer::execute() {
+         auto status = mAidlComposerClient->executeCommands(commands, &results);
+         if (!status.isOk()) {
+             ALOGE("executeCommands failed %s", status.getDescription().c_str());
++            mWriter.reset();
+             return static_cast<Error>(status.getServiceSpecificError());
+         }
+ 
+@@ -776,6 +777,7 @@ Error AidlComposer::execute() {
+         const auto index = static_cast<size_t>(cmdErr.commandIndex);
+         if (index < 0 || index >= commands.size()) {
+             ALOGE("invalid command index %zu", index);
++            mWriter.reset();
+             return Error::BAD_PARAMETER;
+         }
+ 
+diff --git a/services/surfaceflinger/DisplayHardware/FramebufferSurface.cpp b/services/surfaceflinger/DisplayHardware/FramebufferSurface.cpp
+index eb14933a61..20ec90d1ad 100644
+--- a/services/surfaceflinger/DisplayHardware/FramebufferSurface.cpp
++++ b/services/surfaceflinger/DisplayHardware/FramebufferSurface.cpp
+@@ -48,6 +48,9 @@ namespace android {
+ 
+ using ui::Dataspace;
+ 
++/* SurfaceFlinger cannot simply include './src/mali_gralloc_usages.h', so a copy is defined. */
++#define RK_GRALLOC_USAGE_EXTERNAL_DISP (1ULL << 55)
++
+ FramebufferSurface::FramebufferSurface(HWComposer& hwc, PhysicalDisplayId displayId,
+                                        const sp<IGraphicBufferConsumer>& consumer,
+                                        const ui::Size& size, const ui::Size& maxSize)
+@@ -65,9 +68,32 @@ FramebufferSurface::FramebufferSurface(HWComposer& hwc, PhysicalDisplayId displa
+ 
+     mName = "FramebufferSurface";
+     mConsumer->setConsumerName(mName);
+-    mConsumer->setConsumerUsageBits(GRALLOC_USAGE_HW_FB |
+-                                       GRALLOC_USAGE_HW_RENDER |
+-                                       GRALLOC_USAGE_HW_COMPOSER);
++    /* modify usage for rockchip afbc layer select
++     * When the external display of the chip platform
++     * does not support afbc, configure
++     * RK_GRALLOC_USAGE_EXTERNAL_DISP/GRALLOC_USAGE__RK_EXT__EXTERNAL_DISP
++     * to gralloc. */
++    uint64_t flags = GRALLOC_USAGE_HW_FB | GRALLOC_USAGE_HW_RENDER |
++                     GRALLOC_USAGE_HW_COMPOSER;
++
++#if DISABLE_EXTERNAL_DISP_AFBC
++        if ((displayId.value & 0xff) != LEGACY_DISPLAY_TYPE_PRIMARY) {
++            /* Through this usage, gralloc will disable AFBC on the external display. */
++#if USE_GRALLOC_4
++            flags |= RK_GRALLOC_USAGE_EXTERNAL_DISP;
++#else
++// On gralloc 0.3, GRALLOC_USAGE__RK_EXT__EXTERNAL_DISP is defined
++// in hardware/rockchip/libhardware_rockchip/include/hardware/gralloc_rockchip.h,
++// which is a vendor header, could not be included here.
++#define GRALLOC_USAGE__RK_EXT__EXTERNAL_DISP (0x04000000U)
++
++            flags |= GRALLOC_USAGE__RK_EXT__EXTERNAL_DISP;
++#endif
++        }
++#endif
++
++    mConsumer->setConsumerUsageBits(flags);
++
+     const auto limitedSize = limitSize(size);
+     mConsumer->setDefaultBufferSize(limitedSize.width, limitedSize.height);
+     mConsumer->setMaxAcquiredBufferCount(
+diff --git a/services/surfaceflinger/DisplayHardware/HWC2.cpp b/services/surfaceflinger/DisplayHardware/HWC2.cpp
+index c52e96d146..40e17efd56 100644
+--- a/services/surfaceflinger/DisplayHardware/HWC2.cpp
++++ b/services/surfaceflinger/DisplayHardware/HWC2.cpp
+@@ -273,7 +273,9 @@ Error Display::getRequests(HWC2::DisplayRequest* outDisplayRequests,
+                     static_cast<LayerRequest>(layerRequests[element]);
+             outLayerRequests->emplace(layer.get(), layerRequest);
+         } else {
+-            ALOGE("getRequests: invalid layer %" PRIu64 " found on display %"
++            // ALOGE("getRequests: invalid layer %" PRIu64 " found on display %"
++            //         PRIu64, layerIds[element], mId);
++            ALOGV("getRequests: invalid layer %" PRIu64 " found on display %"
+                     PRIu64, layerIds[element], mId);
+         }
+     }
+diff --git a/services/surfaceflinger/DisplayHardware/HWComposer.cpp b/services/surfaceflinger/DisplayHardware/HWComposer.cpp
+index a6aee1f2f5..1dd427b812 100644
+--- a/services/surfaceflinger/DisplayHardware/HWComposer.cpp
++++ b/services/surfaceflinger/DisplayHardware/HWComposer.cpp
+@@ -874,10 +874,10 @@ bool HWComposer::shouldIgnoreHotplugConnect(hal::HWDisplayId hwcDisplayId,
+     }
+ 
+     // Legacy mode only supports IDs LEGACY_DISPLAY_TYPE_PRIMARY and LEGACY_DISPLAY_TYPE_EXTERNAL.
+-    if (!mHasMultiDisplaySupport && mPhysicalDisplayIdMap.size() == 2) {
+-        ALOGE("Ignoring connection of tertiary display %" PRIu64, hwcDisplayId);
+-        return true;
+-    }
++    // if (!mHasMultiDisplaySupport && mPhysicalDisplayIdMap.size() == 2) {
++    //     ALOGE("Ignoring connection of tertiary display %" PRIu64, hwcDisplayId);
++    //     return true;
++    // }
+ 
+     return false;
+ }
+@@ -922,9 +922,10 @@ std::optional<DisplayIdentificationInfo> HWComposer::onHotplugConnect(
+                 }
+                 ALOGE("Failed to parse identification data for display %" PRIu64, hwcDisplayId);
+             } else {
++                port = isPrimary ? LEGACY_DISPLAY_TYPE_PRIMARY : hwcDisplayId;
+                 ALOGW_IF(hasDisplayIdentificationData,
+                          "Ignoring identification data for display %" PRIu64, hwcDisplayId);
+-                port = isPrimary ? LEGACY_DISPLAY_TYPE_PRIMARY : LEGACY_DISPLAY_TYPE_EXTERNAL;
++
+             }
+ 
+             return DisplayIdentificationInfo{.id = PhysicalDisplayId::fromPort(port),
+diff --git a/services/surfaceflinger/DisplayHardware/VirtualDisplaySurface.cpp b/services/surfaceflinger/DisplayHardware/VirtualDisplaySurface.cpp
+index 3803a78670..9b656f3eda 100644
+--- a/services/surfaceflinger/DisplayHardware/VirtualDisplaySurface.cpp
++++ b/services/surfaceflinger/DisplayHardware/VirtualDisplaySurface.cpp
+@@ -46,6 +46,14 @@
+ 
+ namespace android {
+ 
++#ifdef HWC_VIR_DISPLAY_USE_NO_AFBC
++/* Gralloc 4.0 中, 表征 "调用 alloc() 的 client 要求分配的 buffer 不是 AFBC 格式".
++*/
++#define MALI_GRALLOC_USAGE_NO_AFBC (1ULL << 29)
++#else
++#define MALI_GRALLOC_USAGE_NO_AFBC (0)
++#endif
++
+ VirtualDisplaySurface::VirtualDisplaySurface(HWComposer& hwc, VirtualDisplayId displayId,
+                                              const sp<IGraphicBufferProducer>& sink,
+                                              const sp<IGraphicBufferProducer>& bqProducer,
+@@ -56,9 +64,9 @@ VirtualDisplaySurface::VirtualDisplaySurface(HWComposer& hwc, VirtualDisplayId d
+         mDisplayId(displayId),
+         mDisplayName(name),
+         mSource{},
+-        mDefaultOutputFormat(HAL_PIXEL_FORMAT_IMPLEMENTATION_DEFINED),
+-        mOutputFormat(HAL_PIXEL_FORMAT_IMPLEMENTATION_DEFINED),
+-        mOutputUsage(GRALLOC_USAGE_HW_COMPOSER),
++        mDefaultOutputFormat(HAL_PIXEL_FORMAT_RGBA_8888),
++        mOutputFormat(HAL_PIXEL_FORMAT_RGBA_8888),
++        mOutputUsage(GRALLOC_USAGE_HW_COMPOSER | MALI_GRALLOC_USAGE_NO_AFBC),
+         mProducerSlotSource(0),
+         mProducerBuffers(),
+         mProducerSlotNeedReallocation(0),
+@@ -92,13 +100,16 @@ VirtualDisplaySurface::VirtualDisplaySurface(HWComposer& hwc, VirtualDisplayId d
+         sink->query(NATIVE_WINDOW_FORMAT, &sinkFormat);
+         mDefaultOutputFormat = sinkFormat;
+     } else {
+-        mDefaultOutputFormat = HAL_PIXEL_FORMAT_IMPLEMENTATION_DEFINED;
++        mDefaultOutputFormat = HAL_PIXEL_FORMAT_RGBA_8888;
+     }
++    // 由于编码端强制设置输入格式位 RGBA，故此处暂时设置为对应格式
++    // 待编码端适配代码实现后再考虑去掉该限制
++    mDefaultOutputFormat = HAL_PIXEL_FORMAT_RGBA_8888;
+     mOutputFormat = mDefaultOutputFormat;
+ 
+     ConsumerBase::mName = String8::format("VDS: %s", mDisplayName.c_str());
+     mConsumer->setConsumerName(ConsumerBase::mName);
+-    mConsumer->setConsumerUsageBits(GRALLOC_USAGE_HW_COMPOSER);
++    mConsumer->setConsumerUsageBits(GRALLOC_USAGE_HW_COMPOSER | MALI_GRALLOC_USAGE_NO_AFBC);
+     mConsumer->setDefaultBufferSize(sinkWidth, sinkHeight);
+     sink->setAsyncMode(true);
+     IGraphicBufferProducer::QueueBufferOutput output;
+@@ -115,6 +126,8 @@ status_t VirtualDisplaySurface::beginFrame(bool mustRecompose) {
+     }
+ 
+     mMustRecompose = mustRecompose;
++    // HW虚拟屏建议强制使能 mMustRecompose
++    mMustRecompose = true;
+ 
+     VDS_LOGW_IF(mDebugState != DebugState::Idle, "Unexpected %s in %s state", __func__,
+                 ftl::enum_string(mDebugState).c_str());
+@@ -152,7 +165,8 @@ status_t VirtualDisplaySurface::prepareFrame(CompositionType compositionType) {
+     }
+ 
+     if (mCompositionType != CompositionType::Gpu &&
+-        (mOutputFormat != mDefaultOutputFormat || mOutputUsage != GRALLOC_USAGE_HW_COMPOSER)) {
++        (mOutputFormat != mDefaultOutputFormat ||
++        (mOutputUsage != (GRALLOC_USAGE_HW_COMPOSER | MALI_GRALLOC_USAGE_NO_AFBC)))) {
+         // We must have just switched from GPU-only to MIXED or HWC
+         // composition. Stop using the format and usage requested by the GPU
+         // driver; they may be suboptimal when HWC is writing to the output
+@@ -164,7 +178,7 @@ status_t VirtualDisplaySurface::prepareFrame(CompositionType compositionType) {
+         // format/usage and get a new buffer when the GPU driver calls
+         // dequeueBuffer().
+         mOutputFormat = mDefaultOutputFormat;
+-        mOutputUsage = GRALLOC_USAGE_HW_COMPOSER;
++        mOutputUsage = (GRALLOC_USAGE_HW_COMPOSER | MALI_GRALLOC_USAGE_NO_AFBC);
+         refreshOutputBuffer();
+     }
+ 
+@@ -612,6 +626,8 @@ void VirtualDisplaySurface::resetPerFrameState() {
+ status_t VirtualDisplaySurface::refreshOutputBuffer() {
+     LOG_ALWAYS_FATAL_IF(GpuVirtualDisplayId::tryCast(mDisplayId).has_value());
+ 
++    mOutputUsage = mOutputUsage | MALI_GRALLOC_USAGE_NO_AFBC;
++
+     if (mOutputProducerSlot >= 0) {
+         mSource[SOURCE_SINK]->cancelBuffer(
+                 mapProducer2SourceSlot(SOURCE_SINK, mOutputProducerSlot),
+diff --git a/services/surfaceflinger/SurfaceFlinger.cpp b/services/surfaceflinger/SurfaceFlinger.cpp
+index 494aa2c2cf..01641736c0 100644
+--- a/services/surfaceflinger/SurfaceFlinger.cpp
++++ b/services/surfaceflinger/SurfaceFlinger.cpp
+@@ -344,7 +344,7 @@ SurfaceFlinger::SurfaceFlinger(Factory& factory) : SurfaceFlinger(factory, SkipI
+ 
+     useHwcForRgbToYuv = force_hwc_copy_for_virtual_displays(false);
+ 
+-    maxFrameBufferAcquiredBuffers = max_frame_buffer_acquired_buffers(2);
++    maxFrameBufferAcquiredBuffers = max_frame_buffer_acquired_buffers(3);
+ 
+     maxGraphicsWidth = std::max(max_graphics_width(0), 0);
+     maxGraphicsHeight = std::max(max_graphics_height(0), 0);
+@@ -555,19 +555,23 @@ void SurfaceFlinger::enableHalVirtualDisplays(bool enable) {
+ }
+ 
+ VirtualDisplayId SurfaceFlinger::acquireVirtualDisplay(ui::Size resolution,
+-                                                       ui::PixelFormat format) {
+-    if (auto& generator = mVirtualDisplayIdGenerators.hal) {
+-        if (const auto id = generator->generateId()) {
+-            if (getHwComposer().allocateVirtualDisplay(*id, resolution, &format)) {
+-                return *id;
+-            }
++                                                       ui::PixelFormat format,
++                                                       ui::LayerStack layerStack) {
++    // RK: Primary Display will enable HAL virtual displays.
++    if(layerStack.id == 0){
++      if (auto& generator = mVirtualDisplayIdGenerators.hal) {
++          if (const auto id = generator->generateId()) {
++              if (getHwComposer().allocateVirtualDisplay(*id, resolution, &format)) {
++                  return *id;
++              }
+ 
+-            generator->releaseId(*id);
+-        } else {
+-            ALOGW("%s: Exhausted HAL virtual displays", __func__);
+-        }
++              generator->releaseId(*id);
++          } else {
++              ALOGW("%s: Exhausted HAL virtual displays", __func__);
++          }
+ 
+-        ALOGW("%s: Falling back to GPU virtual display", __func__);
++          ALOGW("%s: Falling back to GPU virtual display", __func__);
++      }
+     }
+ 
+     const auto id = mVirtualDisplayIdGenerators.gpu.generateId();
+@@ -2019,12 +2023,14 @@ bool SurfaceFlinger::commit(nsecs_t frameTime, int64_t vsyncId, nsecs_t expected
+     // When Backpressure propagation is enabled we want to give a small grace period
+     // for the present fence to fire instead of just giving up on this frame to handle cases
+     // where present fence is just about to get signaled.
+-    const int graceTimeForPresentFenceMs =
+-            (mPropagateBackpressureClientComposition || !mHadClientComposition) ? 1 : 0;
++    // const int graceTimeForPresentFenceMs =
++    //         (mPropagateBackpressureClientComposition || !mHadClientComposition) ? 1 : 0;
+ 
+     // Pending frames may trigger backpressure propagation.
+-    const TracedOrdinal<bool> framePending = {"PrevFramePending",
+-                                              previousFramePending(graceTimeForPresentFenceMs)};
++    // const TracedOrdinal<bool> framePending = {"PrevFramePending",
++    //                                           previousFramePending(graceTimeForPresentFenceMs)};
++
++    const TracedOrdinal<bool> framePending = {"PrevFramePending", false};
+ 
+     // Frame missed counts for metrics tracking.
+     // A frame is missed if the prior frame is still pending. If no longer pending,
+@@ -2182,6 +2188,27 @@ bool SurfaceFlinger::commit(nsecs_t frameTime, int64_t vsyncId, nsecs_t expected
+     return mustComposite && CC_LIKELY(mBootStage != BootStage::BOOTLOADER);
+ }
+ 
++#if RK_FPS
++static int gsFrameCcount = 0;
++void SurfaceFlinger::debugShowFPS() const
++{
++    static int mFrameCount;
++    static int mLastFrameCount = 0;
++    static nsecs_t mLastFpsTime = 0;
++    static float mFps = 0;
++
++    mFrameCount++;
++    nsecs_t now = systemTime();
++    nsecs_t diff = now - mLastFpsTime;
++    if (diff > ms2ns(500)) {
++        mFps =  ((mFrameCount - mLastFrameCount) * float(s2ns(1))) / diff;
++        mLastFpsTime = now;
++        mLastFrameCount = mFrameCount;
++        ALOGD("mFrameCount = %d mFps = %2.3f",mFrameCount, mFps);
++    }
++}
++#endif
++
+ void SurfaceFlinger::composite(nsecs_t frameTime, int64_t vsyncId)
+         FTL_FAKE_GUARD(kMainThreadContext) {
+     ATRACE_FORMAT("%s %" PRId64, __func__, vsyncId);
+@@ -2300,6 +2327,20 @@ void SurfaceFlinger::composite(nsecs_t frameTime, int64_t vsyncId)
+     if (mPowerHintSessionEnabled) {
+         mPowerAdvisor->setCompositeEnd(systemTime());
+     }
++
++#if RK_FPS
++    if(gsFrameCcount++%300==0) {
++        gsFrameCcount = 1;
++        char value[PROPERTY_VALUE_MAX];
++        property_get("debug.sf.fps", value, "0");
++        mDebugFPS = atoi(value);
++    }
++
++    if (mDebugFPS > 0)
++        debugShowFPS();
++#endif
++
++
+ }
+ 
+ void SurfaceFlinger::updateLayerGeometry() {
+@@ -2948,7 +2989,7 @@ void SurfaceFlinger::processDisplayAdded(const wp<IBinder>& displayToken,
+     if (const auto& physical = state.physical) {
+         builder.setId(physical->id);
+     } else {
+-        builder.setId(acquireVirtualDisplay(resolution, pixelFormat));
++        builder.setId(acquireVirtualDisplay(resolution, pixelFormat, state.layerStack));
+     }
+ 
+     builder.setPixels(resolution);
+@@ -3073,6 +3114,13 @@ void SurfaceFlinger::processDisplayChanged(const wp<IBinder>& displayToken,
+         if (currentState.flags != drawingState.flags) {
+             display->setFlags(currentState.flags);
+         }
++
++        // RK： 标准分辨率切换流程需要将 display size 修改提前
++        if (currentState.width != drawingState.width ||
++            currentState.height != drawingState.height) {
++            display->setDisplaySize(currentState.width, currentState.height);
++        }
++
+         if ((currentState.orientation != drawingState.orientation) ||
+             (currentState.layerStackSpaceRect != drawingState.layerStackSpaceRect) ||
+             (currentState.orientedDisplaySpaceRect != drawingState.orientedDisplaySpaceRect)) {
+@@ -3084,7 +3132,8 @@ void SurfaceFlinger::processDisplayChanged(const wp<IBinder>& displayToken,
+         }
+         if (currentState.width != drawingState.width ||
+             currentState.height != drawingState.height) {
+-            display->setDisplaySize(currentState.width, currentState.height);
++            // RK： 标准分辨率切换流程需要将 display size 修改提前
++            // display->setDisplaySize(currentState.width, currentState.height);
+ 
+             if (isDisplayActiveLocked(display)) {
+                 onActiveDisplaySizeChanged(display);
+@@ -7245,6 +7294,13 @@ status_t SurfaceFlinger::getMaxAcquiredBufferCount(int* buffers) const {
+     }
+ 
+     *buffers = getMaxAcquiredBufferCountForRefreshRate(maxRefreshRate);
++
++    // RK_SUPPORT:
++    // 多屏异刷应用需要申请更多的内存，来保证流畅性
++    if(maxFrameBufferAcquiredBuffers > 3){
++      *buffers = static_cast<int>(maxFrameBufferAcquiredBuffers - 2);
++    }
++
+     return NO_ERROR;
+ }
+ 
+diff --git a/services/surfaceflinger/SurfaceFlinger.h b/services/surfaceflinger/SurfaceFlinger.h
+index 3a45229ed3..77b09b029b 100644
+--- a/services/surfaceflinger/SurfaceFlinger.h
++++ b/services/surfaceflinger/SurfaceFlinger.h
+@@ -93,6 +93,8 @@
+ 
+ #include <aidl/android/hardware/graphics/common/DisplayDecorationSupport.h>
+ 
++#define RK_FPS                 (1)
++
+ using namespace android::surfaceflinger;
+ 
+ namespace android {
+@@ -369,8 +371,16 @@ protected:
+         return static_cast<bool>(findDisplay(p));
+     }
+ 
++#define UNUSED(x) ((void)x)
+     bool exceedsMaxRenderTargetSize(uint32_t width, uint32_t height) const {
++#if MALI_PRODUCT_ID_450
++        UNUSED(width);
++        UNUSED(height);
++
++        return false;
++#else
+         return width > mMaxRenderTargetSize || height > mMaxRenderTargetSize;
++#endif
+     }
+ 
+ private:
+@@ -674,6 +684,11 @@ private:
+     // i.e. whether a frame should be composited for each display.
+     bool commit(nsecs_t frameTime, int64_t vsyncId, nsecs_t expectedVsyncTime) override;
+ 
++#if RK_FPS
++    //add by rk for fps
++    void debugShowFPS() const;
++#endif
++
+     // Composites a frame for each display. CompositionEngine performs GPU and/or HAL composition
+     // via RenderEngine and the Composer HAL, respectively.
+     void composite(nsecs_t frameTime, int64_t vsyncId) override;
+@@ -1078,7 +1093,7 @@ private:
+     void enableHalVirtualDisplays(bool);
+ 
+     // Virtual display lifecycle for ID generation and HAL allocation.
+-    VirtualDisplayId acquireVirtualDisplay(ui::Size, ui::PixelFormat) REQUIRES(mStateLock);
++    VirtualDisplayId acquireVirtualDisplay(ui::Size, ui::PixelFormat, ui::LayerStack layerStack) REQUIRES(mStateLock);
+     void releaseVirtualDisplay(VirtualDisplayId);
+ 
+     void onActiveDisplayChangedLocked(const sp<DisplayDevice>& activeDisplay) REQUIRES(mStateLock);
+@@ -1448,6 +1463,12 @@ private:
+ 
+     nsecs_t mAnimationTransactionTimeout = s2ns(5);
+ 
++#if RK_FPS
++    //add by rk for fps
++    int mDebugFPS;
++#endif
++
++
+     friend class SurfaceComposerAIDL;
+ };
+ 

@@ -1,0 +1,96 @@
+From 88423e3e3891e88d5992aad1261cd62a93afbd74 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 17:24:08 +0800
+Subject: [PATCH] feat: add mouse cursor displayId and viewport methods to
+ PointerController
+
+Change-Id: Ia5ea53373c53dbc6737545346967be25ef46115a
+
+diff --git a/libs/input/MouseCursorController.cpp b/libs/input/MouseCursorController.cpp
+index 45da008c3e8e..a7e02d9ef630 100644
+--- a/libs/input/MouseCursorController.cpp
++++ b/libs/input/MouseCursorController.cpp
+@@ -155,6 +155,12 @@ int32_t MouseCursorController::getDisplayId() const {
+     return mLocked.viewport.displayId;
+ }
+ 
++void MouseCursorController::setDisplayId(int32_t id) {
++    std::scoped_lock lock(mLock);
++    mLocked.pointerSprite->setDisplayId(id);
++}
++
++
+ void MouseCursorController::fade(PointerControllerInterface::Transition transition) {
+     std::scoped_lock lock(mLock);
+ 
+diff --git a/libs/input/MouseCursorController.h b/libs/input/MouseCursorController.h
+index c0ab58bd2e7e..4de66f90577d 100644
+--- a/libs/input/MouseCursorController.h
++++ b/libs/input/MouseCursorController.h
+@@ -50,6 +50,7 @@ public:
+     void setPosition(float x, float y);
+     void getPosition(float* outX, float* outY) const;
+     int32_t getDisplayId() const;
++    void setDisplayId(int32_t id);
+     void fade(PointerControllerInterface::Transition transition);
+     void unfade(PointerControllerInterface::Transition transition);
+     void setDisplayViewport(const DisplayViewport& viewport, bool getAdditionalMouseResources);
+@@ -64,6 +65,8 @@ public:
+     bool doAnimations(nsecs_t timestamp);
+ 
+     bool resourcesLoaded();
++    inline const DisplayViewport& getViewportLocked() {
++                       return mLocked.viewport;}
+ 
+ private:
+     mutable std::mutex mLock;
+diff --git a/libs/input/PointerController.cpp b/libs/input/PointerController.cpp
+index 10ea6512c724..918d4026ce5c 100644
+--- a/libs/input/PointerController.cpp
++++ b/libs/input/PointerController.cpp
+@@ -193,6 +193,20 @@ void PointerController::setPresentation(Presentation presentation) {
+     }
+ }
+ 
++void PointerController::setDisplayId(int32_t id) {
++    std::scoped_lock lock(getLock());
++    mCursorController.setDisplayId(id);
++
++}
++
++
++int32_t PointerController::getDisplayId() {
++    std::scoped_lock lock(getLock());
++    return mCursorController.getDisplayId();
++
++}
++
++
+ void PointerController::setSpots(const PointerCoords* spotCoords, const uint32_t* spotIdToIndex,
+                                  BitSet32 spotIdBits, int32_t displayId) {
+     std::scoped_lock lock(getLock());
+diff --git a/libs/input/PointerController.h b/libs/input/PointerController.h
+index eab030f71e1a..bfa51e3fe6cd 100644
+--- a/libs/input/PointerController.h
++++ b/libs/input/PointerController.h
+@@ -75,6 +75,12 @@ public:
+     void onDisplayInfosChangedLocked(const std::vector<gui::DisplayInfo>& displayInfos)
+             REQUIRES(getLock());
+ 
++    void setDisplayId(int32_t id);
++    int32_t getDisplayId();
++
++    const DisplayViewport& getViewportLocked() {
++                       return mCursorController.getViewportLocked();
++                            }
+ protected:
+     using WindowListenerConsumer =
+             std::function<void(const sp<android::gui::WindowInfosListener>&)>;
+@@ -85,6 +91,7 @@ protected:
+                       WindowListenerConsumer registerListener,
+                       WindowListenerConsumer unregisterListener);
+ 
++
+ private:
+     PointerController(const sp<PointerControllerPolicyInterface>& policy, const sp<Looper>& looper,
+                       const sp<SpriteController>& spriteController);

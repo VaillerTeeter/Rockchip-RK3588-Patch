@@ -1,0 +1,78 @@
+From caa3d794797a946e824891e9312e1a964fd79d56 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 23:09:49 +0800
+Subject: [PATCH] feat: add multi-audio support and Soong plugin for Rockchip
+ audio device factory
+
+Change-Id: I849e8356c87ff75e5d0376370a71c070ed32bba0
+---
+ audio/core/all-versions/default/Android.bp    | 26 ++++++++++++++++++-
+ .../all-versions/default/DevicesFactory.cpp   | 11 ++++++++
+ 2 files changed, 36 insertions(+), 1 deletion(-)
+
+diff --git a/audio/core/all-versions/default/Android.bp b/audio/core/all-versions/default/Android.bp
+index 3536561fd..abd3a48a2 100644
+--- a/audio/core/all-versions/default/Android.bp
++++ b/audio/core/all-versions/default/Android.bp
+@@ -1,3 +1,24 @@
++bootstrap_go_package {
++    name: "soong-devicefactory",
++    pkgPath: "android/soong/devicefactory",
++    deps: [
++        "blueprint",
++        "blueprint-pathtools",
++        "soong",
++        "soong-android",
++        "soong-cc",
++        "soong-genrule",
++    ],
++    srcs: [
++          "Android.go",
++    ],
++    pluginFor: ["soong_build"],
++}
++
++cc_devicefactory {
++   name: "cc_devicefactory_defaults",
++}
++
+ package {
+     // See: http://go/android-license-faq
+     // A large-scale-change added 'default_applicable_licenses' to import
+@@ -34,7 +55,10 @@ cc_defaults {
+     vendor: true,
+     srcs: [":android.hardware.audio-impl_srcs"],
+ 
+-    defaults: ["hidl_defaults"],
++    defaults: [
++        "hidl_defaults",
++        "cc_devicefactory_defaults",
++    ],
+ 
+     static_libs: [
+         "libaudiofoundation",
+diff --git a/audio/core/all-versions/default/DevicesFactory.cpp b/audio/core/all-versions/default/DevicesFactory.cpp
+index 011f9ac4c..6bf901f1f 100644
+--- a/audio/core/all-versions/default/DevicesFactory.cpp
++++ b/audio/core/all-versions/default/DevicesFactory.cpp
+@@ -46,6 +46,17 @@ Return<void> DevicesFactory::openDevice(IDevicesFactory::Device device, openDevi
+         case IDevicesFactory::Device::STUB:
+             return openDevice(AUDIO_HARDWARE_MODULE_ID_STUB, _hidl_cb);
+     }
++#if SUPPORT_MULTIAUDIO
++    if ((int32_t)device == 5) {
++        return openDevice(AUDIO_HARDWARE_MODULE_ID_EXT_1, _hidl_cb);
++    } else if ((int32_t)device == 6) {
++        return openDevice(AUDIO_HARDWARE_MODULE_ID_EXT_2, _hidl_cb);
++    } else if ((int32_t)device == 7) {
++        return openDevice(AUDIO_HARDWARE_MODULE_ID_EXT_3, _hidl_cb);
++    } else if ((int32_t)device == 8) {
++        return openDevice(AUDIO_HARDWARE_MODULE_ID_EXT_4, _hidl_cb);
++    }
++#endif
+     _hidl_cb(Result::INVALID_ARGUMENTS, nullptr);
+     return Void();
+ }
+-- 
+2.53.0
+

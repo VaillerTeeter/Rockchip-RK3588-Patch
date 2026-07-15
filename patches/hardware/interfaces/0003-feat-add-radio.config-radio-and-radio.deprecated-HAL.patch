@@ -1,0 +1,81 @@
+From 4b3fb288580e5943661e263d2f4d7b942c86064e Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 23:01:25 +0800
+Subject: [PATCH] feat: add radio.config, radio, and radio.deprecated HAL
+ declarations to compatibility matrix
+
+Change-Id: I781cfbbf8579c532f38abb94a537274527fdba43
+---
+ .../compatibility_matrix.7.xml                | 42 +++++++++++++++++++
+ 1 file changed, 42 insertions(+)
+
+diff --git a/compatibility_matrices/compatibility_matrix.7.xml b/compatibility_matrices/compatibility_matrix.7.xml
+index 26b8d63c5..ca623ea08 100644
+--- a/compatibility_matrices/compatibility_matrix.7.xml
++++ b/compatibility_matrices/compatibility_matrix.7.xml
+@@ -524,6 +524,25 @@
+             <instance>default</instance>
+         </interface>
+     </hal>
++    <hal format="hidl" optional="true">
++        <name>android.hardware.radio.config</name>
++        <!--
++        See compatibility_matrix.4.xml on versioning of radio config HAL.
++        -->
++        <version>1.1</version>
++        <interface>
++            <name>IRadioConfig</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl" optional="true">
++        <name>android.hardware.radio.config</name>
++        <version>1.3</version>
++        <interface>
++            <name>IRadioConfig</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
+     <hal format="aidl" optional="true">
+         <name>android.hardware.radio.data</name>
+         <version>1</version>
+@@ -584,6 +603,21 @@
+             <instance>slot3</instance>
+         </interface>
+     </hal>
++    <hal format="hidl" optional="true">
++        <name>android.hardware.radio</name>
++        <version>1.1</version>
++        <version>1.2</version>
++        <version>1.3</version>
++        <version>1.4</version>
++        <version>1.5</version>
++        <version>1.6</version>
++        <interface>
++            <name>IRadio</name>
++            <instance>slot1</instance>
++            <instance>slot2</instance>
++            <instance>slot3</instance>
++        </interface>
++    </hal>
+     <hal format="hidl" optional="true">
+         <name>android.hardware.radio</name>
+         <version>1.2</version>
+@@ -592,6 +626,14 @@
+             <instance>slot1</instance>
+         </interface>
+     </hal>
++    <hal format="hidl" optional="true">
++        <name>android.hardware.radio.deprecated</name>
++        <version>1.0</version>
++        <interface>
++            <name>IOemHook</name>
++            <instance>slot1</instance>
++        </interface>
++    </hal>
+     <hal format="hidl" optional="true">
+         <name>android.hardware.renderscript</name>
+         <version>1.0</version>
+-- 
+2.53.0
+

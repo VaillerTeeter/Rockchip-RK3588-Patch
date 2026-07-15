@@ -1,0 +1,31 @@
+From 59a2de8fb3f3cc31af5962a7475c0f257e536800 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 17:27:57 +0800
+Subject: [PATCH] feat: add APE audio, VOB video, and TS/TP/TRP MIME types
+
+Change-Id: I3f1f731411c89c6476846248171d99eb10f0f314
+
+diff --git a/mime/java-res/android.mime.types b/mime/java-res/android.mime.types
+index 60f0e9ef49cf..59950d32541e 100644
+--- a/mime/java-res/android.mime.types
++++ b/mime/java-res/android.mime.types
+@@ -86,6 +86,7 @@
+ ?audio/x-matroska mka
+ ?audio/x-pn-realaudio ra
+ ?audio/x-mpeg mp3
++?audio/ape ape
+ 
+ ?image/bmp bmp
+ ?image/gif gif
+@@ -119,9 +120,10 @@
+ ?video/mp4 m4v f4v mp4v mpeg4
+ ?video/mp2p mpeg
+ ?video/mp2t m2ts mts
+-?video/mp2ts ts
++?video/mp2ts ts tp trp
+ ?video/vnd.youtube.yt yt
+ ?video/x-webex wrf
++?video/mpg vob
+ 
+ # Optional additions that should not override any previous mapping.
+ 

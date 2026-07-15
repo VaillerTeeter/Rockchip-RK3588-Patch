@@ -1,0 +1,65 @@
+From 964bd0a54d322173c48f9fd42e0d19ee1aabcc3e Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 17:51:54 +0800
+Subject: [PATCH] feat: add box KeyMouse support and window metrics bounds
+ reporting
+
+Change-Id: Ie9ec21b06f266aa65ac435cacdc62aaf6e889ae3
+
+diff --git a/core/java/android/app/Activity.java b/core/java/android/app/Activity.java
+index 03a97ba1d977..27040b493bf3 100644
+--- a/core/java/android/app/Activity.java
++++ b/core/java/android/app/Activity.java
+@@ -90,6 +90,7 @@ import android.os.RemoteException;
+ import android.os.ServiceManager;
+ import android.os.ServiceManager.ServiceNotFoundException;
+ import android.os.StrictMode;
++import android.os.SystemProperties;
+ import android.os.Trace;
+ import android.os.UserHandle;
+ import android.service.voice.VoiceInteractionSession;
+@@ -3817,6 +3818,20 @@ public class Activity extends ContextThemeWrapper
+      * @see android.view.KeyEvent
+      */
+     public boolean onKeyDown(int keyCode, KeyEvent event)  {
++        if("box".equals(SystemProperties.get("ro.target.product","unkonw"))){
++            String mstate=null;
++            mstate = SystemProperties.get("sys.KeyMouse.mKeyMouseState");
++
++            if ((keyCode == KeyEvent.KEYCODE_PROFILE_SWITCH)) {
++                if ("on".equals(mstate)) {
++                    Toast.makeText(Activity.this, "Enter into mouse mode, click again to quit", Toast.LENGTH_LONG).show();
++                } else if ("off".equals(mstate)) {
++                    Toast.makeText(Activity.this, "Restore to default button mode", Toast.LENGTH_LONG).show();
++                }
++            }
++        }
++
++
+         if (keyCode == KeyEvent.KEYCODE_BACK) {
+             if (getApplicationInfo().targetSdkVersion
+                     >= Build.VERSION_CODES.ECLAIR) {
+diff --git a/core/java/android/app/ActivityThread.java b/core/java/android/app/ActivityThread.java
+index 5985d6e93107..10ca8990f2ff 100644
+--- a/core/java/android/app/ActivityThread.java
++++ b/core/java/android/app/ActivityThread.java
+@@ -36,6 +36,7 @@ import static android.view.Display.INVALID_DISPLAY;
+ import static android.window.ConfigurationHelper.freeTextLayoutCachesIfNeeded;
+ import static android.window.ConfigurationHelper.isDifferentDisplay;
+ import static android.window.ConfigurationHelper.shouldUpdateResources;
++import static android.window.ConfigurationHelper.shouldUpdateWindowMetricsBounds;
+ 
+ import static com.android.internal.annotations.VisibleForTesting.Visibility.PACKAGE;
+ 
+@@ -5987,6 +5988,11 @@ public final class ActivityThread extends ClientTransactionHandler
+     public static boolean shouldReportChange(@Nullable Configuration currentConfig,
+             @NonNull Configuration newConfig, @Nullable SizeConfigurationBuckets sizeBuckets,
+             int handledConfigChanges) {
++        // Always report changes in window configuration bounds
++        if (shouldUpdateWindowMetricsBounds(currentConfig, newConfig)) {
++            return true;
++        }
++
+         final int publicDiff = currentConfig.diffPublicOnly(newConfig);
+         // Don't report the change if there's no public diff between current and new config.
+         if (publicDiff == 0) {

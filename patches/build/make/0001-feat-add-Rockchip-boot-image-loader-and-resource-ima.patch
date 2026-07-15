@@ -1,0 +1,235 @@
+From 24cb1fab95d1c896bb964880c00b3e608c56a549 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 13:17:30 +0800
+Subject: [PATCH 1/3] feat: add Rockchip boot image, loader, and resource image
+ support
+
+Change-Id: I3c4e0a53ac6c2ae1b5e8ce7498bda90f8d91fc3d
+---
+ core/Makefile | 107 +++++++++++++++++++++++++++++++++++++++++++++-----
+ 1 file changed, 98 insertions(+), 9 deletions(-)
+
+diff --git a/core/Makefile b/core/Makefile
+index 72aa890ce..cfad0c6bd 100644
+--- a/core/Makefile
++++ b/core/Makefile
+@@ -55,7 +55,7 @@ endef
+ .PHONY: check-elf-prebuilt-product-copy-files
+ check-elf-prebuilt-product-copy-files:
+ 
+-check_elf_prebuilt_product_copy_files := true
++check_elf_prebuilt_product_copy_files :=
+ ifneq (,$(filter true,$(BUILD_BROKEN_ELF_PREBUILT_PRODUCT_COPY_FILES)))
+ check_elf_prebuilt_product_copy_files :=
+ endif
+@@ -846,10 +846,6 @@ $(call declare-0p-target,$(INSTALLED_FILES_JSON_ROOT))
+ # dtb
+ ifdef BOARD_INCLUDE_DTB_IN_BOOTIMG
+ INSTALLED_DTBIMAGE_TARGET := $(PRODUCT_OUT)/dtb.img
+-ifdef BOARD_PREBUILT_DTBIMAGE_DIR
+-$(INSTALLED_DTBIMAGE_TARGET) : $(sort $(wildcard $(BOARD_PREBUILT_DTBIMAGE_DIR)/*.dtb))
+-	cat $^ > $@
+-endif
+ endif
+ 
+ # -----------------------------------------------------------------
+@@ -968,15 +964,11 @@ ifneq ($(strip $(TARGET_NO_KERNEL)),true)
+ INTERNAL_BOOTIMAGE_ARGS := \
+ 	$(addprefix --second ,$(INSTALLED_2NDBOOTLOADER_TARGET))
+ 
+-INTERNAL_INIT_BOOT_IMAGE_ARGS :=
+-
+ # TODO(b/229701033): clean up BOARD_BUILD_GKI_BOOT_IMAGE_WITHOUT_RAMDISK.
+ ifneq ($(BOARD_BUILD_GKI_BOOT_IMAGE_WITHOUT_RAMDISK),true)
+   ifneq ($(BOARD_BUILD_SYSTEM_ROOT_IMAGE),true)
+     ifneq ($(BUILDING_INIT_BOOT_IMAGE),true)
+       INTERNAL_BOOTIMAGE_ARGS += --ramdisk $(INSTALLED_RAMDISK_TARGET)
+-    else
+-      INTERNAL_INIT_BOOT_IMAGE_ARGS += --ramdisk $(INSTALLED_RAMDISK_TARGET)
+     endif
+   endif
+ endif
+@@ -1223,6 +1215,8 @@ ifeq ($(BUILDING_INIT_BOOT_IMAGE),true)
+ INSTALLED_INIT_BOOT_IMAGE_TARGET := $(PRODUCT_OUT)/init_boot.img
+ $(INSTALLED_INIT_BOOT_IMAGE_TARGET): $(MKBOOTIMG) $(INSTALLED_RAMDISK_TARGET)
+ 
++INTERNAL_INIT_BOOT_IMAGE_ARGS := --ramdisk $(INSTALLED_RAMDISK_TARGET)
++
+ ifdef BOARD_KERNEL_PAGESIZE
+   INTERNAL_INIT_BOOT_IMAGE_ARGS += --pagesize $(BOARD_KERNEL_PAGESIZE)
+ endif
+@@ -1505,6 +1499,15 @@ endif # BUILDING_VENDOR_KERNEL_BOOT_IMAGE
+ # This needs to be before the systemimage rules, because it adds to
+ # ALL_DEFAULT_INSTALLED_MODULES, which those use to pick which files
+ # go into the systemimage.
++INSTALLED_LOADER_TARGET := $(strip $(wildcard $(TARGET_DEVICE_DIR)/ota/loader/RK*Loader*.bin))
++
++INSTALLED_UBOOT_TARGET := $(strip $(wildcard u-boot/uboot.img))
++HAVE_TRUST_WITH_TA := $(shell test -f u-boot/trust_with_ta.img && echo yes)
++ifeq ($(HAVE_TRUST_WITH_TA),yes)
++INSTALLED_TRUST_TARGET := $(strip $(wildcard u-boot/trust_with_ta.img))
++else
++INSTALLED_TRUST_TARGET := $(strip $(wildcard u-boot/trust.img))
++endif
+ 
+ .PHONY: notice_files
+ 
+@@ -4025,6 +4028,30 @@ $(strip $(foreach item,$(1),\
+       $(INSTALLED_$(call to-upper,$(item))IMAGE_TARGET)))))
+ endef
+ 
++# -----------------------------------------------------------------
++# resource images
++ifdef TARGET_PREBUILT_RESOURCE
++INSTALLED_RESOURCEIMAGE_TARGET := $(PRODUCT_OUT)/resource.img
++
++ifeq ($(BOARD_AVB_ENABLE),true)
++$(INSTALLED_RESOURCEIMAGE_TARGET): $(TARGET_PREBUILT_RESOURCE) $(AVBTOOL) $(BOARD_AVB_RESOURCE_KEY_PATH)
++	cp $(TARGET_PREBUILT_RESOURCE) $@
++	$(AVBTOOL) add_hash_footer \
++	    --image $@ \
++	    $(call get-partition-size-argument,$(BOARD_RESOURCEIMG_PARTITION_SIZE)) \
++	    --partition_name resource $(INTERNAL_AVB_RESOURCE_SIGNING_ARGS) \
++	    $(BOARD_AVB_RESOURCE_ADD_HASH_FOOTER_ARGS)
++
++$(call declare-1p-container,$(INSTALLED_RESOURCEIMAGE_TARGET),)
++$(call declare-container-license-deps,$(INSTALLED_RESOURCEIMAGE_TARGET),$(TARGET_PREBUILT_RESOURCE),$(PRODUCT_OUT)/:/)
++
++UNMOUNTED_NOTICE_DEPS += $(INSTALLED_RESOURCEIMAGE_TARGET)
++else
++$(INSTALLED_RESOURCEIMAGE_TARGET): $(TARGET_PREBUILT_RESOURCE)
++	cp $(TARGET_PREBUILT_RESOURCE) $@
++endif
++endif # TARGET_PREBUILT_RESOURCE
++
+ # -----------------------------------------------------------------
+ # custom images
+ INSTALLED_CUSTOMIMAGES_TARGET :=
+@@ -4413,6 +4440,10 @@ $(foreach partition,$(BOARD_CUSTOMIMAGES_PARTITION_LIST), \
+     $(eval $(call check-and-set-custom-avb-chain-args,$(partition))))
+ endif
+ 
++ifdef TARGET_PREBUILT_RESOURCE
++$(eval $(call check-and-set-avb-args,resource))
++endif
++
+ # Add kernel cmdline descriptor for kernel to mount system.img as root with
+ # dm-verity. This works when system.img is either chained or not-chained:
+ # - chained: The --setup_as_rootfs_from_kernel option will add dm-verity kernel
+@@ -4505,6 +4536,9 @@ define extract-avb-chain-public-keys
+     $(hide) $(foreach partition,$(BOARD_CUSTOMIMAGES_PARTITION_LIST), \
+         $(AVBTOOL) extract_public_key --key $(BOARD_AVB_$(call to-upper,$(partition))_KEY_PATH) \
+             --output $(1)/$(partition).avbpubkey;))
++  $(if $(BOARD_AVB_RESOURCE_KEY_PATH),\
++    $(hide) $(AVBTOOL) extract_public_key --key $(BOARD_AVB_RESOURCE_KEY_PATH) \
++        --output $(1)/resource.avbpubkey)
+ endef
+ 
+ # Builds a chained VBMeta image. This VBMeta image will contain the descriptors for the partitions
+@@ -4587,6 +4621,7 @@ $(INSTALLED_VBMETAIMAGE_TARGET): \
+ 	    $(INSTALLED_DTBOIMAGE_TARGET) \
+ 	    $(INSTALLED_PVMFWIMAGE_TARGET) \
+ 	    $(INSTALLED_CUSTOMIMAGES_TARGET) \
++	    $(INSTALLED_RESOURCEIMAGE_TARGET) \
+ 	    $(INSTALLED_RECOVERYIMAGE_TARGET) \
+ 	    $(INSTALLED_VBMETA_SYSTEMIMAGE_TARGET) \
+ 	    $(INSTALLED_VBMETA_VENDORIMAGE_TARGET) \
+@@ -5289,6 +5324,14 @@ ifneq (,$(strip $(BOARD_CUSTOMIMAGES_PARTITION_LIST)))
+ 	    echo "avb_$(partition)_partition_size=$(BOARD_AVB_$(call to-upper,$(partition))_PARTITION_SIZE)"  >> $@; \
+ 	    echo "avb_$(partition)_image_list=$(foreach image,$(BOARD_AVB_$(call to-upper,$(partition))_IMAGE_LIST),$(notdir $(image)))" >> $@;)
+ endif # BOARD_CUSTOMIMAGES_PARTITION_LIST
++ifdef TARGET_PREBUILT_RESOURCE
++	$(hide) echo "avb_resource_add_hash_footer_args=$(BOARD_AVB_RESOURCE_ADD_HASH_FOOTER_ARGS)" >> $@
++ifdef BOARD_AVB_RESOURCE_KEY_PATH
++	$(hide) echo "avb_resource_key_path=$(BOARD_AVB_RESOURCE_KEY_PATH)" >> $@
++	$(hide) echo "avb_resource_algorithm=$(BOARD_AVB_RESOURCE_ALGORITHM)" >> $@
++	$(hide) echo "avb_resource_rollback_index_location=$(BOARD_AVB_RESOURCE_ROLLBACK_INDEX_LOCATION)" >> $@
++endif # BOARD_AVB_RESOURCE_KEY_PATH
++endif # TARGET_PREBUILT_RESOURCE
+ ifneq (,$(strip $(BOARD_AVB_VBMETA_SYSTEM)))
+ 	$(hide) echo "avb_vbmeta_system=$(BOARD_AVB_VBMETA_SYSTEM)" >> $@
+ 	$(hide) echo "avb_vbmeta_system_args=$(BOARD_AVB_MAKE_VBMETA_SYSTEM_IMAGE_ARGS)" >> $@
+@@ -5371,6 +5414,8 @@ endif
+ ifneq ($(BOARD_PARTIAL_OTA_UPDATE_PARTITIONS_LIST),)
+ 	$(hide) echo "partial_ota_update_partitions_list=$(BOARD_PARTIAL_OTA_UPDATE_PARTITIONS_LIST)" >> $@
+ endif
++	$(hide) echo "booot_header_version=$(BOARD_BOOT_HEADER_VERSION)" >> $@
++
+ ifeq ($(BUILDING_WITH_VSDK),true)
+ 	$(hide) echo "building_with_vsdk=true" >> $@
+ endif
+@@ -5675,6 +5720,7 @@ $(BUILT_TARGET_FILES_PACKAGE): \
+ 	    $(INSTALLED_PVMFWIMAGE_TARGET) \
+ 	    $(INSTALLED_PVMFW_EMBEDDED_AVBKEY_TARGET) \
+ 	    $(INSTALLED_CUSTOMIMAGES_TARGET) \
++	    $(INSTALLED_RESOURCEIMAGE_TARGET) \
+ 	    $(INSTALLED_ANDROID_INFO_TXT_TARGET) \
+ 	    $(INSTALLED_KERNEL_TARGET) \
+ 	    $(INSTALLED_RAMDISK_TARGET) \
+@@ -5914,6 +5960,44 @@ endif
+ 	$(hide) echo "$(PRODUCT_OTA_PUBLIC_KEYS)" > $(zip_root)/META/otakeys.txt
+ 	$(hide) cp $(SELINUX_FC) $(zip_root)/META/file_contexts.bin
+ 	$(hide) cp $(INSTALLED_MISC_INFO_TARGET) $(zip_root)/META/misc_info.txt
++ifeq ($(INSTALLED_LOADER_TARGET),)
++	$(info No RK Loader for TARGET_DEVICE $(TARGET_DEVICE) to otapackage)
++else
++	$(info cp RK Loader:$(TARGET_DEVICE) to otapackage)
++	$(hide) cp $(INSTALLED_LOADER_TARGET) $(zip_root)/RKLoader.bin
++endif
++ifeq ($(INSTALLED_UBOOT_TARGET),)
++	$(info No uboot for uboot/uboot.img to otapackage)
++else
++ifeq ($(AB_OTA_UPDATER),true)
++	$(hide) mkdir -p $(zip_root)/IMAGES
++	$(hide) cp $(INSTALLED_UBOOT_TARGET) $(zip_root)/IMAGES/uboot.img
++else
++	$(hide) cp $(INSTALLED_UBOOT_TARGET) $(zip_root)/uboot.img
++endif
++endif
++ifeq ($(INSTALLED_TRUST_TARGET),)
++	$(info No trust for uboot/trust.img to otapackage)
++else
++ifeq ($(AB_OTA_UPDATER),true)
++	$(hide) mkdir -p $(zip_root)/IMAGES
++	$(hide) cp $(INSTALLED_TRUST_TARGET) $(zip_root)/IMAGES/trust.img
++else
++	$(hide) cp $(INSTALLED_TRUST_TARGET) $(zip_root)/trust.img
++endif
++endif
++ifdef TARGET_PREBUILT_RESOURCE
++	$(info package add resource.img to BOOT and RECOVERY)
++	$(hide) cp $(TARGET_PREBUILT_RESOURCE) $(zip_root)/BOOT/resource.img
++ifneq ($(TARGET_NO_RECOVERY),true)
++	$(hide) cp $(TARGET_PREBUILT_RESOURCE) $(zip_root)/RECOVERY/resource.img
++endif
++ifeq (1,$(strip $(shell expr $(BOARD_BOOT_HEADER_VERSION) \>= 3)))
++	$(hide) mkdir -p $(zip_root)/IMAGES
++	$(hide) cp $(TARGET_PREBUILT_RESOURCE) $(zip_root)/IMAGES/resource.img
++endif
++endif
++
+ ifneq ($(PRODUCT_SYSTEM_BASE_FS_PATH),)
+ 	$(hide) cp $(PRODUCT_SYSTEM_BASE_FS_PATH) \
+ 	  $(zip_root)/META/$(notdir $(PRODUCT_SYSTEM_BASE_FS_PATH))
+@@ -6035,6 +6119,10 @@ ifneq ($(strip $(BOARD_CUSTOMIMAGES_PARTITION_LIST)),)
+ 	$(hide) $(foreach partition,$(BOARD_CUSTOMIMAGES_PARTITION_LIST), \
+ 	    $(foreach image,$(BOARD_AVB_$(call to-upper,$(partition))_IMAGE_LIST),cp $(image) $(zip_root)/PREBUILT_IMAGES/;))
+ endif # BOARD_CUSTOMIMAGES_PARTITION_LIST
++ifdef TARGET_PREBUILT_RESOURCE
++	$(hide) mkdir -p $(zip_root)/PREBUILT_IMAGES
++	$(hide) cp $(INSTALLED_RESOURCEIMAGE_TARGET) $(zip_root)/PREBUILT_IMAGES/
++endif # BOARD_RESOURCEIMAGES_PARTITION_LIST
+ 	@# The radio images in BOARD_PACK_RADIOIMAGES will be additionally copied from RADIO/ into
+ 	@# IMAGES/, which then will be added into <product>-img.zip. Such images must be listed in
+ 	@# INSTALLED_RADIOIMAGE_TARGET.
+@@ -6126,6 +6214,7 @@ $(call declare-container-license-deps,$(BUILT_TARGET_FILES_PACKAGE), $(INSTALLED
+             $(INSTALLED_PVMFWIMAGE_TARGET) \
+             $(INSTALLED_PVMFW_EMBEDDED_AVBKEY_TARGET) \
+             $(INSTALLED_CUSTOMIMAGES_TARGET) \
++            $(INSTALLED_RESOURCEIMAGE_TARGET) \
+             $(INSTALLED_ANDROID_INFO_TXT_TARGET) \
+             $(INSTALLED_KERNEL_TARGET) \
+             $(INSTALLED_RAMDISK_TARGET) \
+-- 
+2.53.0
+

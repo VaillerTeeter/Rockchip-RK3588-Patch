@@ -1,0 +1,126 @@
+From 054a6e8f17728f7614779057ad14917de8e8f3d7 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Sat, 11 Jul 2026 14:14:13 +0800
+Subject: [PATCH 48/51] feat: simplify MtpDeviceIndex thread pool logic for
+ Rockchip Gallery2
+
+Change-Id: I395e254666e6da9cb1f4ad295440ff808500a67b
+---
+ .../gallery3d/ingest/data/MtpDeviceIndex.java | 50 ++-----------------
+ .../ingest/data/MtpDeviceIndexRunnable.java   |  5 +-
+ 2 files changed, 7 insertions(+), 48 deletions(-)
+
+diff --git a/src/com/android/gallery3d/ingest/data/MtpDeviceIndex.java b/src/com/android/gallery3d/ingest/data/MtpDeviceIndex.java
+index ebfbc9227..b21ad8355 100644
+--- a/src/com/android/gallery3d/ingest/data/MtpDeviceIndex.java
++++ b/src/com/android/gallery3d/ingest/data/MtpDeviceIndex.java
+@@ -3,15 +3,10 @@ package com.android.gallery3d.ingest.data;
+ import android.annotation.TargetApi;
+ import android.mtp.MtpConstants;
+ import android.mtp.MtpDevice;
+-import android.mtp.MtpObjectInfo;
+ import android.os.Build;
+-import android.webkit.MimeTypeMap;
+ 
+ import java.util.Collections;
+-import java.util.HashMap;
+ import java.util.HashSet;
+-import java.util.Locale;
+-import java.util.Map;
+ import java.util.Set;
+ 
+ /**
+@@ -89,18 +84,12 @@ public class MtpDeviceIndex {
+     supportedImageFormats.add(MtpConstants.FORMAT_PNG);
+     supportedImageFormats.add(MtpConstants.FORMAT_GIF);
+     supportedImageFormats.add(MtpConstants.FORMAT_BMP);
+-    supportedImageFormats.add(MtpConstants.FORMAT_TIFF);
+-    supportedImageFormats.add(MtpConstants.FORMAT_TIFF_EP);
+-    if (Build.VERSION.SDK_INT >= 24) {
+-      supportedImageFormats.add(MtpConstants.FORMAT_DNG);
+-    }
+     SUPPORTED_IMAGE_FORMATS = Collections.unmodifiableSet(supportedImageFormats);
+ 
+     Set<Integer> supportedVideoFormats = new HashSet<Integer>();
+     supportedVideoFormats.add(MtpConstants.FORMAT_3GP_CONTAINER);
+     supportedVideoFormats.add(MtpConstants.FORMAT_AVI);
+     supportedVideoFormats.add(MtpConstants.FORMAT_MP4_CONTAINER);
+-    supportedVideoFormats.add(MtpConstants.FORMAT_MP2);
+     supportedVideoFormats.add(MtpConstants.FORMAT_MPEG);
+     // TODO(georgescu): add FORMAT_MOV once Android Media Scanner supports .mov files
+     SUPPORTED_VIDEO_FORMATS = Collections.unmodifiableSet(supportedVideoFormats);
+@@ -115,8 +104,6 @@ public class MtpDeviceIndex {
+   private static final MtpDeviceIndex sInstance = new MtpDeviceIndex(
+       MtpDeviceIndexRunnable.getFactory());
+ 
+-  private static final Map<String, Boolean> sCachedSupportedExtenstions = new HashMap<>();
+-
+   public static MtpDeviceIndex getInstance() {
+     return sInstance;
+   }
+@@ -134,41 +121,12 @@ public class MtpDeviceIndex {
+   }
+ 
+   /**
+-   * @param mtpObjectInfo MTP object info
++   * @param format Media format from {@link MtpConstants}
+    * @return Whether the format is supported by this index.
+    */
+-  public boolean isFormatSupported(MtpObjectInfo mtpObjectInfo) {
+-    // Checks whether the format is supported or not.
+-    final int format = mtpObjectInfo.getFormat();
+-    if (SUPPORTED_IMAGE_FORMATS.contains(format)
+-        || SUPPORTED_VIDEO_FORMATS.contains(format)) {
+-      return true;
+-    }
+-
+-    // Checks whether the extension is supported or not.
+-    final String name = mtpObjectInfo.getName();
+-    if (name == null) {
+-      return false;
+-    }
+-    final int lastDot = name.lastIndexOf('.');
+-    if (lastDot >= 0) {
+-      final String extension = name.substring(lastDot + 1);
+-
+-      Boolean result = sCachedSupportedExtenstions.get(extension);
+-      if (result != null) {
+-        return result;
+-      }
+-      final String mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(
+-          extension.toLowerCase(Locale.US));
+-      if (mime != null) {
+-        // This will also accept the newly added mimetypes for images and videos.
+-        result = mime.startsWith("image/") || mime.startsWith("video/");
+-        sCachedSupportedExtenstions.put(extension, result);
+-        return result;
+-      }
+-    }
+-
+-    return false;
++  public boolean isFormatSupported(int format) {
++    return SUPPORTED_IMAGE_FORMATS.contains(format)
++        || SUPPORTED_VIDEO_FORMATS.contains(format);
+   }
+ 
+   /**
+diff --git a/src/com/android/gallery3d/ingest/data/MtpDeviceIndexRunnable.java b/src/com/android/gallery3d/ingest/data/MtpDeviceIndexRunnable.java
+index fe558157a..32275898e 100644
+--- a/src/com/android/gallery3d/ingest/data/MtpDeviceIndexRunnable.java
++++ b/src/com/android/gallery3d/ingest/data/MtpDeviceIndexRunnable.java
+@@ -171,9 +171,10 @@ public class MtpDeviceIndexRunnable implements Runnable {
+           if (mtpObjectInfo == null) {
+             throw new IndexingException();
+           }
+-          if (mtpObjectInfo.getFormat() == MtpConstants.FORMAT_ASSOCIATION) {
++          int format = mtpObjectInfo.getFormat();
++          if (format == MtpConstants.FORMAT_ASSOCIATION) {
+             pendingDirectories.add(objectHandle);
+-          } else if (mIndex.isFormatSupported(mtpObjectInfo)) {
++          } else if (mIndex.isFormatSupported(format)) {
+             numObjects++;
+             addObject(new IngestObjectInfo(mtpObjectInfo), bucketsTemp, numObjects);
+           }
+-- 
+2.53.0
+

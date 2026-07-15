@@ -1,0 +1,26 @@
+From 8565ddfe7141284324b0d3eee93f0c5d913ceb85 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Sun, 12 Jul 2026 02:14:24 +0800
+Subject: [PATCH 89/89] fix: remove test log expectation for Rockchip BT
+ headset state machine
+
+Change-Id: I7fb9627bb141ee55d01125774fd90be3956dcc13
+---
+ .../src/com/android/bluetooth/hfp/HeadsetStateMachineTest.java   | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/android/app/tests/unit/src/com/android/bluetooth/hfp/HeadsetStateMachineTest.java b/android/app/tests/unit/src/com/android/bluetooth/hfp/HeadsetStateMachineTest.java
+index 371f7722ca..025fe056f3 100644
+--- a/android/app/tests/unit/src/com/android/bluetooth/hfp/HeadsetStateMachineTest.java
++++ b/android/app/tests/unit/src/com/android/bluetooth/hfp/HeadsetStateMachineTest.java
+@@ -1444,7 +1444,6 @@ public class HeadsetStateMachineTest {
+     /**
+      * A test to validate received Android AT commands and processing
+      */
+-    @Ignore("b/275668166")
+     @Test
+     public void testProcessAndroidAt() {
+         setUpConnectedState();
+-- 
+2.53.0
+

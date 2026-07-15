@@ -1,0 +1,353 @@
+From f4260767577bbd102ccbe29f95a467e5f6073e0e Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 15:29:07 +0800
+Subject: [PATCH] feat: add Rockchip input extensions (KeyMouse, handwrite
+ whitelist, SubtitleSurface occlusion, mouse right-click back, displayId
+ switch)
+
+Change-Id: I31ab5c55af83f14e34221a2b005be9fda1a94a01
+
+diff --git a/services/inputflinger/dispatcher/InputDispatcher.cpp b/services/inputflinger/dispatcher/InputDispatcher.cpp
+index c6dd6217d3..8cd70d356c 100644
+--- a/services/inputflinger/dispatcher/InputDispatcher.cpp
++++ b/services/inputflinger/dispatcher/InputDispatcher.cpp
+@@ -2680,9 +2680,44 @@ static bool canBeObscuredBy(const sp<WindowInfoHandle>& windowHandle,
+     } else if (otherInfo->displayId != info->displayId) {
+         return false;
+     }
++    //-----------------------rk code----------
++    else if (0 == strncmp("rk_handwrite_sf", otherHandle->getName().c_str(), 15)) {
++        return false;
++    }
++    //----------------------------------------
+     return true;
+ }
+ 
++static bool isWhiteListWindow(const WindowInfo* first, const WindowInfo* second,
++        const std::vector<sp<WindowInfoHandle>>& windowHandles) {
++    if (first == nullptr) {
++        return false;
++    }
++    if (second == nullptr || strcmp("", second->packageName.c_str()) != 0
++            /*|| 1013 != second->ownerUid*/) {
++        return false;
++    }
++
++    for (const sp<WindowInfoHandle>& otherHandle : windowHandles) {
++        const WindowInfo* info = otherHandle->getInfo();
++        if (info == nullptr) {
++            continue;
++        }
++        //ALOGW("isWhiteListWindow %s/%d/%s", otherHandle->getName().c_str(),
++        //        info->ownerUid, info->packageName.c_str());
++        // bbq-wrapper#0/1013/  SubtitleSurface#0/1013/
++        if (0 == strncmp("SubtitleSurface", otherHandle->getName().c_str(), 15)) {
++            return true;
++        }
++        //-----------------------rk code----------
++        else if (0 == strncmp("rk_handwrite_win", otherHandle->getName().c_str(), 16)) {
++            return true;
++        }
++        //----------------------------------------
++    }
++    return false;
++}
++
+ /**
+  * Returns touch occlusion information in the form of TouchOcclusionInfo. To check if the touch is
+  * untrusted, one should check:
+@@ -2725,7 +2760,10 @@ InputDispatcher::TouchOcclusionInfo InputDispatcher::computeTouchOcclusionInfoLo
+             // we perform the checks below to see if the touch can be propagated or not based on the
+             // window's touch occlusion mode
+             if (otherInfo->touchOcclusionMode == TouchOcclusionMode::BLOCK_UNTRUSTED) {
+-                info.hasBlockingOcclusion = true;
++                if (isWhiteListWindow(windowInfo, otherInfo, windowHandles)) {
++                } else {
++                    info.hasBlockingOcclusion = true;
++                }
+                 info.obscuringUid = otherInfo->ownerUid;
+                 info.obscuringPackage = otherInfo->packageName;
+                 break;
+diff --git a/services/inputflinger/include/InputReaderBase.h b/services/inputflinger/include/InputReaderBase.h
+index 41ecef365d..992dfa305f 100644
+--- a/services/inputflinger/include/InputReaderBase.h
++++ b/services/inputflinger/include/InputReaderBase.h
+@@ -392,6 +392,7 @@ public:
+     /* Gets the affine calibration associated with the specified device. */
+     virtual TouchAffineTransformation getTouchAffineTransformation(
+             const std::string& inputDeviceDescriptor, int32_t surfaceRotation) = 0;
++    virtual int32_t notifyDisplayIdChanged() = 0;
+ };
+ 
+ } // namespace android
+diff --git a/services/inputflinger/reader/Android.bp b/services/inputflinger/reader/Android.bp
+index 3bd3275bb1..5e698a3f50 100644
+--- a/services/inputflinger/reader/Android.bp
++++ b/services/inputflinger/reader/Android.bp
+@@ -46,6 +46,7 @@ filegroup {
+         "mapper/InputMapper.cpp",
+         "mapper/JoystickInputMapper.cpp",
+         "mapper/KeyboardInputMapper.cpp",
++        "mapper/KeyMouseInputMapper.cpp",
+         "mapper/MultiTouchInputMapper.cpp",
+         "mapper/RotaryEncoderInputMapper.cpp",
+         "mapper/SensorInputMapper.cpp",
+diff --git a/services/inputflinger/reader/EventHub.cpp b/services/inputflinger/reader/EventHub.cpp
+index d6a6bd214e..8cc50ade1c 100644
+--- a/services/inputflinger/reader/EventHub.cpp
++++ b/services/inputflinger/reader/EventHub.cpp
+@@ -2068,6 +2068,13 @@ void EventHub::openDeviceLocked(const std::string& devicePath) {
+             device->keyBitmask.any(BTN_JOYSTICK, BTN_DIGI);
+     if (haveKeyboardKeys || haveGamepadButtons) {
+         device->classes |= InputDeviceClass::KEYBOARD;
++
++        // for infrare simulate mouse.
++        char targetProduct[PROPERTY_VALUE_MAX] = "";
++        property_get("ro.target.product", targetProduct, "");
++        if (strcmp(targetProduct, "box") == 0) {
++            device->classes |= InputDeviceClass::INPUT_DEVICE_CLASS_KEYMOUSE;
++        }
+     }
+ 
+     // See if this is a cursor device such as a trackball or mouse.
+diff --git a/services/inputflinger/reader/InputDevice.cpp b/services/inputflinger/reader/InputDevice.cpp
+index 989700f6cf..0051d18c5d 100644
+--- a/services/inputflinger/reader/InputDevice.cpp
++++ b/services/inputflinger/reader/InputDevice.cpp
+@@ -34,6 +34,7 @@
+ #include "SingleTouchInputMapper.h"
+ #include "SwitchInputMapper.h"
+ #include "VibratorInputMapper.h"
++#include "KeyMouseInputMapper.h"
+ 
+ namespace android {
+ 
+@@ -203,6 +204,12 @@ void InputDevice::addEventHubDevice(int32_t eventHubId, bool populateMappers) {
+         mappers.push_back(std::make_unique<CursorInputMapper>(*contextPtr));
+     }
+ 
++    // Mouser-like devices.
++    if (classes.test(InputDeviceClass::INPUT_DEVICE_CLASS_KEYMOUSE)) {
++        mappers.push_back(
++                std::make_unique<KeyMouseInputMapper>(*contextPtr));
++    }
++
+     // Touchscreens and touchpad devices.
+     if (classes.test(InputDeviceClass::TOUCH_MT)) {
+         mappers.push_back(std::make_unique<MultiTouchInputMapper>(*contextPtr));
+diff --git a/services/inputflinger/reader/include/EventHub.h b/services/inputflinger/reader/include/EventHub.h
+index 130c55639b..7bc9dbeed7 100644
+--- a/services/inputflinger/reader/include/EventHub.h
++++ b/services/inputflinger/reader/include/EventHub.h
+@@ -135,6 +135,9 @@ enum class InputDeviceClass : uint32_t {
+     /* The input device has sysfs controllable lights */
+     LIGHT = 0x00008000,
+ 
++    /* The input device has a mouse. */
++    INPUT_DEVICE_CLASS_KEYMOUSE       = 0x00010000,
++
+     /* The input device is virtual (not a real device, not part of UI configuration). */
+     VIRTUAL = 0x40000000,
+ 
+diff --git a/services/inputflinger/reader/mapper/CursorInputMapper.cpp b/services/inputflinger/reader/mapper/CursorInputMapper.cpp
+index 8233682a32..138e599b5d 100644
+--- a/services/inputflinger/reader/mapper/CursorInputMapper.cpp
++++ b/services/inputflinger/reader/mapper/CursorInputMapper.cpp
+@@ -26,6 +26,7 @@
+ #include "TouchCursorInputMapperCommon.h"
+ 
+ #include "input/PrintTools.h"
++#include <cutils/properties.h>
+ 
+ namespace android {
+ 
+@@ -368,6 +369,21 @@ void CursorInputMapper::sync(nsecs_t when, nsecs_t readTime) {
+         pointerCoords.setAxisValue(AMOTION_EVENT_AXIS_Y, yCursorPosition);
+         pointerCoords.setAxisValue(AMOTION_EVENT_AXIS_RELATIVE_X, deltaX);
+         pointerCoords.setAxisValue(AMOTION_EVENT_AXIS_RELATIVE_Y, deltaY);
++
++	char mMousePresentation[PROPERTY_VALUE_MAX] = {0};
++        property_get("sys.mouse.presentation", mMousePresentation, "0");
++        if (strcmp(mMousePresentation, "1") == 0) {
++           //displayId = mDisplayId;
++           float minX, minY, maxX, maxY;
++           if (mPointerController->getBounds(&minX, &minY, &maxX, &maxY)) {
++               if(xCursorPosition==minX||xCursorPosition==maxX||yCursorPosition==minY||yCursorPosition==maxY){
++                   mDisplayId=getPolicy()->notifyDisplayIdChanged();
++                   //mDisplayId=displayId;
++               }
++           }
++        }else{
++           mDisplayId = mPointerController->getDisplayId();
++        }
+     } else {
+         // Pointer capture and navigation modes
+         pointerCoords.setAxisValue(AMOTION_EVENT_AXIS_X, deltaX);
+diff --git a/services/inputflinger/reader/mapper/KeyboardInputMapper.cpp b/services/inputflinger/reader/mapper/KeyboardInputMapper.cpp
+index 2ac81781fa..866becf443 100644
+--- a/services/inputflinger/reader/mapper/KeyboardInputMapper.cpp
++++ b/services/inputflinger/reader/mapper/KeyboardInputMapper.cpp
+@@ -19,6 +19,7 @@
+ // clang-format on
+ 
+ #include "KeyboardInputMapper.h"
++#include <cutils/properties.h>
+ 
+ namespace android {
+ 
+@@ -280,8 +281,28 @@ void KeyboardInputMapper::processKey(nsecs_t when, nsecs_t readTime, bool down,
+         keyMetaState = mMetaState;
+         policyFlags = 0;
+     }
+-
++    // Support simulate mouse function.
++    if (policyFlags & POLICY_FLAG_GESTURE) {
++        getDeviceContext().cancelTouch(when, readTime);
++    }
++    char mKeyMouseState[PROPERTY_VALUE_MAX] = "";
++    property_get("sys.KeyMouse.mKeyMouseState", mKeyMouseState, "off");
++    char mID[PROPERTY_VALUE_MAX] = "";
++    sprintf(mID,"%d",getDeviceId());
++    property_set("sys.ID.mID",mID);
+     if (down) {
++        if (keyCode == AKEYCODE_PROFILE_SWITCH) {
++            char targetProduct[PROPERTY_VALUE_MAX] = "";
++            property_get("ro.target.product", targetProduct, "");
++            if (strcmp(targetProduct, "box") == 0) {
++                if (strcmp(mKeyMouseState, "on")==0) {
++                    property_set("sys.KeyMouse.mKeyMouseState", "off");
++                } else if (strcmp(mKeyMouseState,"off")==0) {
++                    property_set("sys.KeyMouse.mKeyMouseState","on");
++                }
++            }
++        }
++
+         // Rotate key codes according to orientation if needed.
+         if (mParameters.orientationAware) {
+             keyCode = rotateKeyCode(keyCode, getOrientation());
+@@ -350,6 +371,22 @@ void KeyboardInputMapper::processKey(nsecs_t when, nsecs_t readTime, bool down,
+         policyFlags |= POLICY_FLAG_DISABLE_KEY_REPEAT;
+     }
+ 
++    if (down && !isMetaKey(keyCode)) {
++        getContext()->fadePointer();
++    }
++    //
++    if (strcmp(mKeyMouseState, "on") == 0) {
++        if (keyCode == AKEYCODE_DPAD_LEFT) {
++            keyCode = AKEYCODE_SYSTEM_NAVIGATION_LEFT;
++        } else if (keyCode == AKEYCODE_DPAD_RIGHT) {
++            keyCode = AKEYCODE_SYSTEM_NAVIGATION_RIGHT;
++        } else if (keyCode == AKEYCODE_DPAD_UP) {
++            keyCode = AKEYCODE_SYSTEM_NAVIGATION_UP;
++        } else if (keyCode == AKEYCODE_DPAD_DOWN) {
++            keyCode = AKEYCODE_SYSTEM_NAVIGATION_DOWN;
++        }
++    }
++
+     NotifyKeyArgs args(getContext()->getNextId(), when, readTime, getDeviceId(), mSource,
+                        getDisplayId(), policyFlags,
+                        down ? AKEY_EVENT_ACTION_DOWN : AKEY_EVENT_ACTION_UP,
+diff --git a/services/inputflinger/reader/mapper/accumulator/CursorButtonAccumulator.cpp b/services/inputflinger/reader/mapper/accumulator/CursorButtonAccumulator.cpp
+index 2d7d73b4a3..95b9665614 100644
+--- a/services/inputflinger/reader/mapper/accumulator/CursorButtonAccumulator.cpp
++++ b/services/inputflinger/reader/mapper/accumulator/CursorButtonAccumulator.cpp
+@@ -16,11 +16,16 @@
+ 
+ #include "CursorButtonAccumulator.h"
+ 
++#include <cutils/properties.h>
+ #include "EventHub.h"
+ #include "InputDevice.h"
++#include <cutils/properties.h>
+ 
+ namespace android {
+ 
++static const int KEYCODE_ENTER = 28;
++static const int KEYCODE_DPAD_CENTER = 232;
++
+ CursorButtonAccumulator::CursorButtonAccumulator() {
+     clearButtons();
+ }
+@@ -34,6 +39,8 @@ void CursorButtonAccumulator::reset(InputDeviceContext& deviceContext) {
+     mBtnForward = deviceContext.isKeyPressed(BTN_FORWARD);
+     mBtnExtra = deviceContext.isKeyPressed(BTN_EXTRA);
+     mBtnTask = deviceContext.isKeyPressed(BTN_TASK);
++    mBtnOk = deviceContext.isKeyPressed(KEYCODE_ENTER);
++    mBtnOk = deviceContext.isKeyPressed(KEYCODE_DPAD_CENTER);
+ }
+ 
+ void CursorButtonAccumulator::clearButtons() {
+@@ -45,6 +52,7 @@ void CursorButtonAccumulator::clearButtons() {
+     mBtnForward = 0;
+     mBtnExtra = 0;
+     mBtnTask = 0;
++    mBtnOk = 0;
+ }
+ 
+ void CursorButtonAccumulator::process(const RawEvent* rawEvent) {
+@@ -74,6 +82,13 @@ void CursorButtonAccumulator::process(const RawEvent* rawEvent) {
+             case BTN_TASK:
+                 mBtnTask = rawEvent->value;
+                 break;
++            case KEYCODE_ENTER:
++            case KEYCODE_DPAD_CENTER:
++                char mKeyMouseState[PROPERTY_VALUE_MAX] = {0};
++                property_get("sys.KeyMouse.mKeyMouseState", mKeyMouseState, "off");
++                if (strcmp(mKeyMouseState, "on") == 0)
++                    mBtnOk = rawEvent->value;
++                break;
+         }
+     }
+ }
+@@ -83,8 +98,21 @@ uint32_t CursorButtonAccumulator::getButtonState() const {
+     if (mBtnLeft) {
+         result |= AMOTION_EVENT_BUTTON_PRIMARY;
+     }
++    if (mBtnOk) {
++       char mKeyMouseState[PROPERTY_VALUE_MAX] = {0};
++        property_get("sys.KeyMouse.mKeyMouseState", mKeyMouseState, "off");
++        if (strcmp(mKeyMouseState, "on") == 0) {
++         result |= AMOTION_EVENT_BUTTON_PRIMARY;
++        }
++    }
+     if (mBtnRight) {
+-        result |= AMOTION_EVENT_BUTTON_SECONDARY;
++        char targetProduct[PROPERTY_VALUE_MAX] = {0};
++        property_get("ro.target.product", targetProduct, "");
++        if (strcmp(targetProduct, "box") == 0 || strcmp(targetProduct, "atv") == 0) {
++            result |= AMOTION_EVENT_BUTTON_BACK;
++        } else {
++            result |= AMOTION_EVENT_BUTTON_SECONDARY;
++        }
+     }
+     if (mBtnMiddle) {
+         result |= AMOTION_EVENT_BUTTON_TERTIARY;
+diff --git a/services/inputflinger/reader/mapper/accumulator/CursorButtonAccumulator.h b/services/inputflinger/reader/mapper/accumulator/CursorButtonAccumulator.h
+index 9e159064fa..9e9a26815c 100644
+--- a/services/inputflinger/reader/mapper/accumulator/CursorButtonAccumulator.h
++++ b/services/inputflinger/reader/mapper/accumulator/CursorButtonAccumulator.h
+@@ -43,6 +43,7 @@ private:
+     bool mBtnForward;
+     bool mBtnExtra;
+     bool mBtnTask;
++    bool mBtnOk;
+ 
+     void clearButtons();
+ };
+diff --git a/services/inputflinger/tests/InputReader_test.cpp b/services/inputflinger/tests/InputReader_test.cpp
+index 8a97901926..f0a5f33b3d 100644
+--- a/services/inputflinger/tests/InputReader_test.cpp
++++ b/services/inputflinger/tests/InputReader_test.cpp
+@@ -378,6 +378,11 @@ public:
+         return mInputDevices;
+     }
+ 
++    int32_t notifyDisplayIdChanged(){
++        return 0;
++    }
++
++
+     TouchAffineTransformation getTouchAffineTransformation(const std::string& inputDeviceDescriptor,
+             int32_t surfaceRotation) {
+         return transform;

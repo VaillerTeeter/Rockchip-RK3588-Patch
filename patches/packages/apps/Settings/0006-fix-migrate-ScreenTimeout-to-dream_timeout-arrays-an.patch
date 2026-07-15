@@ -1,0 +1,132 @@
+From 07919d1d4fa3190edcdcdfd0ce831da5ae4e01ea Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Sat, 11 Jul 2026 20:54:43 +0800
+Subject: [PATCH 62/67] fix: migrate ScreenTimeout to dream_timeout arrays and
+ fix CtsVerifier max timeout compatibility for Rockchip
+
+Change-Id: Iaba39c055fdebc8284800a5d8c864253228cc48e
+---
+ .../ScreenTimeoutPreferenceController.java    | 27 +++++++++++++------
+ .../display/ScreenTimeoutSettings.java        | 15 ++++++++---
+ 2 files changed, 30 insertions(+), 12 deletions(-)
+
+diff --git a/src/com/android/settings/display/ScreenTimeoutPreferenceController.java b/src/com/android/settings/display/ScreenTimeoutPreferenceController.java
+index 94041ee5bd..a53bcafc64 100644
+--- a/src/com/android/settings/display/ScreenTimeoutPreferenceController.java
++++ b/src/com/android/settings/display/ScreenTimeoutPreferenceController.java
+@@ -46,8 +46,10 @@ public class ScreenTimeoutPreferenceController extends BasePreferenceController
+ 
+     public ScreenTimeoutPreferenceController(Context context, String key) {
+         super(context, key);
+-        mTimeoutEntries = context.getResources().getStringArray(R.array.screen_timeout_entries);
+-        mTimeoutValues = context.getResources().getStringArray(R.array.screen_timeout_values);
++        mTimeoutEntries = context.getResources().getStringArray(R.array.dream_timeout_entries);
++        CharSequence[] temp = context.getResources().getStringArray(R.array.dream_timeout_values);
++        temp[0] = String.valueOf(Integer.MAX_VALUE);
++        mTimeoutValues = temp;
+     }
+ 
+     @Override
+@@ -58,7 +60,12 @@ public class ScreenTimeoutPreferenceController extends BasePreferenceController
+     @Override
+     public void updateState(Preference preference) {
+         final long maxTimeout = getMaxScreenTimeout();
+-        final RestrictedLockUtils.EnforcedAdmin admin = getPreferenceDisablingAdmin(maxTimeout);
++        int startPos = 0;
++        if (maxTimeout != Long.MAX_VALUE) {
++            //fix set maximum time to lock test of CtsVerifier
++            startPos = 1;
++        }
++        final RestrictedLockUtils.EnforcedAdmin admin = getPreferenceDisablingAdmin(maxTimeout, startPos);
+         if (admin != null) {
+             preference.setEnabled(false);
+             preference.setSummary(mContext.getSystemService(DevicePolicyManager.class)
+@@ -93,14 +100,14 @@ public class ScreenTimeoutPreferenceController extends BasePreferenceController
+      * restriction, or an admin that has set a very small MaximumTimeToLock timeout resulting in
+      * no possible options for the user.
+      */
+-    private RestrictedLockUtils.EnforcedAdmin getPreferenceDisablingAdmin(long maxTimeout) {
++    private RestrictedLockUtils.EnforcedAdmin getPreferenceDisablingAdmin(long maxTimeout, int startPos) {
+         final DevicePolicyManager dpm = mContext.getSystemService(DevicePolicyManager.class);
+         RestrictedLockUtils.EnforcedAdmin admin = null;
+         if (dpm != null) {
+             admin = RestrictedLockUtilsInternal.checkIfRestrictionEnforced(
+                     mContext, UserManager.DISALLOW_CONFIG_SCREEN_TIMEOUT,
+                     UserHandle.myUserId());
+-            if (admin == null && getLargestTimeout(maxTimeout) == null) {
++            if (admin == null && getLargestTimeout(maxTimeout, startPos) == null) {
+                 admin = RestrictedLockUtilsInternal.checkIfMaximumTimeToLockIsSet(mContext);
+             }
+         }
+@@ -118,10 +125,14 @@ public class ScreenTimeoutPreferenceController extends BasePreferenceController
+             return null;
+         }
+ 
++        if (currentTimeout == Integer.MAX_VALUE && maxTimeout != Long.MAX_VALUE) {
++            return getLargestTimeout(maxTimeout, 1);
++        }
++
+         if (currentTimeout > maxTimeout) {
+             // The selected time out value is longer than the max timeout allowed by the admin.
+             // Select the largest value from the list by default.
+-            return getLargestTimeout(maxTimeout);
++            return getLargestTimeout(maxTimeout, 0);
+         } else {
+             return getCurrentTimeout(currentTimeout);
+         }
+@@ -136,10 +147,10 @@ public class ScreenTimeoutPreferenceController extends BasePreferenceController
+         return null;
+     }
+ 
+-    private CharSequence getLargestTimeout(long maxTimeout) {
++    private CharSequence getLargestTimeout(long maxTimeout, int startPos) {
+         CharSequence largestTimeout = null;
+         // The list of timeouts is sorted
+-        for (int i = 0; i < mTimeoutValues.length; ++i) {
++        for (int i = startPos; i < mTimeoutValues.length; ++i) {
+             if (Long.parseLong(mTimeoutValues[i].toString()) <= maxTimeout) {
+                 largestTimeout = mTimeoutEntries[i];
+             }
+diff --git a/src/com/android/settings/display/ScreenTimeoutSettings.java b/src/com/android/settings/display/ScreenTimeoutSettings.java
+index 2fc01643f1..cb5cc55e1e 100644
+--- a/src/com/android/settings/display/ScreenTimeoutSettings.java
++++ b/src/com/android/settings/display/ScreenTimeoutSettings.java
+@@ -114,8 +114,9 @@ public class ScreenTimeoutSettings extends RadioButtonPickerFragment implements
+         super.onAttach(context);
+         mContext = context;
+         mDevicePolicyManager = mContext.getSystemService(DevicePolicyManager.class);
+-        mInitialEntries = getResources().getStringArray(R.array.screen_timeout_entries);
+-        mInitialValues = getResources().getStringArray(R.array.screen_timeout_values);
++        mInitialEntries = getResources().getStringArray(R.array.dream_timeout_entries);
++        mInitialValues = getResources().getStringArray(R.array.dream_timeout_values);
++        mInitialValues[0] = String.valueOf(Integer.MAX_VALUE);
+         mAdaptiveSleepController = new AdaptiveSleepPreferenceController(context);
+         mAdaptiveSleepPermissionController = new AdaptiveSleepPermissionPreferenceController(
+                 context);
+@@ -138,7 +139,12 @@ public class ScreenTimeoutSettings extends RadioButtonPickerFragment implements
+         final List<CandidateInfo> candidates = new ArrayList<>();
+         final long maxTimeout = getMaxScreenTimeout(getContext());
+         if (mInitialValues != null) {
+-            for (int i = 0; i < mInitialValues.length; ++i) {
++            int startPos = 0;
++            if (maxTimeout != Long.MAX_VALUE) {
++                //fix set maximum time to lock test of CtsVerifier
++                startPos = 1;
++            }
++            for (int i = startPos; i < mInitialValues.length; ++i) {
+                 if (Long.parseLong(mInitialValues[i].toString()) <= maxTimeout) {
+                     candidates.add(new TimeoutCandidateInfo(mInitialEntries[i],
+                             mInitialValues[i].toString(), true));
+@@ -187,7 +193,8 @@ public class ScreenTimeoutSettings extends RadioButtonPickerFragment implements
+ 
+         final long selectedTimeout = Long.parseLong(defaultKey);
+         final long maxTimeout = getMaxScreenTimeout(getContext());
+-        if (!candidateList.isEmpty() && (selectedTimeout > maxTimeout)) {
++        if ((!candidateList.isEmpty()) && ((selectedTimeout > maxTimeout)
++                || (selectedTimeout == Integer.MAX_VALUE && maxTimeout != Long.MAX_VALUE))) {
+             // The selected time out value is longer than the max timeout allowed by the admin.
+             // Select the largest value from the list by default.
+             final SelectorWithWidgetPreference preferenceWithLargestTimeout =
+-- 
+2.53.0
+

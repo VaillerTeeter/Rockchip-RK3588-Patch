@@ -1,0 +1,28 @@
+From c66a646f4508b33f097d4fc17d09907bf8b124b2 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Tue, 14 Jul 2026 11:30:57 +0800
+Subject: [PATCH] chore: add ART profile for services.jar
+
+Change-Id: Ibf97b5e81e4955077368e875b10c857ef06b3daf
+---
+ services/art-profile | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/services/art-profile b/services/art-profile
+index 1f843e39ad4d..37b4f150579f 100644
+--- a/services/art-profile
++++ b/services/art-profile
+@@ -61033,6 +61033,10 @@ Lcom/android/server/location/gnss/GnssConfiguration$1;
+ Lcom/android/server/location/gnss/GnssConfiguration$HalInterfaceVersion;
+ Lcom/android/server/location/gnss/GnssConfiguration$SetCarrierProperty;
+ Lcom/android/server/location/gnss/GnssConfiguration;
++Lcom/android/server/rkdisplay/RkDisplayModes$RkPhysicalDisplayInfo;
++Lcom/android/server/rkdisplay/RkDisplayModes$RkColorCapacityInfo;
++Lcom/android/server/rkdisplay/RkDisplayModes$RkConnectorInfo;
++Lcom/android/server/rkdisplay/RkDisplayModes;
+ Lcom/android/server/location/gnss/GnssGeofenceProxy;
+ Lcom/android/server/location/gnss/GnssListenerMultiplexer$$ExternalSyntheticLambda0;
+ Lcom/android/server/location/gnss/GnssListenerMultiplexer$$ExternalSyntheticLambda1;
+-- 
+2.53.0
+

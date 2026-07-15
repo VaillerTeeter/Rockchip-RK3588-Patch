@@ -1,0 +1,27 @@
+From b14ed5b8fd338f07b4910431fac51ba1deda01d6 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Sun, 12 Jul 2026 02:14:12 +0800
+Subject: [PATCH 88/89] fix: add HCI command limits for Rockchip BT
+ compatibility
+
+Change-Id: I6814760edf1a03f74d665fc784328e64048b7bea
+---
+ system/stack/include/hcidefs.h | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/system/stack/include/hcidefs.h b/system/stack/include/hcidefs.h
+index 55b3e14d01..2b292ee05d 100644
+--- a/system/stack/include/hcidefs.h
++++ b/system/stack/include/hcidefs.h
+@@ -900,6 +900,8 @@ typedef struct {
+ 
+ // TODO: Remove this once Synaptics specific code is removed
+ #define LMP_COMPID_SYNAPTICS 0x0A76
++//TODO: remove this once aic_semi specific hacks are removed
++#define LMP_COMPID_AIC_SEMI 0x0B3B
+ 
+ /* Parameter information for HCI_SYNA_SET_ACL_PRIORITY */
+ #define HCI_SYNA_ACL_PRIORITY_PARAM_SIZE 3
+-- 
+2.53.0
+

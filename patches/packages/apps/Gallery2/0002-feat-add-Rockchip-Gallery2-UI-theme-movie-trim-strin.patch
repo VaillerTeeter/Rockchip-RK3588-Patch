@@ -1,0 +1,101 @@
+From 904b3721b7e73378f28356456919c1a16dd175dc Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Sat, 11 Jul 2026 14:07:45 +0800
+Subject: [PATCH 29/51] feat: add Rockchip Gallery2 UI theme, movie trim
+ strings, and portrait orientation
+
+Change-Id: I37975fa903b51047c01ac2d3062348e00f1dd534
+---
+ res/layout/main.xml              | 3 ++-
+ res/layout/movie_view.xml        | 1 +
+ res/menu/albumset.xml            | 2 +-
+ res/values-xlarge/styles.xml     | 6 +++---
+ res/values/filtershow_values.xml | 2 +-
+ res/values/strings.xml           | 4 ++++
+ 6 files changed, 12 insertions(+), 6 deletions(-)
+
+diff --git a/res/layout/main.xml b/res/layout/main.xml
+index 08e595959..c68dfb5ff 100644
+--- a/res/layout/main.xml
++++ b/res/layout/main.xml
+@@ -3,7 +3,8 @@
+         android:id="@+id/gallery_root"
+         android:orientation="vertical"
+         android:layout_width="match_parent"
+-        android:layout_height="match_parent">
++        android:layout_height="match_parent"
++        android:background="#1a1a1a">
+     <include layout="@layout/gl_root_group"/>
+     <FrameLayout android:id="@+id/header"
+             android:visibility="gone"
+diff --git a/res/layout/movie_view.xml b/res/layout/movie_view.xml
+index 97aa156fd..ea26fa1fd 100644
+--- a/res/layout/movie_view.xml
++++ b/res/layout/movie_view.xml
+@@ -20,6 +20,7 @@
+         android:layout_width="match_parent"
+         android:layout_height="match_parent">
+     <VideoView android:id="@+id/surface_view"
++            android:background="@android:color/black"
+             android:layout_width="match_parent"
+             android:layout_height="match_parent"
+             android:layout_centerInParent="true" />
+diff --git a/res/menu/albumset.xml b/res/menu/albumset.xml
+index 8ac8cbbd2..8626b9d50 100644
+--- a/res/menu/albumset.xml
++++ b/res/menu/albumset.xml
+@@ -29,7 +29,7 @@
+             android:showAsAction="never" />
+     <item android:id="@+id/action_settings"
+             android:title="@string/settings"
+-            android:showAsAction="never" />
++            android:showAsAction="never" android:visible="false"/>
+     <item android:id="@+id/action_general_help"
+             android:title="@string/help"
+             android:visible="false"
+diff --git a/res/values-xlarge/styles.xml b/res/values-xlarge/styles.xml
+index 55b29b1fa..7e8127ca4 100644
+--- a/res/values-xlarge/styles.xml
++++ b/res/values-xlarge/styles.xml
+@@ -14,9 +14,9 @@
+      limitations under the License.
+ -->
+ <resources xmlns:xliff="urn:oasis:names:tc:xliff:document:1.2">
+-    <style name="DialogPickerTheme" parent="android:Theme.Holo.Dialog">
+-    </style>
+-    <bool name="picker_is_dialog">true</bool>
++<!--    <style name="DialogPickerTheme" parent="android:Theme.Holo.Dialog">-->
++<!--    </style>-->
++<!--    <bool name="picker_is_dialog">true</bool>-->
+ 
+     <!-- Camera resources below -->
+ 
+diff --git a/res/values/filtershow_values.xml b/res/values/filtershow_values.xml
+index a788afefc..22e9880b5 100644
+--- a/res/values/filtershow_values.xml
++++ b/res/values/filtershow_values.xml
+@@ -16,7 +16,7 @@
+ 
+ <resources>
+     <!-- Specify the screen orientation -->
+-    <bool name="only_use_portrait">true</bool>
++    <bool name="only_use_portrait">false</bool>
+ 
+     <!-- Text size for the state panel -->
+     <dimen name="state_panel_text_size">16dip</dimen>
+diff --git a/res/values/strings.xml b/res/values/strings.xml
+index 570014e3e..32a511d91 100644
+--- a/res/values/strings.xml
++++ b/res/values/strings.xml
+@@ -1115,4 +1115,8 @@ CHAR LIMIT = NONE] -->
+         <item quantity="one">%1$d photo</item>
+         <item quantity="other">%1$d photos</item>
+     </plurals>
++
++    <string name="movie_crop_alert">Can not trim : only the MP4 video can trim</string>
++
++    <string name="err_permission">Permission Error</string>
+ </resources>
+-- 
+2.53.0
+

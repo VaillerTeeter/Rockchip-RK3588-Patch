@@ -1,0 +1,83 @@
+From 7107605623ce44968eb6979c16f6a717ef86980f Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Sun, 12 Jul 2026 01:32:42 +0800
+Subject: [PATCH 91/95] feat: enable debug logging for WifiScanner and scan
+ implementations for Rockchip debugging support
+
+Change-Id: I67313ee91de278dcc9b1d52f32c3b2a13056e957
+---
+ framework/java/android/net/wifi/WifiScanner.java                | 2 +-
+ .../android/server/wifi/scanner/BackgroundScanScheduler.java    | 2 +-
+ .../com/android/server/wifi/scanner/HalWifiScannerImpl.java     | 2 +-
+ .../android/server/wifi/scanner/WifiScanningServiceImpl.java    | 2 +-
+ .../com/android/server/wifi/scanner/WificondScannerImpl.java    | 2 +-
+ 5 files changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/framework/java/android/net/wifi/WifiScanner.java b/framework/java/android/net/wifi/WifiScanner.java
+index e2d0721317..1b4f6f40ac 100644
+--- a/framework/java/android/net/wifi/WifiScanner.java
++++ b/framework/java/android/net/wifi/WifiScanner.java
+@@ -1580,7 +1580,7 @@ public class WifiScanner {
+     /* private members and methods */
+ 
+     private static final String TAG = "WifiScanner";
+-    private static final boolean DBG = false;
++    private static final boolean DBG = true;
+ 
+     /* commands for Wifi Service */
+     private static final int BASE = Protocol.BASE_WIFI_SCANNER;
+diff --git a/service/java/com/android/server/wifi/scanner/BackgroundScanScheduler.java b/service/java/com/android/server/wifi/scanner/BackgroundScanScheduler.java
+index 2749aedf37..f8e378c168 100644
+--- a/service/java/com/android/server/wifi/scanner/BackgroundScanScheduler.java
++++ b/service/java/com/android/server/wifi/scanner/BackgroundScanScheduler.java
+@@ -60,7 +60,7 @@ import java.util.Set;
+ public class BackgroundScanScheduler {
+ 
+     private static final String TAG = "BackgroundScanScheduler";
+-    private static final boolean DBG = false;
++    private static final boolean DBG = true;
+ 
+     public static final int DEFAULT_MAX_BUCKETS = 8;
+     // Max channels that can be specified per bucket
+diff --git a/service/java/com/android/server/wifi/scanner/HalWifiScannerImpl.java b/service/java/com/android/server/wifi/scanner/HalWifiScannerImpl.java
+index 12f65958de..ac468df561 100644
+--- a/service/java/com/android/server/wifi/scanner/HalWifiScannerImpl.java
++++ b/service/java/com/android/server/wifi/scanner/HalWifiScannerImpl.java
+@@ -37,7 +37,7 @@ import java.io.PrintWriter;
+  */
+ public class HalWifiScannerImpl extends WifiScannerImpl implements Handler.Callback {
+     private static final String TAG = "HalWifiScannerImpl";
+-    private static final boolean DBG = false;
++    private static final boolean DBG = true;
+ 
+     private final WifiNative mWifiNative;
+     private final ChannelHelper mChannelHelper;
+diff --git a/service/java/com/android/server/wifi/scanner/WifiScanningServiceImpl.java b/service/java/com/android/server/wifi/scanner/WifiScanningServiceImpl.java
+index 2c792d620f..edbfbd8423 100644
+--- a/service/java/com/android/server/wifi/scanner/WifiScanningServiceImpl.java
++++ b/service/java/com/android/server/wifi/scanner/WifiScanningServiceImpl.java
+@@ -86,7 +86,7 @@ import java.util.Set;
+ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
+ 
+     private static final String TAG = WifiScanningService.TAG;
+-    private static final boolean DBG = false;
++    private static final boolean DBG = true;
+ 
+     private static final int UNKNOWN_PID = -1;
+ 
+diff --git a/service/java/com/android/server/wifi/scanner/WificondScannerImpl.java b/service/java/com/android/server/wifi/scanner/WificondScannerImpl.java
+index 31eb421737..61c20f391f 100644
+--- a/service/java/com/android/server/wifi/scanner/WificondScannerImpl.java
++++ b/service/java/com/android/server/wifi/scanner/WificondScannerImpl.java
+@@ -51,7 +51,7 @@ import javax.annotation.concurrent.GuardedBy;
+  */
+ public class WificondScannerImpl extends WifiScannerImpl implements Handler.Callback {
+     private static final String TAG = "WificondScannerImpl";
+-    private static final boolean DBG = false;
++    private static final boolean DBG = true;
+ 
+     public static final String TIMEOUT_ALARM_TAG = TAG + " Scan Timeout";
+     // Default number of networks that can be specified to wificond per scan request
+-- 
+2.53.0
+

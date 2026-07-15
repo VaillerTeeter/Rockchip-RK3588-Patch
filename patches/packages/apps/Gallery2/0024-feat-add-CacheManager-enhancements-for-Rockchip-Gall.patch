@@ -1,0 +1,38 @@
+From b7412f2ff0ad2421d94bd2ed264073044d5f4123 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Sat, 11 Jul 2026 14:14:13 +0800
+Subject: [PATCH 51/51] feat: add CacheManager enhancements for Rockchip
+ Gallery2
+
+Change-Id: Id516e4f611ea546e55d6ddf72c96edd24350f3a1
+---
+ src/com/android/gallery3d/util/CacheManager.java | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/src/com/android/gallery3d/util/CacheManager.java b/src/com/android/gallery3d/util/CacheManager.java
+index ba466f79b..4803a8792 100644
+--- a/src/com/android/gallery3d/util/CacheManager.java
++++ b/src/com/android/gallery3d/util/CacheManager.java
+@@ -46,6 +46,9 @@ public class CacheManager {
+             BlobCache cache = sCacheMap.get(filename);
+             if (cache == null) {
+                 File cacheDir = context.getExternalCacheDir();
++                if(cacheDir == null || !cacheDir.exists()){
++                    return null;
++                }
+                 String path = cacheDir.getAbsolutePath() + "/" + filename;
+                 try {
+                     cache = new BlobCache(path, maxEntries, maxBytes, false,
+@@ -73,6 +76,9 @@ public class CacheManager {
+         pref.edit().putInt(KEY_CACHE_UP_TO_DATE, 1).commit();
+ 
+         File cacheDir = context.getExternalCacheDir();
++        if(cacheDir == null || !cacheDir.exists()){
++            return ;
++        }
+         String prefix = cacheDir.getAbsolutePath() + "/";
+ 
+         BlobCache.deleteFiles(prefix + "imgcache");
+-- 
+2.53.0
+

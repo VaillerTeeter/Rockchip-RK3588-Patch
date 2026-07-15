@@ -1,0 +1,27 @@
+From f07ec94b1a569684dce7564ff3b3d657bc3972dd Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Sat, 11 Jul 2026 14:07:45 +0800
+Subject: [PATCH 30/51] feat: add Chinese (zh-CN) translations for Rockchip
+ Gallery2
+
+Change-Id: Id06b72dedd79100e0505c8ac2d89fff6057803a7
+---
+ res/values-zh-rCN/strings.xml | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/res/values-zh-rCN/strings.xml b/res/values-zh-rCN/strings.xml
+index 91a6358c2..405ecd953 100644
+--- a/res/values-zh-rCN/strings.xml
++++ b/res/values-zh-rCN/strings.xml
+@@ -436,4 +436,8 @@
+     <item quantity="one" msgid="6949174783125614798">"%1$d张照片"</item>
+     <item quantity="other" msgid="3813306834113858135">"%1$d张照片"</item>
+   </plurals>
++
++    <string name="movie_crop_alert">"无法剪辑：只有MP4格式视频才能剪辑"</string>
++
++    <string name="err_permission">"无权限"</string>
+ </resources>
+-- 
+2.53.0
+

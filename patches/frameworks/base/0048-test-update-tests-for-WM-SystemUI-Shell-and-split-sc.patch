@@ -1,0 +1,514 @@
+From db579c0b763ee4069bf53d0cc03453ee68e93439 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 17:29:26 +0800
+Subject: [PATCH] test: update tests for WM, SystemUI, Shell, and split-screen
+
+Change-Id: I9bdd14514b9a3c02d9a80635d87537502b1022a7
+
+diff --git a/libs/WindowManager/Shell/tests/unittest/src/com/android/wm/shell/splitscreen/StageTaskListenerTests.java b/libs/WindowManager/Shell/tests/unittest/src/com/android/wm/shell/splitscreen/StageTaskListenerTests.java
+index b31e20fcc438..5ee8bf3006a3 100644
+--- a/libs/WindowManager/Shell/tests/unittest/src/com/android/wm/shell/splitscreen/StageTaskListenerTests.java
++++ b/libs/WindowManager/Shell/tests/unittest/src/com/android/wm/shell/splitscreen/StageTaskListenerTests.java
+@@ -126,6 +126,12 @@ public final class StageTaskListenerTests extends ShellTestCase {
+         verify(mCallbacks).onStatusChanged(eq(mRootTask.isVisible), eq(true));
+     }
+ 
++    @Test(expected = IllegalArgumentException.class)
++    public void testUnknownTaskVanished() {
++        final ActivityManager.RunningTaskInfo task = new TestRunningTaskInfoBuilder().build();
++        mStageTaskListener.onTaskVanished(task);
++    }
++
+     @Test
+     public void testTaskVanished() {
+         // With shell transitions, the transition manages status changes, so skip this test.
+diff --git a/packages/SystemUI/tests/src/com/android/systemui/shade/NotificationPanelViewControllerBaseTest.java b/packages/SystemUI/tests/src/com/android/systemui/shade/NotificationPanelViewControllerBaseTest.java
+index 7087c0135998..f297c8f493d8 100644
+--- a/packages/SystemUI/tests/src/com/android/systemui/shade/NotificationPanelViewControllerBaseTest.java
++++ b/packages/SystemUI/tests/src/com/android/systemui/shade/NotificationPanelViewControllerBaseTest.java
+@@ -151,6 +151,7 @@ import com.android.systemui.statusbar.phone.StatusBarKeyguardViewManager;
+ import com.android.systemui.statusbar.phone.StatusBarTouchableRegionManager;
+ import com.android.systemui.statusbar.phone.TapAgainViewController;
+ import com.android.systemui.statusbar.phone.UnlockedScreenOffAnimationController;
++import com.android.systemui.statusbar.policy.CastController;
+ import com.android.systemui.statusbar.policy.ConfigurationController;
+ import com.android.systemui.statusbar.policy.KeyguardQsUserSwitchController;
+ import com.android.systemui.statusbar.policy.KeyguardStateController;
+@@ -293,6 +294,7 @@ public class NotificationPanelViewControllerBaseTest extends SysuiTestCase {
+     @Captor
+     protected ArgumentCaptor<NotificationStackScrollLayout.OnEmptySpaceClickListener>
+             mEmptySpaceClickListenerCaptor;
++    @Mock private CastController mCastController;
+ 
+     protected KeyguardBottomAreaInteractor mKeyguardBottomAreaInteractor;
+     protected KeyguardInteractor mKeyguardInteractor;
+@@ -639,7 +641,8 @@ public class NotificationPanelViewControllerBaseTest extends SysuiTestCase {
+                 mMetricsLogger,
+                 mFeatureFlags,
+                 mInteractionJankMonitor,
+-                mShadeLog
++                mShadeLog,
++                mCastController
+         );
+     }
+ 
+diff --git a/packages/SystemUI/tests/src/com/android/systemui/shade/QuickSettingsControllerTest.java b/packages/SystemUI/tests/src/com/android/systemui/shade/QuickSettingsControllerTest.java
+index d8ffe39e427d..d013b0a502db 100644
+--- a/packages/SystemUI/tests/src/com/android/systemui/shade/QuickSettingsControllerTest.java
++++ b/packages/SystemUI/tests/src/com/android/systemui/shade/QuickSettingsControllerTest.java
+@@ -85,6 +85,7 @@ import com.android.systemui.statusbar.phone.LockscreenGestureLogger;
+ import com.android.systemui.statusbar.phone.ScrimController;
+ import com.android.systemui.statusbar.phone.StatusBarKeyguardViewManager;
+ import com.android.systemui.statusbar.phone.StatusBarTouchableRegionManager;
++import com.android.systemui.statusbar.policy.CastController;
+ import com.android.systemui.statusbar.policy.KeyguardStateController;
+ 
+ import org.junit.After;
+@@ -153,6 +154,7 @@ public class QuickSettingsControllerTest extends SysuiTestCase {
+     @Mock private ShadeLogger mShadeLogger;
+     @Mock private DumpManager mDumpManager;
+     @Mock private UiEventLogger mUiEventLogger;
++    @Mock private CastController mCastController;
+ 
+     private SysuiStatusBarStateController mStatusBarStateController;
+ 
+@@ -239,7 +241,8 @@ public class QuickSettingsControllerTest extends SysuiTestCase {
+                 mMetricsLogger,
+                 mFeatureFlags,
+                 mInteractionJankMonitor,
+-                mShadeLogger
++                mShadeLogger,
++                mCastController
+         );
+ 
+         mFragmentListener = mQsController.getQsFragmentListener();
+diff --git a/packages/SystemUI/tests/src/com/android/systemui/statusbar/policy/CastControllerImplTest.java b/packages/SystemUI/tests/src/com/android/systemui/statusbar/policy/CastControllerImplTest.java
+index db50163ce6a7..b8e4306a319d 100644
+--- a/packages/SystemUI/tests/src/com/android/systemui/statusbar/policy/CastControllerImplTest.java
++++ b/packages/SystemUI/tests/src/com/android/systemui/statusbar/policy/CastControllerImplTest.java
+@@ -1,6 +1,7 @@
+ package com.android.systemui.statusbar.policy;
+ 
+ 
++import static org.junit.Assert.assertTrue;
+ import static org.junit.Assert.fail;
+ import static org.mockito.Mockito.mock;
+ import static org.mockito.Mockito.never;
+@@ -125,4 +126,20 @@ public class CastControllerImplTest extends SysuiTestCase {
+             fail("Concurrent modification exception");
+         }
+     }
++
++    @Test
++    public void hasConnectedCastDevice_connected() {
++        CastController.CastDevice castDevice = new CastController.CastDevice();
++        castDevice.state = CastController.CastDevice.STATE_CONNECTED;
++        mController.startCasting(castDevice);
++        assertTrue(mController.hasConnectedCastDevice());
++    }
++
++    @Test
++    public void hasConnectedCastDevice_notConnected() {
++        CastController.CastDevice castDevice = new CastController.CastDevice();
++        castDevice.state = CastController.CastDevice.STATE_CONNECTING;
++        mController.startCasting(castDevice);
++        assertTrue(mController.hasConnectedCastDevice());
++    }
+ }
+diff --git a/packages/SystemUI/tests/src/com/android/systemui/unfold/FoldAodAnimationControllerTest.kt b/packages/SystemUI/tests/src/com/android/systemui/unfold/FoldAodAnimationControllerTest.kt
+index 7f64867d3868..f788229ddcfd 100644
+--- a/packages/SystemUI/tests/src/com/android/systemui/unfold/FoldAodAnimationControllerTest.kt
++++ b/packages/SystemUI/tests/src/com/android/systemui/unfold/FoldAodAnimationControllerTest.kt
+@@ -197,6 +197,31 @@ class FoldAodAnimationControllerTest : SysuiTestCase() {
+             job.cancel()
+         }
+ 
++    @Test
++    fun onFolded_onScreenTurningOnWithoutDozingThenWithDozing_doesNotLogLatency() =
++        runBlocking(IMMEDIATE) {
++            val job = underTest.listenForDozing(this)
++            keyguardRepository.setDozing(false)
++            setAodEnabled(enabled = true)
++
++            yield()
++
++            fold()
++            simulateScreenTurningOn()
++            reset(latencyTracker)
++
++            // Now enable dozing and trigger a second run through the aod animation code. It should
++            // not rerun the animation
++            keyguardRepository.setDozing(true)
++            yield()
++            simulateScreenTurningOn()
++
++            verify(latencyTracker, never()).onActionStart(any())
++            verify(latencyTracker, never()).onActionEnd(any())
++
++            job.cancel()
++        }
++
+     @Test
+     fun onFolded_animationCancelled_doesNotLogLatency() =
+         runBlocking(IMMEDIATE) {
+diff --git a/packages/SystemUI/tests/utils/src/com/android/systemui/utils/leaks/FakeCastController.java b/packages/SystemUI/tests/utils/src/com/android/systemui/utils/leaks/FakeCastController.java
+index f6b24da9b821..84ace7cc9540 100644
+--- a/packages/SystemUI/tests/utils/src/com/android/systemui/utils/leaks/FakeCastController.java
++++ b/packages/SystemUI/tests/utils/src/com/android/systemui/utils/leaks/FakeCastController.java
+@@ -51,4 +51,9 @@ public class FakeCastController extends BaseLeakChecker<Callback> implements Cas
+     public void stopCasting(CastDevice device) {
+ 
+     }
++
++    @Override
++    public boolean hasConnectedCastDevice() {
++        return false;
++    }
+ }
+diff --git a/services/tests/wmtests/src/com/android/server/wm/ActivityRecordTests.java b/services/tests/wmtests/src/com/android/server/wm/ActivityRecordTests.java
+index 04c020285832..c91822279e7c 100644
+--- a/services/tests/wmtests/src/com/android/server/wm/ActivityRecordTests.java
++++ b/services/tests/wmtests/src/com/android/server/wm/ActivityRecordTests.java
+@@ -3117,7 +3117,7 @@ public class ActivityRecordTests extends WindowTestsBase {
+                 .setSystemDecorations(true).build();
+         // Add a decor insets provider window.
+         final WindowState navbar = createNavBarWithProvidedInsets(squareDisplay);
+-        assertTrue(navbar.providesDisplayDecorInsets()
++        assertTrue(navbar.providesNonDecorInsets()
+                 && squareDisplay.getDisplayPolicy().updateDecorInsetsInfo());
+         squareDisplay.sendNewConfiguration();
+         final Task task = new TaskBuilder(mSupervisor).setDisplay(squareDisplay).build();
+diff --git a/services/tests/wmtests/src/com/android/server/wm/DisplayPolicyTests.java b/services/tests/wmtests/src/com/android/server/wm/DisplayPolicyTests.java
+index 5da3c36fbef8..ac8dd465adbe 100644
+--- a/services/tests/wmtests/src/com/android/server/wm/DisplayPolicyTests.java
++++ b/services/tests/wmtests/src/com/android/server/wm/DisplayPolicyTests.java
+@@ -48,7 +48,6 @@ import static org.junit.Assert.assertNull;
+ import static org.junit.Assert.assertTrue;
+ import static org.mockito.ArgumentMatchers.anyBoolean;
+ import static org.mockito.ArgumentMatchers.anyInt;
+-import static org.mockito.Mockito.doReturn;
+ import static org.mockito.Mockito.mock;
+ import static org.mockito.Mockito.never;
+ import static org.mockito.Mockito.spy;
+@@ -302,27 +301,20 @@ public class DisplayPolicyTests extends WindowTestsBase {
+ 
+     @Test
+     public void testUpdateDisplayConfigurationByDecor() {
+-        doReturn(NO_CUTOUT).when(mDisplayContent).calculateDisplayCutoutForRotation(anyInt());
+         final WindowState navbar = createNavBarWithProvidedInsets(mDisplayContent);
+         final DisplayPolicy displayPolicy = mDisplayContent.getDisplayPolicy();
+         final DisplayInfo di = mDisplayContent.getDisplayInfo();
+         final int prevScreenHeightDp = mDisplayContent.getConfiguration().screenHeightDp;
+-        assertTrue(navbar.providesDisplayDecorInsets() && displayPolicy.updateDecorInsetsInfo());
++        assertTrue(navbar.providesNonDecorInsets() && displayPolicy.updateDecorInsetsInfo());
+         assertEquals(NAV_BAR_HEIGHT, displayPolicy.getDecorInsetsInfo(di.rotation,
+                 di.logicalWidth, di.logicalHeight).mConfigInsets.bottom);
+         mDisplayContent.sendNewConfiguration();
+         assertNotEquals(prevScreenHeightDp, mDisplayContent.getConfiguration().screenHeightDp);
+-        assertFalse(navbar.providesDisplayDecorInsets() && displayPolicy.updateDecorInsetsInfo());
++        assertFalse(navbar.providesNonDecorInsets() && displayPolicy.updateDecorInsetsInfo());
+ 
+         navbar.removeIfPossible();
+         assertEquals(0, displayPolicy.getDecorInsetsInfo(di.rotation, di.logicalWidth,
+                 di.logicalHeight).mNonDecorInsets.bottom);
+-
+-        final WindowState statusBar = createStatusBarWithProvidedInsets(mDisplayContent);
+-        assertTrue(statusBar.providesDisplayDecorInsets()
+-                && displayPolicy.updateDecorInsetsInfo());
+-        assertEquals(STATUS_BAR_HEIGHT, displayPolicy.getDecorInsetsInfo(di.rotation,
+-                di.logicalWidth, di.logicalHeight).mConfigInsets.top);
+     }
+ 
+     @UseTestDisplay(addWindows = { W_NAVIGATION_BAR, W_INPUT_METHOD })
+diff --git a/services/tests/wmtests/src/com/android/server/wm/DisplayRotationTests.java b/services/tests/wmtests/src/com/android/server/wm/DisplayRotationTests.java
+index 950e9e4848b0..a831b270dbd9 100644
+--- a/services/tests/wmtests/src/com/android/server/wm/DisplayRotationTests.java
++++ b/services/tests/wmtests/src/com/android/server/wm/DisplayRotationTests.java
+@@ -537,6 +537,24 @@ public class DisplayRotationTests {
+                 SCREEN_ORIENTATION_UNSPECIFIED, Surface.ROTATION_180));
+     }
+ 
++    @Test
++    public void testFreezeRotation_reverseRotationDirectionAroundZAxis_yes() throws Exception {
++        mBuilder.build();
++        when(mDeviceStateController.shouldReverseRotationDirectionAroundZAxis()).thenReturn(true);
++
++        freezeRotation(Surface.ROTATION_90);
++        assertEquals(Surface.ROTATION_270, mTarget.getUserRotation());
++    }
++
++    @Test
++    public void testFreezeRotation_reverseRotationDirectionAroundZAxis_no() throws Exception {
++        mBuilder.build();
++        when(mDeviceStateController.shouldReverseRotationDirectionAroundZAxis()).thenReturn(false);
++
++        freezeRotation(Surface.ROTATION_90);
++        assertEquals(Surface.ROTATION_90, mTarget.getUserRotation());
++    }
++
+     private boolean waitForUiHandler() {
+         final CountDownLatch latch = new CountDownLatch(1);
+         UiThread.getHandler().post(latch::countDown);
+diff --git a/services/tests/wmtests/src/com/android/server/wm/SizeCompatTests.java b/services/tests/wmtests/src/com/android/server/wm/SizeCompatTests.java
+index d93871e59b37..637ec7e92a7d 100644
+--- a/services/tests/wmtests/src/com/android/server/wm/SizeCompatTests.java
++++ b/services/tests/wmtests/src/com/android/server/wm/SizeCompatTests.java
+@@ -174,44 +174,6 @@ public class SizeCompatTests extends WindowTestsBase {
+         setUpApp(builder.build());
+     }
+ 
+-    @Test
+-    public void testActivityInHistoryAndNotVisibleIsNotUsedAsOpaqueForTranslucentActivities() {
+-        mWm.mLetterboxConfiguration.setTranslucentLetterboxingOverrideEnabled(true);
+-        setUpDisplaySizeWithApp(2000, 1000);
+-        prepareUnresizable(mActivity, SCREEN_ORIENTATION_PORTRAIT);
+-        mActivity.mDisplayContent.setIgnoreOrientationRequest(true /* ignoreOrientationRequest */);
+-        mActivity.nowVisible = false;
+-        // Translucent Activity
+-        final ActivityRecord translucentActivity = new ActivityBuilder(mAtm)
+-                .setLaunchedFromUid(mActivity.getUid())
+-                .setScreenOrientation(SCREEN_ORIENTATION_PORTRAIT)
+-                .build();
+-        doReturn(false).when(translucentActivity).fillsParent();
+-
+-        mTask.addChild(translucentActivity);
+-
+-        assertFalse(translucentActivity.mLetterboxUiController.hasInheritedLetterboxBehavior());
+-    }
+-
+-    @Test
+-    public void testActivityInHistoryAndVisibleIsUsedAsOpaqueForTranslucentActivities() {
+-        mWm.mLetterboxConfiguration.setTranslucentLetterboxingOverrideEnabled(true);
+-        setUpDisplaySizeWithApp(2000, 1000);
+-        prepareUnresizable(mActivity, SCREEN_ORIENTATION_PORTRAIT);
+-        mActivity.mDisplayContent.setIgnoreOrientationRequest(true /* ignoreOrientationRequest */);
+-        mActivity.nowVisible = true;
+-        // Translucent Activity
+-        final ActivityRecord translucentActivity = new ActivityBuilder(mAtm)
+-                .setLaunchedFromUid(mActivity.getUid())
+-                .setScreenOrientation(SCREEN_ORIENTATION_PORTRAIT)
+-                .build();
+-        doReturn(false).when(translucentActivity).fillsParent();
+-
+-        mTask.addChild(translucentActivity);
+-
+-        assertTrue(translucentActivity.mLetterboxUiController.hasInheritedLetterboxBehavior());
+-    }
+-
+     @Test
+     public void testCleanLetterboxConfigListenerWhenTranslucentIsDestroyed() {
+         mWm.mLetterboxConfiguration.setTranslucentLetterboxingOverrideEnabled(true);
+@@ -236,7 +198,6 @@ public class SizeCompatTests extends WindowTestsBase {
+     public void testHorizontalReachabilityEnabledForTranslucentActivities() {
+         setUpDisplaySizeWithApp(2500, 1000);
+         mActivity.mDisplayContent.setIgnoreOrientationRequest(true /* ignoreOrientationRequest */);
+-        mActivity.nowVisible = true;
+         final LetterboxConfiguration config = mWm.mLetterboxConfiguration;
+         config.setTranslucentLetterboxingOverrideEnabled(true);
+         config.setLetterboxHorizontalPositionMultiplier(0.5f);
+@@ -312,7 +273,6 @@ public class SizeCompatTests extends WindowTestsBase {
+     public void testVerticalReachabilityEnabledForTranslucentActivities() {
+         setUpDisplaySizeWithApp(1000, 2500);
+         mActivity.mDisplayContent.setIgnoreOrientationRequest(true /* ignoreOrientationRequest */);
+-        mActivity.nowVisible = true;
+         final LetterboxConfiguration config = mWm.mLetterboxConfiguration;
+         config.setTranslucentLetterboxingOverrideEnabled(true);
+         config.setLetterboxVerticalPositionMultiplier(0.5f);
+@@ -384,6 +344,104 @@ public class SizeCompatTests extends WindowTestsBase {
+         checkIsCentered.run();
+     }
+ 
++    @Test
++    public void testApplyStrategyAgainWhenOpaqueIsDestroyed() {
++        mWm.mLetterboxConfiguration.setTranslucentLetterboxingOverrideEnabled(true);
++        setUpDisplaySizeWithApp(2000, 1000);
++        prepareUnresizable(mActivity, SCREEN_ORIENTATION_PORTRAIT);
++        mActivity.mDisplayContent.setIgnoreOrientationRequest(true /* ignoreOrientationRequest */);
++        // Launch another opaque activity
++        final ActivityRecord opaqueActivity = new ActivityBuilder(mAtm)
++                .setLaunchedFromUid(mActivity.getUid())
++                .setScreenOrientation(SCREEN_ORIENTATION_PORTRAIT)
++                .build();
++        mTask.addChild(opaqueActivity);
++        // Transparent activity strategy not applied
++        assertFalse(opaqueActivity.mLetterboxUiController.hasInheritedLetterboxBehavior());
++
++        // Launch translucent Activity
++        final ActivityRecord translucentActivity = new ActivityBuilder(mAtm)
++                .setLaunchedFromUid(mActivity.getUid())
++                .setScreenOrientation(SCREEN_ORIENTATION_PORTRAIT)
++                .build();
++        doReturn(false).when(translucentActivity).fillsParent();
++        mTask.addChild(translucentActivity);
++        // Transparent strategy applied
++        assertTrue(translucentActivity.mLetterboxUiController.hasInheritedLetterboxBehavior());
++
++        spyOn(translucentActivity.mLetterboxUiController);
++        clearInvocations(translucentActivity.mLetterboxUiController);
++
++        // We destroy the first opaque activity
++        opaqueActivity.setState(DESTROYED, "testing");
++        opaqueActivity.removeImmediately();
++
++        // Check that updateInheritedLetterbox() is invoked again
++        verify(translucentActivity.mLetterboxUiController).updateInheritedLetterbox();
++    }
++
++    @Test
++    public void testResetOpaqueReferenceWhenOpaqueIsDestroyed() {
++        mWm.mLetterboxConfiguration.setTranslucentLetterboxingOverrideEnabled(true);
++        setUpDisplaySizeWithApp(2000, 1000);
++        prepareUnresizable(mActivity, SCREEN_ORIENTATION_PORTRAIT);
++        mActivity.mDisplayContent.setIgnoreOrientationRequest(true /* ignoreOrientationRequest */);
++
++        // Launch translucent Activity
++        final ActivityRecord translucentActivity = new ActivityBuilder(mAtm)
++                .setLaunchedFromUid(mActivity.getUid())
++                .setScreenOrientation(SCREEN_ORIENTATION_PORTRAIT)
++                .build();
++        doReturn(false).when(translucentActivity).fillsParent();
++        mTask.addChild(translucentActivity);
++        // Transparent strategy applied
++        assertTrue(translucentActivity.mLetterboxUiController.hasInheritedLetterboxBehavior());
++        assertNotNull(translucentActivity.mLetterboxUiController.mFirstOpaqueActivityBeneath);
++
++        spyOn(translucentActivity.mLetterboxUiController);
++        clearInvocations(translucentActivity.mLetterboxUiController);
++
++        // We destroy the first opaque activity
++        mActivity.setState(DESTROYED, "testing");
++        mActivity.removeImmediately();
++
++        // Check that updateInheritedLetterbox() is invoked again
++        verify(translucentActivity.mLetterboxUiController).updateInheritedLetterbox();
++        assertNull(translucentActivity.mLetterboxUiController.mFirstOpaqueActivityBeneath);
++    }
++
++    @Test
++    public void testNotApplyStrategyAgainWhenOpaqueIsNotDestroyed() {
++        mWm.mLetterboxConfiguration.setTranslucentLetterboxingOverrideEnabled(true);
++        setUpDisplaySizeWithApp(2000, 1000);
++        prepareUnresizable(mActivity, SCREEN_ORIENTATION_PORTRAIT);
++        mActivity.mDisplayContent.setIgnoreOrientationRequest(true /* ignoreOrientationRequest */);
++        // Launch another opaque activity
++        final ActivityRecord opaqueActivity = new ActivityBuilder(mAtm)
++                .setLaunchedFromUid(mActivity.getUid())
++                .setScreenOrientation(SCREEN_ORIENTATION_PORTRAIT)
++                .build();
++        mTask.addChild(opaqueActivity);
++        // Transparent activity strategy not applied
++        assertFalse(opaqueActivity.mLetterboxUiController.hasInheritedLetterboxBehavior());
++
++        // Launch translucent Activity
++        final ActivityRecord translucentActivity = new ActivityBuilder(mAtm)
++                .setLaunchedFromUid(mActivity.getUid())
++                .setScreenOrientation(SCREEN_ORIENTATION_PORTRAIT)
++                .build();
++        doReturn(false).when(translucentActivity).fillsParent();
++        mTask.addChild(translucentActivity);
++        // Transparent strategy applied
++        assertTrue(translucentActivity.mLetterboxUiController.hasInheritedLetterboxBehavior());
++
++        spyOn(translucentActivity.mLetterboxUiController);
++        clearInvocations(translucentActivity.mLetterboxUiController);
++
++        // Check that updateInheritedLetterbox() is invoked again
++        verify(translucentActivity.mLetterboxUiController, never()).updateInheritedLetterbox();
++    }
++
+     @Test
+     public void testApplyStrategyToTranslucentActivities() {
+         mWm.mLetterboxConfiguration.setTranslucentLetterboxingOverrideEnabled(true);
+@@ -391,7 +449,6 @@ public class SizeCompatTests extends WindowTestsBase {
+         prepareUnresizable(mActivity, 1.5f /* maxAspect */, SCREEN_ORIENTATION_PORTRAIT);
+         mActivity.info.setMinAspectRatio(1.2f);
+         mActivity.mDisplayContent.setIgnoreOrientationRequest(true /* ignoreOrientationRequest */);
+-        mActivity.nowVisible = true;
+         // Translucent Activity
+         final ActivityRecord translucentActivity = new ActivityBuilder(mAtm)
+                 .setLaunchedFromUid(mActivity.getUid())
+@@ -448,7 +505,6 @@ public class SizeCompatTests extends WindowTestsBase {
+         prepareUnresizable(mActivity, 1.5f /* maxAspect */, SCREEN_ORIENTATION_PORTRAIT);
+         mActivity.info.setMinAspectRatio(1.2f);
+         mActivity.mDisplayContent.setIgnoreOrientationRequest(true /* ignoreOrientationRequest */);
+-        mActivity.nowVisible = true;
+         // Translucent Activity
+         final ActivityRecord translucentActivity = new ActivityBuilder(mAtm)
+                 .setLaunchedFromUid(mActivity.getUid())
+@@ -475,7 +531,25 @@ public class SizeCompatTests extends WindowTestsBase {
+     }
+ 
+     @Test
+-    public void testTranslucentActivitiesDontGoInSizeCompatMode() {
++    public void testNotApplyStrategyToTranslucentActivitiesOverEmbeddedActivities() {
++        mWm.mLetterboxConfiguration.setTranslucentLetterboxingOverrideEnabled(true);
++        setUpDisplaySizeWithApp(2000, 1000);
++        mActivity.info.screenOrientation = SCREEN_ORIENTATION_PORTRAIT;
++        mActivity.mDisplayContent.setIgnoreOrientationRequest(true /* ignoreOrientationRequest */);
++        // Mock the activity as embedded without additional TaskFragment layer in the task for
++        // simplicity.
++        doReturn(true).when(mActivity).isEmbedded();
++        // Translucent Activity
++        final ActivityRecord translucentActivity = new ActivityBuilder(mAtm).build();
++        doReturn(false).when(translucentActivity).matchParentBounds();
++        doReturn(false).when(translucentActivity).fillsParent();
++        mTask.addChild(translucentActivity);
++        // Check the strategy has not being applied
++        assertFalse(translucentActivity.mLetterboxUiController.hasInheritedLetterboxBehavior());
++    }
++
++    @Test
++    public void testTranslucentActivitiesDontGoInSizeCompactMode() {
+         mWm.mLetterboxConfiguration.setTranslucentLetterboxingOverrideEnabled(true);
+         setUpDisplaySizeWithApp(2800, 1400);
+         mActivity.mDisplayContent.setIgnoreOrientationRequest(true /* ignoreOrientationRequest */);
+@@ -524,7 +598,6 @@ public class SizeCompatTests extends WindowTestsBase {
+                 true /* ignoreOrientationRequest */);
+         mActivity.mWmService.mLetterboxConfiguration.setLetterboxHorizontalPositionMultiplier(
+                 1.0f /*letterboxVerticalPositionMultiplier*/);
+-        mActivity.nowVisible = true;
+         prepareUnresizable(mActivity, SCREEN_ORIENTATION_PORTRAIT);
+         // We launch a transparent activity
+         final ActivityRecord translucentActivity = new ActivityBuilder(mAtm)
+@@ -557,7 +630,6 @@ public class SizeCompatTests extends WindowTestsBase {
+         mWm.mLetterboxConfiguration.setTranslucentLetterboxingOverrideEnabled(true);
+         setUpDisplaySizeWithApp(2800, 1400);
+         mActivity.mDisplayContent.setIgnoreOrientationRequest(true /* ignoreOrientationRequest */);
+-        mActivity.nowVisible = true;
+         prepareUnresizable(mActivity, -1f /* maxAspect */, SCREEN_ORIENTATION_PORTRAIT);
+         // Rotate to put activity in size compat mode.
+         rotateDisplay(mActivity.mDisplayContent, ROTATION_90);
+diff --git a/services/tests/wmtests/src/com/android/server/wm/TestWindowManagerPolicy.java b/services/tests/wmtests/src/com/android/server/wm/TestWindowManagerPolicy.java
+index e2db2e6b19e1..148dd8dfd25a 100644
+--- a/services/tests/wmtests/src/com/android/server/wm/TestWindowManagerPolicy.java
++++ b/services/tests/wmtests/src/com/android/server/wm/TestWindowManagerPolicy.java
+@@ -147,7 +147,7 @@ class TestWindowManagerPolicy implements WindowManagerPolicy {
+     }
+ 
+     @Override
+-    public void screenTurnedOff(int displayId) {
++    public void screenTurnedOff(int displayId, boolean isSwappingDisplay) {
+     }
+ 
+     @Override
+diff --git a/services/tests/wmtests/src/com/android/server/wm/WindowTestsBase.java b/services/tests/wmtests/src/com/android/server/wm/WindowTestsBase.java
+index d762651f511e..57e7afd9f85a 100644
+--- a/services/tests/wmtests/src/com/android/server/wm/WindowTestsBase.java
++++ b/services/tests/wmtests/src/com/android/server/wm/WindowTestsBase.java
+@@ -438,16 +438,6 @@ class WindowTestsBase extends SystemServiceTestsBase {
+         return navbar;
+     }
+ 
+-    WindowState createStatusBarWithProvidedInsets(DisplayContent dc) {
+-        final WindowState statusBar = createWindow(null, TYPE_STATUS_BAR, dc, "statusBar");
+-        statusBar.mAttrs.width = WindowManager.LayoutParams.MATCH_PARENT;
+-        statusBar.mAttrs.height = STATUS_BAR_HEIGHT;
+-        statusBar.mAttrs.gravity = Gravity.TOP;
+-        statusBar.mAttrs.setFitInsetsTypes(0);
+-        dc.getDisplayPolicy().addWindowLw(statusBar, statusBar.mAttrs);
+-        return statusBar;
+-    }
+-
+     WindowState createAppWindow(Task task, int type, String name) {
+         final ActivityRecord activity = createNonAttachedActivityRecord(task.getDisplayContent());
+         task.addChild(activity, 0);

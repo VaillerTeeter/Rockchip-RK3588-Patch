@@ -1,0 +1,35 @@
+From f7cc5846504c1e02f26d42ca674ea066a28e1722 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 17:25:34 +0800
+Subject: [PATCH] fix: remove dead battery health check from SettingsLib
+
+Change-Id: I83663fc1d9e97c41d7749f34c764d15e3991d011
+
+diff --git a/packages/SettingsLib/src/com/android/settingslib/fuelgauge/BatteryStatus.java b/packages/SettingsLib/src/com/android/settingslib/fuelgauge/BatteryStatus.java
+index cdbb17827559..132a631e25cc 100644
+--- a/packages/SettingsLib/src/com/android/settingslib/fuelgauge/BatteryStatus.java
++++ b/packages/SettingsLib/src/com/android/settingslib/fuelgauge/BatteryStatus.java
+@@ -16,7 +16,6 @@
+ 
+ package com.android.settingslib.fuelgauge;
+ 
+-import static android.os.BatteryManager.BATTERY_HEALTH_DEAD;
+ import static android.os.BatteryManager.BATTERY_HEALTH_OVERHEAT;
+ import static android.os.BatteryManager.BATTERY_HEALTH_UNKNOWN;
+ import static android.os.BatteryManager.BATTERY_STATUS_FULL;
+@@ -157,15 +156,6 @@ public class BatteryStatus {
+         return health == BATTERY_HEALTH_OVERHEAT;
+     }
+ 
+-    /**
+-     * Whether battery is dead.
+-     *
+-     * @return true if battery is dead
+-     */
+-    public boolean isDead() {
+-        return health == BATTERY_HEALTH_DEAD;
+-    }
+-
+     /**
+      * Return current chargin speed is fast, slow or normal.
+      *

@@ -1,0 +1,487 @@
+From 6d11fde78c96ee5d80a7f025b628ac1d8dc65621 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Sat, 11 Jul 2026 02:54:55 +0800
+Subject: [PATCH 22/27] feat: add IndicatorIconController and widget extensions
+ for Rockchip camera
+
+Change-Id: Iaaf59a6a7886269a94b4815ca8789a5db7cdaa34
+---
+ .../camera/widget/FilmstripLayout.java        |  28 ++-
+ .../android/camera/widget/FilmstripView.java  |   8 +-
+ .../widget/IndicatorIconController.java       | 217 ++++++++++++++++++
+ src/com/android/camera/widget/PeekView.java   |  20 ++
+ .../camera/widget/RoundedThumbnailView.java   |   4 +
+ 5 files changed, 275 insertions(+), 2 deletions(-)
+
+diff --git a/src/com/android/camera/widget/FilmstripLayout.java b/src/com/android/camera/widget/FilmstripLayout.java
+index 96ba45446..c720b1120 100644
+--- a/src/com/android/camera/widget/FilmstripLayout.java
++++ b/src/com/android/camera/widget/FilmstripLayout.java
+@@ -30,6 +30,7 @@ import android.os.Looper;
+ import android.util.AttributeSet;
+ import android.view.MotionEvent;
+ import android.view.View;
++import android.view.View.MeasureSpec;
+ import android.view.animation.AnimationUtils;
+ import android.widget.FrameLayout;
+ 
+@@ -37,6 +38,7 @@ import com.android.camera.filmstrip.FilmstripContentPanel;
+ import com.android.camera.filmstrip.FilmstripController;
+ import com.android.camera.ui.FilmstripGestureRecognizer;
+ import com.android.camera.util.ApiHelper;
++import com.android.camera.util.CameraUtil;
+ import com.android.camera.util.Gusterpolator;
+ import com.android.camera2.R;
+ 
+@@ -216,6 +218,30 @@ public class FilmstripLayout extends FrameLayout implements FilmstripContentPane
+         }
+     }
+ 
++    @Override
++    protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
++        // TODO Auto-generated method stub
++        if (!CameraUtil.AUTO_ROTATE_SENSOR) {
++            if (!CameraUtil.mIsPortrait && MeasureSpec.getSize(widthMeasureSpec)
++                    < MeasureSpec.getSize(heightMeasureSpec)) {
++                int tmp = widthMeasureSpec;
++                widthMeasureSpec = heightMeasureSpec;
++                heightMeasureSpec = tmp;
++            }
++        }
++        super.onMeasure(widthMeasureSpec, heightMeasureSpec);
++        if (!CameraUtil.AUTO_ROTATE_SENSOR) {
++            if (CameraUtil.mIsPortrait) {
++                setTranslationX(0);
++                setTranslationY(0);
++            } else {
++                setTranslationX((getMeasuredHeight() - getMeasuredWidth()) / 2);
++                setTranslationY((getMeasuredWidth() - getMeasuredHeight()) / 2);
++            }
++            setRotation(CameraUtil.mUIRotated);
++        }
++    }
++
+     @Override
+     public void onLayout(boolean changed, int l, int t, int r, int b) {
+         super.onLayout(changed, l, t, r, b);
+@@ -507,7 +533,7 @@ public class FilmstripLayout extends FrameLayout implements FilmstripContentPane
+         }
+ 
+         private void setAlpha(float a) {
+-            setAlpha((int) (a*255.0f));
++            setAlpha(255);
+         }
+ 
+         @Override
+diff --git a/src/com/android/camera/widget/FilmstripView.java b/src/com/android/camera/widget/FilmstripView.java
+index f6d56c52f..7902f58f3 100644
+--- a/src/com/android/camera/widget/FilmstripView.java
++++ b/src/com/android/camera/widget/FilmstripView.java
+@@ -223,7 +223,7 @@ public class FilmstripView extends ViewGroup {
+             if (mRenderSize != RenderSize.FULL_RES) {
+                 mRenderSize = RenderSize.FULL_RES;
+ 
+-                Log.i(TAG, "[ViewItem:" + mIndex + "] mData.renderFullRes()");
++                Log.d(TAG, "[ViewItem:" + mIndex + "] mData.renderFullRes()");
+                 mData.renderFullRes(mView);
+             }
+         }
+@@ -1263,6 +1263,8 @@ public class FilmstripView extends ViewGroup {
+ 
+                 if (setToVisible && !isVisible) {
+                     curr.setVisibility(VISIBLE);
++                } else if (scaleFraction > 0.99f) {
++                    curr.setVisibility(INVISIBLE);
+                 }
+ 
+                 curr.setTranslationX((mViewItems[BUFFER_CENTER].getLeftPosition() -
+@@ -1555,6 +1557,7 @@ public class FilmstripView extends ViewGroup {
+ 
+     private void setDataAdapter(FilmstripDataAdapter adapter) {
+         mDataAdapter = adapter;
++        if (mDataAdapter == null) return;
+         int maxEdge = (int) (Math.max(this.getHeight(), this.getWidth())
+                 * FILM_STRIP_SCALE);
+         mDataAdapter.suggestViewSizeBound(maxEdge, maxEdge);
+@@ -1959,6 +1962,8 @@ public class FilmstripView extends ViewGroup {
+                             renderThumbnail(BUFFER_CENTER - 1);
+                             renderThumbnail(BUFFER_CENTER + 2);
+                         }
++                        if (inFullScreen())
++                            renderFullRes(BUFFER_CENTER);
+                     }
+                 };
+ 
+@@ -2621,6 +2626,7 @@ public class FilmstripView extends ViewGroup {
+             if (inFilmstrip()) {
+                 if (centerItem != null && centerItem.areaContains(x, y)) {
+                     mController.goToFullScreen();
++                    renderFullRes(BUFFER_CENTER);
+                     return true;
+                 }
+             } else if (inFullScreen()) {
+diff --git a/src/com/android/camera/widget/IndicatorIconController.java b/src/com/android/camera/widget/IndicatorIconController.java
+index 6907b4c3c..bea31c67f 100644
+--- a/src/com/android/camera/widget/IndicatorIconController.java
++++ b/src/com/android/camera/widget/IndicatorIconController.java
+@@ -16,18 +16,28 @@
+ 
+ package com.android.camera.widget;
+ 
++import android.animation.Animator;
++import android.animation.AnimatorListenerAdapter;
++import android.animation.AnimatorSet;
++import android.animation.ValueAnimator;
+ import android.content.Context;
+ import android.content.res.TypedArray;
+ import android.graphics.drawable.Drawable;
+ import android.view.View;
+ import android.widget.ImageView;
++import android.widget.LinearLayout;
++import android.widget.TextView;
+ 
+ import com.android.camera.ButtonManager;
+ import com.android.camera.app.AppController;
++import com.android.camera.debug.DebugPropertyHelper;
+ import com.android.camera.debug.Log;
+ import com.android.camera.settings.Keys;
+ import com.android.camera.settings.SettingsManager;
++import com.android.camera.util.CameraUtil;
++import com.android.camera.util.Gusterpolator;
+ import com.android.camera.util.PhotoSphereHelper;
++import com.android.ex.camera2.portability.CameraCapabilities;
+ import com.android.camera2.R;
+ 
+ /**
+@@ -47,25 +57,43 @@ public class IndicatorIconController
+     private ImageView mHdrIndicator;
+     private ImageView mPanoIndicator;
+     private ImageView mCountdownTimerIndicator;
++    private ImageView mZslIndicator;
++    private ImageView mSmileShutterIndicator;
++    private ImageView m3dnrIndicator;
+ 
+     private ImageView mExposureIndicatorN2;
+     private ImageView mExposureIndicatorN1;
+     private ImageView mExposureIndicatorP1;
+     private ImageView mExposureIndicatorP2;
+ 
++    private ImageView mWbIndicatorCloudy;
++    private ImageView mWbIndicatorFluorescent;
++    private ImageView mWbIndicatorTungsten;
++    private ImageView mWbIndicatorDaylight;
++
++    private LinearLayout mModeOptionsToggle;
++
+     private TypedArray mFlashIndicatorPhotoIcons;
+     private TypedArray mFlashIndicatorVideoIcons;
+     private TypedArray mHdrPlusIndicatorIcons;
+     private TypedArray mHdrIndicatorIcons;
+     private TypedArray mPanoIndicatorIcons;
+     private TypedArray mCountdownTimerIndicatorIcons;
++    private TypedArray mZslIndicatorIcons;
++    private TypedArray mSmileShutterIndicatorIcons;
++    private TypedArray m3dnrIndicatorIcons;
+ 
+     private AppController mController;
+ 
++    private TextView mSmileShutterTip;
++    private AnimatorSet mSmileShutterAnimator;
++
+     public IndicatorIconController(AppController controller, View root) {
+         mController = controller;
+         Context context = controller.getAndroidContext();
+ 
++        mModeOptionsToggle = (LinearLayout) root.findViewById(R.id.mode_options_toggle);
++
+         mFlashIndicator = (ImageView) root.findViewById(R.id.flash_indicator);
+         mFlashIndicatorPhotoIcons = context.getResources().obtainTypedArray(
+             R.array.camera_flashmode_indicator_icons);
+@@ -89,10 +117,32 @@ public class IndicatorIconController
+         mCountdownTimerIndicatorIcons = context.getResources().obtainTypedArray(
+                 R.array.pref_camera_countdown_indicators);
+ 
++        mZslIndicator = (ImageView) root.findViewById(R.id.zsl_indicator);
++        mZslIndicatorIcons = context.getResources().obtainTypedArray(
++                R.array.zsl_indicator_icons);
++
++        mSmileShutterIndicator = (ImageView) root.findViewById(R.id.smile_shutter_indicator);
++        mSmileShutterIndicatorIcons = context.getResources().obtainTypedArray(
++                R.array.smile_shutter_indicator_icons);
++
++        m3dnrIndicator = (ImageView) root.findViewById(R.id.threednr_indicator);
++        m3dnrIndicatorIcons = context.getResources().obtainTypedArray(
++                R.array.threednr_indicator_icons);
++
+         mExposureIndicatorN2 = (ImageView) root.findViewById(R.id.exposure_n2_indicator);
+         mExposureIndicatorN1 = (ImageView) root.findViewById(R.id.exposure_n1_indicator);
+         mExposureIndicatorP1 = (ImageView) root.findViewById(R.id.exposure_p1_indicator);
+         mExposureIndicatorP2 = (ImageView) root.findViewById(R.id.exposure_p2_indicator);
++
++        mWbIndicatorCloudy = (ImageView) root.findViewById(R.id.wb_cloudy_indicator);
++        mWbIndicatorFluorescent = (ImageView) root.findViewById(R.id.wb_fluorescent_indicator);
++        mWbIndicatorTungsten = (ImageView) root.findViewById(R.id.wb_tungsten_indicator);
++        mWbIndicatorDaylight = (ImageView) root.findViewById(R.id.wb_daylight_indicator);
++
++        mSmileShutterTip = (TextView) root.findViewById(R.id.smile_shutter_tip);
++        if (DebugPropertyHelper.isSmileShutterAuto())
++            mSmileShutterTip.setText(R.string.smile_shutter_auto_tip);
++        setupSmileShutterAnimator();
+     }
+ 
+     @Override
+@@ -131,6 +181,10 @@ public class IndicatorIconController
+                 syncExposureIndicator();
+                 break;
+             }
++            case ButtonManager.BUTTON_WHITEBALANCE: {
++                syncWhiteBalanceIndicator();
++                break;
++            }
+             default:
+                 // Do nothing.  The indicator doesn't care
+                 // about button that don't correspond to indicators.
+@@ -147,6 +201,10 @@ public class IndicatorIconController
+         syncPanoIndicator();
+         syncExposureIndicator();
+         syncCountdownTimerIndicator();
++        syncZslIndicator();
++        syncSmileShutterIndicator();
++        syncWhiteBalanceIndicator();
++        sync3dnrIndicator();
+     }
+ 
+     /**
+@@ -278,6 +336,41 @@ public class IndicatorIconController
+         }
+     }
+ 
++    private void syncWhiteBalanceIndicator() {
++        if (mWbIndicatorCloudy == null
++            || mWbIndicatorFluorescent == null
++            || mWbIndicatorTungsten == null
++            || mWbIndicatorDaylight == null) {
++            Log.w(TAG, "Trying to sync whitebalance indicators that are not initialized.");
++            return;
++        }
++
++        changeVisibility(mWbIndicatorCloudy, View.GONE);
++        changeVisibility(mWbIndicatorFluorescent, View.GONE);
++        changeVisibility(mWbIndicatorTungsten, View.GONE);
++        changeVisibility(mWbIndicatorDaylight, View.GONE);
++
++        ButtonManager buttonManager = mController.getButtonManager();
++        if (buttonManager.isEnabled(ButtonManager.BUTTON_WHITEBALANCE)
++                && buttonManager.isVisible(ButtonManager.BUTTON_WHITEBALANCE)) {
++            String value = mController.getSettingsManager().getString(
++                    mController.getCameraScope(), Keys.KEY_WHITEBALANCE);
++            if (ButtonManager.toApiCase(CameraCapabilities.WhiteBalance.CLOUDY_DAYLIGHT.name())
++                    .equals(value)) {
++                changeVisibility(mWbIndicatorCloudy, View.VISIBLE);
++            } else if (ButtonManager.toApiCase(CameraCapabilities.WhiteBalance.FLUORESCENT.name())
++                        .equals(value)) {
++                changeVisibility(mWbIndicatorFluorescent, View.VISIBLE);
++            } else if (ButtonManager.toApiCase(CameraCapabilities.WhiteBalance.INCANDESCENT.name())
++                        .equals(value)) {
++                changeVisibility(mWbIndicatorTungsten, View.VISIBLE);
++            } else if (ButtonManager.toApiCase(CameraCapabilities.WhiteBalance.DAYLIGHT.name())
++                        .equals(value)) {
++                changeVisibility(mWbIndicatorDaylight, View.VISIBLE);
++            }
++        }
++    }
++
+     private void syncCountdownTimerIndicator() {
+         ButtonManager buttonManager = mController.getButtonManager();
+ 
+@@ -291,6 +384,100 @@ public class IndicatorIconController
+         }
+     }
+ 
++    private void syncZslIndicator() {
++        ButtonManager buttonManager = mController.getButtonManager();
++
++        if (buttonManager.isEnabled(ButtonManager.BUTTON_ZSL)
++            && buttonManager.isVisible(ButtonManager.BUTTON_ZSL)) {
++            setIndicatorState(SettingsManager.SCOPE_GLOBAL,
++                              Keys.KEY_BURST_CAPTURE_ON, mZslIndicator,
++                              mZslIndicatorIcons, false);
++            SettingsManager settingsManager = mController.getSettingsManager();
++            if (settingsManager.getBoolean(SettingsManager.SCOPE_GLOBAL, Keys.KEY_BURST_CAPTURE_ON))
++                changeVisibility(mZslIndicator, View.VISIBLE);
++            else
++                changeVisibility(mZslIndicator, View.GONE);
++        } else {
++            changeVisibility(mZslIndicator, View.GONE);
++        }
++    }
++
++    private void sync3dnrIndicator() {
++        ButtonManager buttonManager = mController.getButtonManager();
++
++        if (buttonManager.isEnabled(ButtonManager.BUTTON_3DNR)
++            && buttonManager.isVisible(ButtonManager.BUTTON_3DNR)) {
++            setIndicatorState(SettingsManager.SCOPE_GLOBAL,
++                              Keys.KEY_3DNR_ON, m3dnrIndicator,
++                              m3dnrIndicatorIcons, false);
++            SettingsManager settingsManager = mController.getSettingsManager();
++            if (settingsManager.getBoolean(SettingsManager.SCOPE_GLOBAL, Keys.KEY_3DNR_ON))
++                changeVisibility(m3dnrIndicator, View.VISIBLE);
++            else
++                changeVisibility(m3dnrIndicator, View.GONE);
++        } else {
++            changeVisibility(m3dnrIndicator, View.GONE);
++        }
++    }
++
++    private void syncSmileShutterIndicator() {
++        ButtonManager buttonManager = mController.getButtonManager();
++
++        if (buttonManager.isEnabled(ButtonManager.BUTTON_SMILE_SHUTTER)
++            && buttonManager.isVisible(ButtonManager.BUTTON_SMILE_SHUTTER)) {
++            setIndicatorState(SettingsManager.SCOPE_GLOBAL,
++                              Keys.KEY_SMILE_SHUTTER_ON, mSmileShutterIndicator,
++                              mSmileShutterIndicatorIcons, false);
++        } else {
++            changeVisibility(mSmileShutterIndicator, View.GONE);
++        }
++        if (mSmileShutterIndicator.getVisibility() == View.VISIBLE) {
++            mSmileShutterTip.setVisibility(View.VISIBLE);
++        } else {
++            mSmileShutterTip.setVisibility(View.GONE);
++        }
++    }
++
++    private void setupSmileShutterAnimator() {
++        if (mSmileShutterAnimator != null) {
++            mSmileShutterAnimator.end();
++        }
++        final ValueAnimator alphaAnimator = ValueAnimator.ofFloat(1.0f, 0.0f);
++        alphaAnimator.setDuration(800);
++        alphaAnimator.setRepeatCount(ValueAnimator.INFINITE);
++        alphaAnimator.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
++            @Override
++            public void onAnimationUpdate(ValueAnimator animation) {
++                mSmileShutterIndicator.setAlpha((Float) animation.getAnimatedValue());
++                mSmileShutterIndicator.invalidate();
++            }
++        });
++        alphaAnimator.addListener(new AnimatorListenerAdapter() {
++            @Override
++            public void onAnimationEnd(Animator animation) {
++                mSmileShutterIndicator.setAlpha(0.0f);
++                mSmileShutterIndicator.invalidate();
++            }
++        });
++
++        mSmileShutterAnimator = new AnimatorSet();
++        mSmileShutterAnimator.setInterpolator(Gusterpolator.INSTANCE);
++        mSmileShutterAnimator.play(alphaAnimator);
++    }
++
++    public void smileShutterAnimator(boolean on) {
++        Log.i(TAG,"smileShutterAnimator on = " + on);
++        if (mSmileShutterAnimator == null) return;
++        if (on) {
++            mSmileShutterIndicator.setAlpha(1.0f);
++            mSmileShutterAnimator.end();
++            mSmileShutterAnimator.start();
++        } else {
++            mSmileShutterAnimator.end();
++            mSmileShutterIndicator.setAlpha(1.0f);
++        }
++    }
++
+     /**
+      * Sets the image resource and visibility of the indicator
+      * based on the indicator's corresponding setting state.
+@@ -353,6 +540,36 @@ public class IndicatorIconController
+             syncCountdownTimerIndicator();
+             return;
+         }
++        if (key.equals(Keys.KEY_BURST_CAPTURE_ON)) {
++            syncZslIndicator();
++            return;
++        }
++        if (key.equals(Keys.KEY_SMILE_SHUTTER_ON)) {
++            syncSmileShutterIndicator();
++            return;
++        }
++        if (key.equals(Keys.KEY_WHITEBALANCE)) {
++            syncWhiteBalanceIndicator();
++            return;
++        }
++        if (key.equals(Keys.KEY_3DNR_ON)) {
++            sync3dnrIndicator();
++            return;
++        }
++    }
++
++    public void updateUIByOrientation() {
++        if (CameraUtil.AUTO_ROTATE_SENSOR) return;
++        if (CameraUtil.mIsPortrait) {
++            mModeOptionsToggle.setTranslationX(0.0f);
++            mModeOptionsToggle.setTranslationY(0.0f);
++        } else {
++            mModeOptionsToggle.setTranslationX((mModeOptionsToggle.getWidth() - mModeOptionsToggle.getHeight())
++                    / 2.0f);
++            mModeOptionsToggle.setTranslationY((mModeOptionsToggle.getHeight() - mModeOptionsToggle.getWidth())
++                    / 2.0f);
++        }
++        mModeOptionsToggle.setRotation(CameraUtil.mUIRotated);
+     }
+ 
+ }
+diff --git a/src/com/android/camera/widget/PeekView.java b/src/com/android/camera/widget/PeekView.java
+index 0215a2f23..48f3689f3 100644
+--- a/src/com/android/camera/widget/PeekView.java
++++ b/src/com/android/camera/widget/PeekView.java
+@@ -143,10 +143,30 @@ public class PeekView extends ImageView {
+         });
+ 
+         mRotateScale = (strong ? 1.0f : 0.5f);
++        if (mImageDrawable != null) {
++            if (mImageDrawable instanceof BitmapDrawable) {
++                Bitmap b = ((BitmapDrawable) mImageDrawable).getBitmap();
++                if (b != null && !b.isRecycled()) {
++                    b.recycle();
++                    b = null;
++                }
++            }
++        }
+         mImageDrawable = new BitmapDrawable(getResources(), bitmap);
+         Point drawDim = CameraUtil.resizeToFill(mImageDrawable.getIntrinsicWidth(),
+                 mImageDrawable.getIntrinsicHeight(), 0, (int) (getWidth() * FILMSTRIP_SCALE),
+                 (int) (getHeight() * FILMSTRIP_SCALE));
++        if (!CameraUtil.AUTO_ROTATE_SENSOR) {
++            if (CameraUtil.mIsPortrait) {
++                drawDim = CameraUtil.resizeToFill(mImageDrawable.getIntrinsicWidth(),
++                        mImageDrawable.getIntrinsicHeight(), 0, (int) (getWidth() * FILMSTRIP_SCALE),
++                        (int) (getHeight() * FILMSTRIP_SCALE));
++            } else {
++                drawDim = CameraUtil.resizeToFill(mImageDrawable.getIntrinsicWidth(),
++                        mImageDrawable.getIntrinsicHeight(), 0, (int) (getHeight() * FILMSTRIP_SCALE),
++                        (int) (getWidth() * FILMSTRIP_SCALE));
++            }
++        }
+         int x = getMeasuredWidth();
+         int y = (getMeasuredHeight() - drawDim.y) / 2;
+         mDrawableBound = new Rect(x, y, x + drawDim.x, y + drawDim.y);
+diff --git a/src/com/android/camera/widget/RoundedThumbnailView.java b/src/com/android/camera/widget/RoundedThumbnailView.java
+index 07c571340..784feebad 100644
+--- a/src/com/android/camera/widget/RoundedThumbnailView.java
++++ b/src/com/android/camera/widget/RoundedThumbnailView.java
+@@ -409,6 +409,10 @@ public class RoundedThumbnailView extends View {
+     public void startRevealThumbnailAnimation(String accessibilityString) {
+         MainThread.checkMainThread();
+         // Create a new request.
++        int measureWidth = getMeasuredWidth();
++        if (measureWidth == 0) {
++            measureWidth = (int) mRippleRingDiameterEnd;
++        }
+         mPendingRequest = new RevealRequest(getMeasuredWidth(), accessibilityString);
+     }
+ 
+-- 
+2.53.0
+

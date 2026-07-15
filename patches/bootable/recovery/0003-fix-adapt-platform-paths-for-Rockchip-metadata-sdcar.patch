@@ -1,0 +1,40 @@
+From b9e0a4d22b1e192788de7c6794e3b0ef42b497f1 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 11:31:39 +0800
+Subject: [PATCH 3/6] fix: adapt platform paths for Rockchip (metadata, sdcard
+ mount)
+
+Change-Id: I7322bd1233a8c5047625e4a33c929ab77824ad1c
+---
+ etc/init.rc              | 1 +
+ install/fuse_install.cpp | 2 +-
+ 2 files changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/etc/init.rc b/etc/init.rc
+index e4afecff..ec7c2f90 100644
+--- a/etc/init.rc
++++ b/etc/init.rc
+@@ -30,6 +30,7 @@ on init
+     mkdir /cache
+     mkdir /sideload
+     mkdir /mnt/system
++    mkdir /metadata
+     mount tmpfs tmpfs /tmp
+ 
+     chown root shell /tmp
+diff --git a/install/fuse_install.cpp b/install/fuse_install.cpp
+index 197e1deb..3b8114d5 100644
+--- a/install/fuse_install.cpp
++++ b/install/fuse_install.cpp
+@@ -39,7 +39,7 @@
+ #include "install/install.h"
+ #include "recovery_utils/roots.h"
+ 
+-static constexpr const char* SDCARD_ROOT = "/sdcard";
++static constexpr const char* SDCARD_ROOT = "/mnt/external_sd";
+ // How long (in seconds) we wait for the fuse-provided package file to
+ // appear, before timing out.
+ static constexpr int SDCARD_INSTALL_TIMEOUT = 10;
+-- 
+2.53.0
+

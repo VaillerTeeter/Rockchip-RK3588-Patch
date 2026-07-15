@@ -1,0 +1,459 @@
+From 49eea39a0be4997f4fdf65d806b37462200fe90d Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 14:58:12 +0800
+Subject: [PATCH] feat: add Rockchip HDMI/SPDIF audio routing, multi-audio, and
+ SPDIF IEC61937 passthrough
+
+Change-Id: I1087e8718338f842ad3f430ca357981532b8ecd4
+
+diff --git a/media/libaudioclient/AidlConversion.cpp b/media/libaudioclient/AidlConversion.cpp
+index 4133bd0d0b..6e1446dc53 100644
+--- a/media/libaudioclient/AidlConversion.cpp
++++ b/media/libaudioclient/AidlConversion.cpp
+@@ -606,6 +606,16 @@ const detail::AudioDevicePairs& getAudioDevicePairs() {
+                         AudioDeviceType::OUT_BROADCAST,
+                         AudioDeviceDescription::CONNECTION_BT_LE())
+             },
++            {
++                VX_ROCKCHIP_OUT_HDMI0, make_AudioDeviceDescription(
++                        AudioDeviceType::OUT_DEVICE,
++                        "VX_ROCKCHIP_HDMI0")
++            },
++            {
++                VX_ROCKCHIP_OUT_SPDIF0, make_AudioDeviceDescription(
++                        AudioDeviceType::OUT_DEVICE,
++                        "VX_ROCKCHIP_SPDIF0")
++            },
+             // AUDIO_DEVICE_IN_AMBIENT and IN_COMMUNICATION are removed since they were deprecated.
+             {
+                 AUDIO_DEVICE_IN_BUILTIN_MIC, make_AudioDeviceDescription(
+@@ -632,6 +642,11 @@ const detail::AudioDevicePairs& getAudioDevicePairs() {
+                         AudioDeviceType::IN_DEVICE,
+                         AudioDeviceDescription::CONNECTION_BT_LE())
+             },
++            {
++                VX_ROCKCHIP_IN_HDMI0, make_AudioDeviceDescription(
++                        AudioDeviceType::IN_DEVICE,
++                        "VX_ROCKCHIP_HDMI0")
++            },
+             {
+                 AUDIO_DEVICE_IN_ECHO_REFERENCE, make_AudioDeviceDescription(
+                         AudioDeviceType::IN_ECHO_REFERENCE)
+diff --git a/media/libaudiohal/impl/DevicesFactoryHalHidl.cpp b/media/libaudiohal/impl/DevicesFactoryHalHidl.cpp
+index 4069a6bdbd..bc5f9e12d3 100644
+--- a/media/libaudiohal/impl/DevicesFactoryHalHidl.cpp
++++ b/media/libaudiohal/impl/DevicesFactoryHalHidl.cpp
+@@ -85,6 +85,16 @@ static IDevicesFactory::Device idFromHal(const char *name, status_t* status) {
+     *status = OK;
+     if (strcmp(name, AUDIO_HARDWARE_MODULE_ID_PRIMARY) == 0) {
+         return IDevicesFactory::Device::PRIMARY;
++#if SUPPORT_MULTIAUDIO
++    } else if(strcmp(name, AUDIO_HARDWARE_MODULE_ID_EXT_1) == 0) {
++        return (IDevicesFactory::Device)5;
++    } else if(strcmp(name, AUDIO_HARDWARE_MODULE_ID_EXT_2) == 0) {
++        return (IDevicesFactory::Device)6;
++    } else if(strcmp(name, AUDIO_HARDWARE_MODULE_ID_EXT_3) == 0) {
++        return (IDevicesFactory::Device)7;
++    } else if(strcmp(name, AUDIO_HARDWARE_MODULE_ID_EXT_4) == 0) {
++        return (IDevicesFactory::Device)8;
++#endif
+     } else if(strcmp(name, AUDIO_HARDWARE_MODULE_ID_A2DP) == 0) {
+         return IDevicesFactory::Device::A2DP;
+     } else if(strcmp(name, AUDIO_HARDWARE_MODULE_ID_USB) == 0) {
+diff --git a/services/audioflinger/AudioFlinger.cpp b/services/audioflinger/AudioFlinger.cpp
+index d2363d80b6..0ee734ba70 100644
+--- a/services/audioflinger/AudioFlinger.cpp
++++ b/services/audioflinger/AudioFlinger.cpp
+@@ -709,6 +709,12 @@ status_t AudioFlinger::removeEffectFromHal(audio_port_handle_t deviceId,
+ 
+ static const char * const audio_interfaces[] = {
+     AUDIO_HARDWARE_MODULE_ID_PRIMARY,
++#if SUPPORT_MULTIAUDIO
++    AUDIO_HARDWARE_MODULE_ID_EXT_1,
++    AUDIO_HARDWARE_MODULE_ID_EXT_2,
++    AUDIO_HARDWARE_MODULE_ID_EXT_3,
++    AUDIO_HARDWARE_MODULE_ID_EXT_4,
++#endif
+     AUDIO_HARDWARE_MODULE_ID_A2DP,
+     AUDIO_HARDWARE_MODULE_ID_USB,
+ };
+@@ -1063,7 +1069,8 @@ status_t AudioFlinger::createTrack(const media::CreateTrackRequest& _input,
+     audio_stream_type_t streamType;
+     audio_port_handle_t portId = AUDIO_PORT_HANDLE_NONE;
+     std::vector<audio_io_handle_t> secondaryOutputs;
+-    bool isSpatialized = false;;
++    bool isSpatialized = false;
++    int retryCount = 5;
+ 
+     // TODO b/182392553: refactor or make clearer
+     pid_t clientPid =
+@@ -1107,12 +1114,26 @@ status_t AudioFlinger::createTrack(const media::CreateTrackRequest& _input,
+     output.sessionId = sessionId;
+     output.outputId = AUDIO_IO_HANDLE_NONE;
+     output.selectedDeviceId = input.selectedDeviceId;
++
++    /*
++     * Wait a moment and try again if getOutputForAttr fail.
++     * If there is an audiotrack for bitstream not destory yet, the getOutputForAttr
++     * will return fail, so here wait and retry again.
++     */
++RETRY:
+     lStatus = AudioSystem::getOutputForAttr(&localAttr, &output.outputId, sessionId, &streamType,
+                                             adjAttributionSource, &input.config, input.flags,
+                                             &output.selectedDeviceId, &portId, &secondaryOutputs,
+                                             &isSpatialized);
+ 
+     if (lStatus != NO_ERROR || output.outputId == AUDIO_IO_HANDLE_NONE) {
++        if (retryCount > 0 && input.flags & AUDIO_OUTPUT_FLAG_DIRECT) {
++            usleep(20000);
++            ALOGD("%s fail retry", __FUNCTION__);
++            retryCount--;
++            goto RETRY;
++        }
++
+         ALOGE("createTrack() getOutputForAttr() return error %d or invalid output handle", lStatus);
+         goto Exit;
+     }
+@@ -3185,9 +3206,24 @@ sp<AudioFlinger::ThreadBase> AudioFlinger::openInput_l(audio_module_handle_t mod
+     audio_config_t halconfig = *config;
+     sp<DeviceHalInterface> inHwHal = inHwDev->hwDevice();
+     sp<StreamInHalInterface> inStream;
+-    status_t status = inHwHal->openInputStream(
++    status_t status = 0;
++    int retryCount = 3;
++
++    /*
++     * some hotplug device like usb may open fail when receive the insert msg right now,
++     * maybe the reason is the device is not compelte init before send msg.
++     * So here try to open it again if open fail
++     */
++RETRY:
++    status = inHwHal->openInputStream(
+             *input, devices, &halconfig, flags, address, source,
+             outputDevice, outputDeviceAddress, &inStream);
++    if (status != NO_ERROR && retryCount >= 0) {
++        usleep(10000);
++        retryCount--;
++        goto RETRY;
++    }
++
+     ALOGV("openInput_l() openInputStream returned input %p, devices %#x, SamplingRate %d"
+            ", Format %#x, Channels %#x, flags %#x, status %d addr %s",
+             inStream.get(),
+diff --git a/services/audioflinger/AudioStreamOut.cpp b/services/audioflinger/AudioStreamOut.cpp
+index 65ec0e825a..eaf8e2de63 100644
+--- a/services/audioflinger/AudioStreamOut.cpp
++++ b/services/audioflinger/AudioStreamOut.cpp
+@@ -40,6 +40,7 @@ AudioStreamOut::AudioStreamOut(AudioHwDevice *dev, audio_output_flags_t flags)
+         , mHalFormatHasProportionalFrames(false)
+         , mHalFrameSize(0)
+         , mExpectRetrograde(false)
++        , mHalBufferSize(0)
+ {
+ }
+ 
+@@ -169,12 +170,14 @@ status_t AudioStreamOut::open(
+         stream = outStream;
+         mHalFormatHasProportionalFrames = audio_has_proportional_frames(config->format);
+         status = stream->getFrameSize(&mHalFrameSize);
++        stream->getBufferSize(&mHalBufferSize);
+         LOG_ALWAYS_FATAL_IF(status != OK, "Error retrieving frame size from HAL: %d", status);
+         LOG_ALWAYS_FATAL_IF(mHalFrameSize <= 0, "Error frame size was %zu but must be greater than"
+                 " zero", mHalFrameSize);
+ 
+     }
+ 
++    mConfigFormat = config->format;
+     return status;
+ }
+ 
+@@ -203,7 +206,9 @@ int AudioStreamOut::standby()
+ {
+     mRenderPosition = 0;
+     mExpectRetrograde = false;
+-    mFramesWrittenAtStandby = mFramesWritten;
++    if (AUDIO_FORMAT_IEC61937 != mConfigFormat) {
++        mFramesWrittenAtStandby = mFramesWritten;
++    }
+     return stream->standby();
+ }
+ 
+diff --git a/services/audioflinger/AudioStreamOut.h b/services/audioflinger/AudioStreamOut.h
+index 82fe238ee1..7c488c21df 100644
+--- a/services/audioflinger/AudioStreamOut.h
++++ b/services/audioflinger/AudioStreamOut.h
+@@ -108,6 +108,8 @@ protected:
+     bool                 mHalFormatHasProportionalFrames;
+     size_t               mHalFrameSize;
+     bool                 mExpectRetrograde; // see presentationComplete
++    size_t               mHalBufferSize;
++    audio_format_t       mConfigFormat;
+ };
+ 
+ } // namespace android
+diff --git a/services/audioflinger/SpdifStreamOut.cpp b/services/audioflinger/SpdifStreamOut.cpp
+index 0ce56818d6..ef46cca375 100644
+--- a/services/audioflinger/SpdifStreamOut.cpp
++++ b/services/audioflinger/SpdifStreamOut.cpp
+@@ -61,21 +61,27 @@ status_t SpdifStreamOut::open(
+         case AUDIO_FORMAT_E_AC3:
+         case AUDIO_FORMAT_E_AC3_JOC:
+             mRateMultiplier = 4;
++            customConfig.sample_rate = config->sample_rate * mRateMultiplier;
++            customConfig.channel_mask = AUDIO_CHANNEL_OUT_STEREO;
+             break;
+         case AUDIO_FORMAT_AC3:
+         case AUDIO_FORMAT_DTS:
++            mRateMultiplier = 1;
++            customConfig.sample_rate = config->sample_rate;
++            customConfig.channel_mask = AUDIO_CHANNEL_OUT_STEREO;
++            break;
++
+         case AUDIO_FORMAT_DTS_HD:
+             mRateMultiplier = 1;
++            customConfig.sample_rate = 192000;
++            customConfig.channel_mask = AUDIO_CHANNEL_OUT_7POINT1;
+             break;
+         default:
+             ALOGE("ERROR SpdifStreamOut::open() unrecognized format 0x%08X\n",
+                 config->format);
+             return BAD_VALUE;
+     }
+-    customConfig.sample_rate = config->sample_rate * mRateMultiplier;
+-
+-    customConfig.format = AUDIO_FORMAT_PCM_16_BIT;
+-    customConfig.channel_mask = AUDIO_CHANNEL_OUT_STEREO;
++    customConfig.format = AUDIO_FORMAT_IEC61937;
+ 
+     // Always print this because otherwise it could be very confusing if the
+     // HAL and AudioFlinger are using different formats.
+@@ -116,7 +122,34 @@ int SpdifStreamOut::standby()
+ 
+ ssize_t SpdifStreamOut::writeDataBurst(const void* buffer, size_t bytes)
+ {
+-    return AudioStreamOut::write(buffer, bytes);
++    size_t size   = 0;
++    size_t totalBytes = 0;
++    size_t writeBytes = 0;
++    size_t leftBytes  = bytes;
++    char *input = (char *)buffer;
++    int    maxCount = 10;
++
++    do {
++        writeBytes = (leftBytes > mHalBufferSize) ? mHalBufferSize : leftBytes;
++        if (writeBytes <= 0)
++            break;
++
++        /*
++         * For avoid take a long when write too much data one time.
++         * There is a lock in out_write.
++         */
++        size = AudioStreamOut::write((void *)(&input[totalBytes]), writeBytes);
++        if (size < 0) {
++            break;
++        } else {
++            totalBytes += size;
++            leftBytes -= size;
++        }
++
++        maxCount--;
++    } while(maxCount > 0 && leftBytes > 0);
++
++    return totalBytes;
+ }
+ 
+ ssize_t SpdifStreamOut::write(const void* buffer, size_t numBytes)
+@@ -125,4 +158,19 @@ ssize_t SpdifStreamOut::write(const void* buffer, size_t numBytes)
+     return mSpdifEncoder.write(buffer, numBytes);
+ }
+ 
++/*
++ * For Exoplayer get the samplerate to calc the play duration by call getTimestamp in Audiotrack.
++ * The function getPresentationPosition in AudioStreamOut will return the frames corresponding to
++ * the mApplicationSampleRate, so in getAudioProperties also return the getAudioProperties.
++ */
++audio_config_base_t SpdifStreamOut::getAudioProperties() const
++{
++    audio_config_base_t result = AUDIO_CONFIG_BASE_INITIALIZER;
++    result.sample_rate = mApplicationSampleRate;
++    result.channel_mask = mApplicationChannelMask;
++    result.format = mApplicationFormat;
++
++    return result;
++}
++
+ } // namespace android
+diff --git a/services/audioflinger/SpdifStreamOut.h b/services/audioflinger/SpdifStreamOut.h
+index fc9bb6ee48..8670ed13b5 100644
+--- a/services/audioflinger/SpdifStreamOut.h
++++ b/services/audioflinger/SpdifStreamOut.h
+@@ -86,6 +86,7 @@ public:
+ 
+     virtual status_t flush();
+     virtual status_t standby();
++    virtual audio_config_base_t getAudioProperties() const;
+ 
+ private:
+ 
+diff --git a/services/audiopolicy/common/include/policy.h b/services/audiopolicy/common/include/policy.h
+index 3d3e0cfcc7..70513a6844 100644
+--- a/services/audiopolicy/common/include/policy.h
++++ b/services/audiopolicy/common/include/policy.h
+@@ -235,6 +235,8 @@ static inline audio_devices_t apm_extract_one_audio_device(
+             return AUDIO_DEVICE_OUT_AUX_LINE;
+         } else if (deviceTypes.count(AUDIO_DEVICE_OUT_SPDIF) != 0) {
+             return AUDIO_DEVICE_OUT_SPDIF;
++        } else if (deviceTypes.count(AUDIO_DEVICE_OUT_HDMI) != 0) {
++            return AUDIO_DEVICE_OUT_HDMI;
+         } else {
+             std::vector<audio_devices_t> a2dpDevices = android::Intersection(
+                     deviceTypes, android::getAudioDeviceOutAllA2dpSet());
+diff --git a/services/audiopolicy/enginedefault/src/Engine.cpp b/services/audiopolicy/enginedefault/src/Engine.cpp
+index 52b9826c2f..9626483fd4 100644
+--- a/services/audiopolicy/enginedefault/src/Engine.cpp
++++ b/services/audiopolicy/enginedefault/src/Engine.cpp
+@@ -210,7 +210,8 @@ void Engine::filterOutputDevicesForStrategy(legacy_strategy strategy,
+             if (desc->isActive() && !audio_is_linear_pcm(desc->getFormat())) {
+                 availableOutputDevices.remove(desc->devices().getDevicesFromTypes({
+                         AUDIO_DEVICE_OUT_HDMI, AUDIO_DEVICE_OUT_SPDIF,
+-                        AUDIO_DEVICE_OUT_HDMI_ARC, AUDIO_DEVICE_OUT_HDMI_EARC}));
++                        AUDIO_DEVICE_OUT_HDMI_ARC, AUDIO_DEVICE_OUT_HDMI_EARC,
++                        VX_ROCKCHIP_OUT_HDMI0, VX_ROCKCHIP_OUT_SPDIF0, }));
+             }
+         }
+         } break;
+@@ -396,6 +397,16 @@ DeviceVector Engine::getDevicesForStrategyInt(legacy_strategy strategy,
+             // no sonification on aux digital (e.g. HDMI)
+             devices2 = availableOutputDevices.getDevicesFromType(AUDIO_DEVICE_OUT_AUX_DIGITAL);
+         }
++        //priority Wired > a2dp > hdmi > hdmi 1 > spdif > spdif 1
++        if ((devices2.isEmpty()) && (strategy != STRATEGY_SONIFICATION)) {
++            devices2 = availableOutputDevices.getDevicesFromType(VX_ROCKCHIP_OUT_HDMI0);
++        }
++        if ((devices2.isEmpty()) && (strategy != STRATEGY_SONIFICATION)) {
++            devices2 = availableOutputDevices.getDevicesFromType(AUDIO_DEVICE_OUT_SPDIF);
++        }
++        if ((devices2.isEmpty()) && (strategy != STRATEGY_SONIFICATION)) {
++            devices2 = availableOutputDevices.getDevicesFromType(VX_ROCKCHIP_OUT_SPDIF0);
++        }
+         if ((devices2.isEmpty()) &&
+                 (getForceUse(AUDIO_POLICY_FORCE_FOR_DOCK) == AUDIO_POLICY_FORCE_ANALOG_DOCK)) {
+             devices2 = availableOutputDevices.getDevicesFromType(
+@@ -407,11 +418,10 @@ DeviceVector Engine::getDevicesForStrategyInt(legacy_strategy strategy,
+         }
+         DeviceVector devices3;
+         if (strategy == STRATEGY_MEDIA) {
+-            // ARC, SPDIF and AUX_LINE can co-exist with others.
++            // ARC and AUX_LINE can co-exist with others.
+             devices3 = availableOutputDevices.getDevicesFromTypes({
+                     AUDIO_DEVICE_OUT_HDMI_ARC, AUDIO_DEVICE_OUT_HDMI_EARC,
+-                    AUDIO_DEVICE_OUT_SPDIF, AUDIO_DEVICE_OUT_AUX_LINE,
+-                    });
++                    AUDIO_DEVICE_OUT_AUX_LINE, });
+         }
+ 
+         devices2.add(devices3);
+diff --git a/services/audiopolicy/managerdefault/AudioPolicyManager.cpp b/services/audiopolicy/managerdefault/AudioPolicyManager.cpp
+index f625fdb3be..6320586136 100644
+--- a/services/audiopolicy/managerdefault/AudioPolicyManager.cpp
++++ b/services/audiopolicy/managerdefault/AudioPolicyManager.cpp
+@@ -5150,7 +5150,7 @@ status_t AudioPolicyManager::getReportedSurroundFormats(unsigned int *numSurroun
+         audio_devices_t deviceType = device->type();
+         // Enabling/disabling formats are applied to only HDMI devices. So, this function
+         // returns formats reported by HDMI devices.
+-        if (deviceType != AUDIO_DEVICE_OUT_HDMI) {
++        if (deviceType != AUDIO_DEVICE_OUT_HDMI && deviceType != VX_ROCKCHIP_OUT_HDMI0) {
+             continue;
+         }
+         // Formats reported by sink devices
+@@ -5240,6 +5240,7 @@ status_t AudioPolicyManager::setSurroundFormatEnabled(audio_format_t audioFormat
+                                              AUDIO_FORMAT_DEFAULT);
+         profileUpdated |= (status == NO_ERROR);
+     }
++
+     // FIXME: Why doing this for input HDMI devices if we don't augment their reported formats?
+     DeviceVector hdmiInputDevices = mAvailableInputDevices.getDevicesFromType(
+                 AUDIO_DEVICE_IN_HDMI);
+@@ -6279,8 +6280,47 @@ SortedVector<audio_io_handle_t> AudioPolicyManager::getOutputsForDevices(
+             const SwAudioOutputCollection& openOutputs)
+ {
+     SortedVector<audio_io_handle_t> outputs;
+-
+     ALOGVV("%s() devices %s", __func__, devices.toString().c_str());
++#if SUPPORT_MULTIAUDIO
++    DeviceVector newDevice;
++    if ((devices.containsDeviceWithType(AUDIO_DEVICE_OUT_HDMI) &&
++            devices.containsDeviceWithType(VX_ROCKCHIP_OUT_HDMI0)) ||
++        (devices.containsDeviceWithType(AUDIO_DEVICE_OUT_HDMI) &&
++            devices.containsDeviceWithType(AUDIO_DEVICE_OUT_SPDIF))) {
++        newDevice = devices.getDevicesFromType(AUDIO_DEVICE_OUT_HDMI);
++    } else if ((devices.containsDeviceWithType(VX_ROCKCHIP_OUT_HDMI0) &&
++            devices.containsDeviceWithType(AUDIO_DEVICE_OUT_SPDIF)) ||
++            (devices.containsDeviceWithType(VX_ROCKCHIP_OUT_HDMI0) &&
++            devices.containsDeviceWithType(VX_ROCKCHIP_OUT_SPDIF0))) {
++        newDevice = devices.getDevicesFromType(VX_ROCKCHIP_OUT_HDMI0);
++    } else if (devices.containsDeviceWithType(AUDIO_DEVICE_OUT_SPDIF) &&
++            devices.containsDeviceWithType(VX_ROCKCHIP_OUT_SPDIF0)) {
++        newDevice = devices.getDevicesFromType(AUDIO_DEVICE_OUT_SPDIF);
++    }
++    if (!newDevice.isEmpty()) {
++        for (size_t i = 0; i < openOutputs.size(); i++) {
++            ALOGVV("output %zu isDuplicated=%d device=%s",
++                    i, openOutputs.valueAt(i)->isDuplicated(),
++                    openOutputs.valueAt(i)->supportedDevices().toString().c_str());
++            if (openOutputs.valueAt(i)->supportsAllDevices(newDevice)
++                    && openOutputs.valueAt(i)->devicesSupportEncodedFormats(newDevice.types())) {
++                ALOGVV("%s() found output %d", __func__, openOutputs.keyAt(i));
++                outputs.add(openOutputs.keyAt(i));
++            }
++        }
++    } else {
++        for (size_t i = 0; i < openOutputs.size(); i++) {
++            ALOGVV("output %zu isDuplicated=%d device=%s",
++                    i, openOutputs.valueAt(i)->isDuplicated(),
++                    openOutputs.valueAt(i)->supportedDevices().toString().c_str());
++            if (openOutputs.valueAt(i)->supportsAllDevices(devices)
++                    && openOutputs.valueAt(i)->devicesSupportEncodedFormats(devices.types())) {
++                ALOGVV("%s() found output %d", __func__, openOutputs.keyAt(i));
++                outputs.add(openOutputs.keyAt(i));
++            }
++        }
++    }
++#else
+     for (size_t i = 0; i < openOutputs.size(); i++) {
+         ALOGVV("output %zu isDuplicated=%d device=%s",
+                 i, openOutputs.valueAt(i)->isDuplicated(),
+@@ -6291,6 +6331,7 @@ SortedVector<audio_io_handle_t> AudioPolicyManager::getOutputsForDevices(
+             outputs.add(openOutputs.keyAt(i));
+         }
+     }
++#endif
+     return outputs;
+ }
+ 
+@@ -6697,6 +6738,7 @@ sp<DeviceDescriptor> AudioPolicyManager::getNewInputDevice(
+     if (attributes.source == AUDIO_SOURCE_DEFAULT && isInCall()) {
+         attributes.source = AUDIO_SOURCE_VOICE_COMMUNICATION;
+     }
++
+     if (attributes.source != AUDIO_SOURCE_DEFAULT) {
+         device = mEngine->getInputDeviceForAttributes(attributes, uid);
+     }
+@@ -7677,7 +7719,7 @@ void AudioPolicyManager::updateAudioProfiles(const sp<DeviceDescriptor>& devDesc
+         }
+         FormatVector formats = formatsFromString(reply.string());
+         mReportedFormatsMap[devDesc] = formats;
+-        if (device == AUDIO_DEVICE_OUT_HDMI
++        if (device == AUDIO_DEVICE_OUT_HDMI || device == VX_ROCKCHIP_OUT_HDMI0
+                 || isDeviceOfModule(devDesc, AUDIO_HARDWARE_MODULE_ID_MSD)) {
+             modifySurroundFormats(devDesc, &formats);
+         }
+@@ -7711,7 +7753,7 @@ void AudioPolicyManager::updateAudioProfiles(const sp<DeviceDescriptor>& devDesc
+             if (repliedParameters.get(
+                     String8(AudioParameter::keyStreamSupportedChannels), reply) == NO_ERROR) {
+                 channelMasks = channelMasksFromString(reply.string());
+-                if (device == AUDIO_DEVICE_OUT_HDMI
++                if (device == AUDIO_DEVICE_OUT_HDMI || device == VX_ROCKCHIP_OUT_HDMI0
+                         || isDeviceOfModule(devDesc, AUDIO_HARDWARE_MODULE_ID_MSD)) {
+                     modifySurroundChannelMasks(&channelMasks);
+                 }

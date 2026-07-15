@@ -1,0 +1,35 @@
+From edcfcafd982b9796cfdd2da3f62dd8a6835226ca Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Sat, 11 Jul 2026 14:13:20 +0800
+Subject: [PATCH 43/51] fix: add EXIF parser thread safety for Rockchip
+ Gallery2
+
+Change-Id: Ic03155bb7085ddd01d61353117011b5e62882ada
+---
+ .../src/com/android/gallery3d/exif/ExifParser.java     | 10 +++++++---
+ 1 file changed, 7 insertions(+), 3 deletions(-)
+
+diff --git a/gallerycommon/src/com/android/gallery3d/exif/ExifParser.java b/gallerycommon/src/com/android/gallery3d/exif/ExifParser.java
+index 5467d423d..3a3b71afc 100644
+--- a/gallerycommon/src/com/android/gallery3d/exif/ExifParser.java
++++ b/gallerycommon/src/com/android/gallery3d/exif/ExifParser.java
+@@ -558,9 +558,13 @@ class ExifParser {
+             // Read the data here.
+             if ((offset < mIfd0Position) && (dataFormat == ExifTag.TYPE_UNDEFINED)) {
+                 byte[] buf = new byte[(int) numOfComp];
+-                System.arraycopy(mDataAboveIfd0, (int) offset - DEFAULT_IFD0_OFFSET,
+-                        buf, 0, (int) numOfComp);
+-                tag.setValue(buf);
++                try {
++                    System.arraycopy(mDataAboveIfd0, (int) offset - DEFAULT_IFD0_OFFSET,
++                            buf, 0, (int) numOfComp);
++                    tag.setValue(buf);
++                } catch (Exception e) {
++                    e.printStackTrace();
++                }
+             } else {
+                 tag.setOffset((int) offset);
+             }
+-- 
+2.53.0
+

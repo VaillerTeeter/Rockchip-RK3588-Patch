@@ -1,0 +1,127 @@
+From b86319f24e2a2467a83d69d30d50499c9672f3a7 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 23:16:24 +0800
+Subject: [PATCH] feat: add multi-chip WiFi driver load, librkwifi-ctrl
+ dependency, and P2P interface naming for Rockchip
+
+Change-Id: I6f80572965e5da2e06c914daf0ee8267880966c1
+---
+ wifi/1.6/default/Android.mk    |  4 ++++
+ wifi/1.6/default/service.cpp   |  3 +++
+ wifi/1.6/default/wifi_chip.cpp | 30 +++++++++++++++++++++++++++++-
+ 3 files changed, 36 insertions(+), 1 deletion(-)
+
+diff --git a/wifi/1.6/default/Android.mk b/wifi/1.6/default/Android.mk
+index ca1c022db..3323b1bb8 100644
+--- a/wifi/1.6/default/Android.mk
++++ b/wifi/1.6/default/Android.mk
+@@ -70,6 +70,7 @@ LOCAL_SHARED_LIBRARIES := \
+     libnl \
+     libutils \
+     libwifi-hal \
++    librkwifi-ctrl \
+     libwifi-system-iface \
+     libxml2 \
+     android.hardware.wifi@1.0 \
+@@ -105,6 +106,7 @@ LOCAL_SHARED_LIBRARIES := \
+     libnl \
+     libutils \
+     libwifi-hal \
++    librkwifi-ctrl \
+     libwifi-system-iface \
+     libxml2 \
+     android.hardware.wifi@1.0 \
+@@ -143,6 +145,7 @@ LOCAL_SHARED_LIBRARIES := \
+     libnl \
+     libutils \
+     libwifi-hal \
++    librkwifi-ctrl \
+     libwifi-system-iface \
+     libxml2 \
+     android.hardware.wifi@1.0 \
+@@ -198,5 +201,6 @@ LOCAL_SHARED_LIBRARIES := \
+     libnl \
+     libutils \
+     libwifi-hal \
++    librkwifi-ctrl \
+     libwifi-system-iface
+ include $(BUILD_NATIVE_TEST)
+diff --git a/wifi/1.6/default/service.cpp b/wifi/1.6/default/service.cpp
+index c874d8b19..3bbcd82ac 100644
+--- a/wifi/1.6/default/service.cpp
++++ b/wifi/1.6/default/service.cpp
+@@ -27,6 +27,8 @@
+ #include "wifi_legacy_hal_factory.h"
+ #include "wifi_mode_controller.h"
+ 
++extern "C" int wifi_load_driver();
++
+ using android::hardware::configureRpcThreadpool;
+ using android::hardware::joinRpcThreadpool;
+ using android::hardware::LazyServiceRegistrar;
+@@ -46,6 +48,7 @@ int main(int /*argc*/, char** argv) {
+     android::base::InitLogging(argv, android::base::LogdLogger(android::base::SYSTEM));
+     LOG(INFO) << "Wifi Hal is booting up...";
+ 
++    wifi_load_driver();
+     configureRpcThreadpool(1, true /* callerWillJoin */);
+ 
+     const auto iface_tool = std::make_shared<android::wifi_system::InterfaceTool>();
+diff --git a/wifi/1.6/default/wifi_chip.cpp b/wifi/1.6/default/wifi_chip.cpp
+index c7c00b17f..33ea0ff74 100644
+--- a/wifi/1.6/default/wifi_chip.cpp
++++ b/wifi/1.6/default/wifi_chip.cpp
+@@ -49,6 +49,9 @@ constexpr char kNoActiveWlanIfaceNamePropertyValue[] = "";
+ constexpr unsigned kMaxWlanIfaces = 5;
+ constexpr char kApBridgeIfacePrefix[] = "ap_br_";
+ 
++extern "C" int check_wifi_chip_type_string(char *type);
++static char wifi_type[64] = {0};
++
+ template <typename Iface>
+ void invalidateAndClear(std::vector<sp<Iface>>& ifaces, sp<Iface> iface) {
+     iface->invalidate();
+@@ -127,7 +130,21 @@ std::string getPredefinedP2pIfaceName() {
+     char p2pParentIfname[100];
+     std::string p2pDevIfName = "";
+     std::array<char, PROPERTY_VALUE_MAX> buffer;
+-    property_get("wifi.direct.interface", buffer.data(), "p2p0");
++    // @Rockchip fix
++    if (wifi_type[0] == 0) {
++        check_wifi_chip_type_string(wifi_type);
++    }
++    if ((0 == strncmp(wifi_type, "AP", 2))
++		    || (0 == strncmp(wifi_type, "SPRDWL", 6))
++		    || (0 == strncmp(wifi_type, "AIC", 3))
++		    || (0 == strncmp(wifi_type, "BES2600", 6))) {
++        property_set("vendor.wifi.direct.interface", "p2p-dev-wlan0");
++        property_get("wifi.direct.interface", buffer.data(), "p2p-dev-wlan0");
++    } else {
++        property_set("vendor.wifi.direct.interface", "p2p0");
++        property_get("wifi.direct.interface", buffer.data(), "p2p0");
++    }
++    // @end
+     if (strncmp(buffer.data(), P2P_MGMT_DEVICE_PREFIX, strlen(P2P_MGMT_DEVICE_PREFIX)) == 0) {
+         /* Get the p2p parent interface name from p2p device interface name set
+          * in property */
+@@ -1163,6 +1180,17 @@ std::pair<WifiStatus, sp<IWifiP2pIface>> WifiChip::createP2pIfaceInternal() {
+ }
+ 
+ std::pair<WifiStatus, std::vector<hidl_string>> WifiChip::getP2pIfaceNamesInternal() {
++    if (wifi_type[0] == 0) {
++        check_wifi_chip_type_string(wifi_type);
++    }
++    if ((0 == strncmp(wifi_type, "AP", 2))
++		    || (0 == strncmp(wifi_type, "SPRDWL", 6))
++		    || (0 == strncmp(wifi_type, "AIC", 3))
++		    || (0 == strncmp(wifi_type, "BES2600", 6))) {
++        property_set("vendor.wifi.direct.interface", "p2p-dev-wlan0");
++    } else {
++        property_set("vendor.wifi.direct.interface", "p2p0");
++    }
+     if (p2p_ifaces_.empty()) {
+         return {createWifiStatus(WifiStatusCode::SUCCESS), {}};
+     }
+-- 
+2.53.0
+

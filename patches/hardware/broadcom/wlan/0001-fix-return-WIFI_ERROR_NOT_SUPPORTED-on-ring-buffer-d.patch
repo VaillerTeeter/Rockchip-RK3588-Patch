@@ -1,0 +1,26 @@
+From 6b81cb8dbe29b2577835282cf0b2ee0450f3f811 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 22:51:09 +0800
+Subject: [PATCH] fix: return WIFI_ERROR_NOT_SUPPORTED on ring buffer dump
+ registration failure
+
+Change-Id: Ib93327de82c088b82fc38faad509e26a6e7aa845
+---
+ bcmdhd/wifi_hal/wifi_logger.cpp | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/bcmdhd/wifi_hal/wifi_logger.cpp b/bcmdhd/wifi_hal/wifi_logger.cpp
+index 229dc2f..a94a14a 100755
+--- a/bcmdhd/wifi_hal/wifi_logger.cpp
++++ b/bcmdhd/wifi_hal/wifi_logger.cpp
+@@ -2188,6 +2188,7 @@ public:
+         result = requestResponse(request);
+         if (result != WIFI_SUCCESS) {
+             ALOGE("Failed to register trigger memory dump response; result = %d", result);
++            return WIFI_ERROR_NOT_SUPPORTED;
+         }
+         return result;
+     }
+-- 
+2.53.0
+

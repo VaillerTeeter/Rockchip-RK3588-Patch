@@ -1,0 +1,55 @@
+From f4ff0b1170292654daaa82d377837c2ea76e1fd7 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Sun, 12 Jul 2026 01:39:14 +0800
+Subject: [PATCH 93/95] feat: disable IP reachability disconnect, enable
+ background scan, and skip reachability monitor in DHCP config for Rockchip
+ WiFi stability
+
+Change-Id: Ia2dce903711c0bfb94e02f06c3825d878d2bd166
+---
+ service/ServiceWifiResources/res/values/config.xml       | 2 +-
+ service/java/com/android/server/wifi/ClientModeImpl.java | 1 +
+ service/java/com/android/server/wifi/WifiGlobals.java    | 2 +-
+ 3 files changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/service/ServiceWifiResources/res/values/config.xml b/service/ServiceWifiResources/res/values/config.xml
+index 48667553ef..31619dd05c 100644
+--- a/service/ServiceWifiResources/res/values/config.xml
++++ b/service/ServiceWifiResources/res/values/config.xml
+@@ -66,7 +66,7 @@
+          This mechanism allows the host to remain in suspend state and the dongle to actively
+          scan and wake the host when a configured SSID is detected by the dongle. This chipset
+          capability can provide power savings when wifi needs to be always kept on. -->
+-    <bool translatable="false" name="config_wifi_background_scan_support">false</bool>
++    <bool translatable="false" name="config_wifi_background_scan_support">true</bool>
+ 
+     <!-- Boolean indicating whether or not to revert to default country code when cellular
+          radio is unable to find any MCC information to infer wifi country code from -->
+diff --git a/service/java/com/android/server/wifi/ClientModeImpl.java b/service/java/com/android/server/wifi/ClientModeImpl.java
+index 987bb93564..0db146d741 100644
+--- a/service/java/com/android/server/wifi/ClientModeImpl.java
++++ b/service/java/com/android/server/wifi/ClientModeImpl.java
+@@ -7023,6 +7023,7 @@ public class ClientModeImpl extends StateMachine implements ClientMode {
+ 
+             if (!isUsingStaticIp) {
+                 prov = new ProvisioningConfiguration.Builder()
++		    .withoutIpReachabilityMonitor()
+                     .withPreDhcpAction()
+                     .withNetwork(getCurrentNetwork())
+                     .withDisplayName(config.SSID)
+diff --git a/service/java/com/android/server/wifi/WifiGlobals.java b/service/java/com/android/server/wifi/WifiGlobals.java
+index 85cc4b6f83..24022d49be 100644
+--- a/service/java/com/android/server/wifi/WifiGlobals.java
++++ b/service/java/com/android/server/wifi/WifiGlobals.java
+@@ -43,7 +43,7 @@ public class WifiGlobals {
+     private final Context mContext;
+ 
+     private final AtomicInteger mPollRssiIntervalMillis = new AtomicInteger(-1);
+-    private final AtomicBoolean mIpReachabilityDisconnectEnabled = new AtomicBoolean(true);
++    private final AtomicBoolean mIpReachabilityDisconnectEnabled = new AtomicBoolean(false);
+     private final AtomicBoolean mIsBluetoothConnected = new AtomicBoolean(false);
+ 
+     // This is read from the overlay, cache it after boot up.
+-- 
+2.53.0
+

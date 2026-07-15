@@ -1,0 +1,169 @@
+From c33f230ee98b77ab488d756c786e845fbfec0817 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Sat, 11 Jul 2026 21:04:29 +0800
+Subject: [PATCH 58/67] feat: add Rockchip HDMI settings strings,
+ resolution/rotation arrays, and BT slice config
+
+Change-Id: Icd705c07929c5e60dc04259151c655817adb2da4
+---
+ res/values/arrays.xml                         | 41 +++++++++++++++++++
+ res/values/config.xml                         |  9 ++++
+ res/values/strings.xml                        | 21 ++++++++++
+ res/xml/bluetooth_device_details_fragment.xml | 10 ++---
+ res/xml/display_settings.xml                  |  6 +++
+ 5 files changed, 81 insertions(+), 6 deletions(-)
+
+diff --git a/res/values/arrays.xml b/res/values/arrays.xml
+index 9bc29560c9..354e01ad19 100644
+--- a/res/values/arrays.xml
++++ b/res/values/arrays.xml
+@@ -1655,6 +1655,47 @@
+     <string-array name="allowlist_hide_summary_in_battery_usage" translatable="false">
+     </string-array>
+ 
++    <!-- HDMI -->
++    <string-array name="hdmi_resolution_entries">
++        <item>1920x1080p-50Hz </item>
++        <item>1920x1080p-60Hz</item>
++        <item>1280x720p-50Hz</item>
++        <item>1280x720p-60Hz</item>
++        <item>720x576p-50Hz </item>
++        <item>720x480p-60Hz </item>
++    </string-array>
++    <string-array name="hdmi_resolution_values">
++        <item>1920x1080p-50\n</item>
++        <item>1920x1080p-60\n</item>
++        <item>1280x720p-50\n</item>
++        <item>1280x720p-60\n</item>
++        <item>720x576p-50\n</item>
++        <item>720x480p-60\n</item>
++    </string-array>
++    <string-array name="hdmi_rotation_entries">
++        <item>0</item>
++        <item>90</item>
++        <item>180</item>
++        <item>270</item>
++    </string-array>
++    <string-array name="hdmi_rotation_values">
++        <item>0</item>
++        <item>90</item>
++        <item>180</item>
++        <item>270</item>
++    </string-array>
++    <string-array name="dual_screen_ver_hor_entries">
++        <item>0</item>
++        <item>90</item>
++        <item>180</item>
++        <item>270</item>
++    </string-array>
++    <string-array name="dual_screen_ver_hor_values">
++        <item>0</item>
++        <item>1</item>
++        <item>2</item>
++        <item>3</item>
++    </string-array>
+     <!-- hide 3G option from preferred network type UI -->
+     <integer-array name="network_mode_3g_deprecated_carrier_id" translatable="false">
+     </integer-array>
+diff --git a/res/values/config.xml b/res/values/config.xml
+index 7444b576e9..4e2c55478c 100755
+--- a/res/values/config.xml
++++ b/res/values/config.xml
+@@ -491,6 +491,15 @@
+     <!-- Slice Uri to query nearby devices. -->
+     <string name="config_nearby_devices_slice_uri" translatable="false">content://com.google.android.gms.nearby.fastpair/device_status_list_item</string>
+ 
++    <!-- BT Slice intent action. To support Settings 2 panel, BT slice can't use PendingIntent.send(). Therefore, here defines the Slice intent action. -->
++    <string name="config_bt_slice_intent_action" translatable="false"></string>
++    <!-- BT Slice pending intent action. To support Settings 2 panel, BT slice can't use PendingIntent.send(). Therefore, here defines the Slice pending intent action. -->
++    <string name="config_bt_slice_pending_intent_action" translatable="false"></string>
++    <!-- BT Slice EXTRA_INTENT. To support Settings 2 panel, BT slice can't use PendingIntent.send(). Therefore, here defines the Slice EXTRA_INTENT. -->
++    <string name="config_bt_slice_extra_intent" translatable="false"></string>
++    <!-- BT Slice EXTRA_PENDING_INTENT. To support Settings 2 panel, BT slice can't use PendingIntent.send(). Therefore, here defines the Slice EXTRA_PENDING_INTENT. -->
++    <string name="config_bt_slice_extra_pending_intent" translatable="false"></string>
++
+     <!-- Grayscale settings intent -->
+     <string name="config_grayscale_settings_intent" translatable="false"></string>
+ 
+diff --git a/res/values/strings.xml b/res/values/strings.xml
+index 38167b5d89..59460a94db 100644
+--- a/res/values/strings.xml
++++ b/res/values/strings.xml
+@@ -7008,6 +7008,10 @@
+     <string name="battery_system_usage_for">System usage for <xliff:g id="slot">%s</xliff:g></string>
+     <!-- [CHAR_LIMIT=NONE] Battery app usage section header -->
+     <string name="battery_app_usage_for">App usage for <xliff:g id="slot">%s</xliff:g></string>
++    <!-- [CHAR_LIMIT=NONE] Battery system usage section header since last full charge to slot_timestamp. Please use similar text with tc/3248552137819897140 -->
++    <string name="battery_system_usage_since_last_full_charge_to">System usage since last full charge to <xliff:g id="slot_timestamp" example="Friday 10 am">%s</xliff:g></string>
++    <!-- [CHAR_LIMIT=NONE] Battery app usage section header since last full charge to slot_timestamp. Please use similar text with tc/7309909074935858949 -->
++    <string name="battery_app_usage_since_last_full_charge_to">App usage since last full charge to <xliff:g id="slot_timestamp" example="Friday 10 am">%s</xliff:g></string>
+     <!-- [CHAR_LIMIT=NONE] Battery usage item for total usage time less than a minute -->
+     <string name="battery_usage_total_less_than_one_minute">Total: less than a min</string>
+     <!-- [CHAR_LIMIT=NONE] Battery usage item for total background time less than a minute -->
+@@ -14551,4 +14555,21 @@
+     <!-- [CHAR LIMIT=NONE] Hint for QR code process failure -->
+     <string name="bt_le_audio_qr_code_is_not_valid_format">QR code isn\u0027t a valid format</string>
+ 
++    <!--hdmi settings-->
++    <string name="hdmi_settings">HDMI</string>
++    <string name="system_rotation">System Direction</string>
++    <string name="screen_title">Screen Setting</string>
++    <string name="screen_main_title">Main Screen</string>
++    <string name="screen_aux_title">Aux Screen</string>
++    <string name="screen_switch">Turn on/off</string>
++    <string name="screen_resolution">Resolution</string>
++    <string name="screen_scale">Screen Zoom</string>
++    <string name="screen_rotation">Screen Rotation</string>
++    <string name="screen_full_vh">screen full display</string>
++    <string name="confirm_dialog_title">Save Confirm</string>
++    <string name="confirm_dialog_message">Will cancel it</string>
++    <string name="dialog_getting_screen_info">getting screen info...</string>
++    <string name="dialog_update_resolution">Updating resolution...</string>
++    <string name="dialog_wait_screen_connect">please wait while updating info to the device...</string>
++
+ </resources>
+diff --git a/res/xml/bluetooth_device_details_fragment.xml b/res/xml/bluetooth_device_details_fragment.xml
+index 0528973d67..4021715800 100644
+--- a/res/xml/bluetooth_device_details_fragment.xml
++++ b/res/xml/bluetooth_device_details_fragment.xml
+@@ -58,11 +58,9 @@
+         settings:controller="com.android.settings.slices.SlicePreferenceController"
+         settings:allowDividerAbove="true"/>
+ 
+-    <com.android.settings.slices.SlicePreference
+-        android:key="bt_device_slice"
+-        settings:controller="com.android.settings.slices.BlockingSlicePrefController"
+-        settings:allowDividerBelow="true"
+-        settings:allowDividerAbove="true"/>
++    <PreferenceCategory
++        android:key="bt_device_slice_category"
++        settings:controller="com.android.settings.bluetooth.BlockingPrefWithSliceController"/>
+ 
+     <PreferenceCategory
+         android:key="device_companion_apps"/>
+@@ -91,4 +89,4 @@
+         settings:searchable="false"
+         settings:controller="com.android.settings.bluetooth.BluetoothDetailsMacAddressController"/>
+ 
+-</PreferenceScreen>
+\ No newline at end of file
++</PreferenceScreen>
+diff --git a/res/xml/display_settings.xml b/res/xml/display_settings.xml
+index ad5236ecbd..0f143db112 100644
+--- a/res/xml/display_settings.xml
++++ b/res/xml/display_settings.xml
+@@ -172,5 +172,11 @@
+             android:key="vr_display_pref"
+             android:title="@string/display_vr_pref_title"
+             android:fragment="com.android.settings.display.VrDisplayPreferencePicker"/>
++
++        <Preference
++            android:key="hdmi_settings"
++            android:title="@string/hdmi_settings"
++            settings:keywords="@string/hdmi_settings"
++            android:fragment="com.android.settings.display.HdmiSettings" />
+     </PreferenceCategory>
+ </PreferenceScreen>
+-- 
+2.53.0
+

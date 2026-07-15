@@ -1,0 +1,633 @@
+From 53e59a1226d3ec8384532ce728be373c5e1eb60b Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Sat, 11 Jul 2026 02:54:55 +0800
+Subject: [PATCH 23/27] feat: add PreviewOverlay, MainActivityLayout, and misc
+ UI components for Rockchip camera
+
+Change-Id: I795bf9339639689ef8c399500991911f7da03a17
+---
+ .../camera/MultiToggleImageButton.java        |  30 +++++
+ src/com/android/camera/ShutterButton.java     |  22 +++-
+ src/com/android/camera/ui/DetailsDialog.java  |   2 +
+ .../android/camera/ui/MainActivityLayout.java | 122 ++++++++++++++++++
+ src/com/android/camera/ui/PreviewOverlay.java |  33 ++++-
+ src/com/android/camera/ui/RadioOptions.java   |   4 +
+ .../camera/ui/TopRightWeightedLayout.java     |  99 +++++++++++++-
+ src/com/android/camera/ui/ZoomView.java       |  12 +-
+ 8 files changed, 315 insertions(+), 9 deletions(-)
+
+diff --git a/src/com/android/camera/MultiToggleImageButton.java b/src/com/android/camera/MultiToggleImageButton.java
+index 34ffcefbe..2c475d8a0 100644
+--- a/src/com/android/camera/MultiToggleImageButton.java
++++ b/src/com/android/camera/MultiToggleImageButton.java
+@@ -32,6 +32,7 @@ import android.view.View;
+ import android.widget.ImageButton;
+ import android.widget.ImageView;
+ 
++import com.android.camera.util.CameraUtil;
+ import com.android.camera.util.Gusterpolator;
+ import com.android.camera2.R;
+ 
+@@ -74,6 +75,7 @@ public class MultiToggleImageButton extends ImageButton {
+     private int mAnimDirection;
+     private Matrix mMatrix = new Matrix();
+     private ValueAnimator mAnimator;
++    private boolean mStateChanging= false;
+ 
+     public MultiToggleImageButton(Context context) {
+         super(context);
+@@ -101,6 +103,7 @@ public class MultiToggleImageButton extends ImageButton {
+      */
+     public void setOnStateChangeListener(OnStateChangeListener onStateChangeListener) {
+         mOnStateChangeListener = onStateChangeListener;
++        mStateChanging = false;
+     }
+ 
+     /**
+@@ -177,6 +180,12 @@ public class MultiToggleImageButton extends ImageButton {
+                     setImageBitmap(bitmap);
+ 
+                     int offset;
++                    if (!CameraUtil.AUTO_ROTATE_SENSOR) {
++                        if (CameraUtil.mIsPortrait)
++                            mAnimDirection = ANIM_DIRECTION_VERTICAL;
++                        else
++                            mAnimDirection = ANIM_DIRECTION_HORIZONTAL;
++                    }
+                     if (mAnimDirection == ANIM_DIRECTION_VERTICAL) {
+                         offset = (mParentSize+getHeight())/2;
+                     } else if (mAnimDirection == ANIM_DIRECTION_HORIZONTAL) {
+@@ -216,6 +225,14 @@ public class MultiToggleImageButton extends ImageButton {
+         mClickEnabled = enabled;
+     }
+ 
++    public boolean isStateChanging() {
++        return mStateChanging;
++    }
++
++    public void setStateChangeOver(boolean over) {
++        mStateChanging = !over;
++    }
++
+     private void setStateInternal(int state, boolean callListener) {
+         mState = state;
+         if (mImageIds != null) {
+@@ -253,6 +270,7 @@ public class MultiToggleImageButton extends ImageButton {
+             @Override
+             public void onClick(View v) {
+                 if (mClickEnabled) {
++                    mStateChanging = true;
+                     nextState();
+                 }
+             }
+@@ -266,6 +284,12 @@ public class MultiToggleImageButton extends ImageButton {
+             @Override
+             public void onAnimationUpdate(ValueAnimator animation) {
+                 mMatrix.reset();
++                if (!CameraUtil.AUTO_ROTATE_SENSOR) {
++                    if (CameraUtil.mIsPortrait)
++                        mAnimDirection = ANIM_DIRECTION_VERTICAL;
++                    else
++                        mAnimDirection = ANIM_DIRECTION_HORIZONTAL;
++                }
+                 if (mAnimDirection == ANIM_DIRECTION_VERTICAL) {
+                     mMatrix.setTranslate(0.0f, (Float) animation.getAnimatedValue());
+                 } else if (mAnimDirection == ANIM_DIRECTION_HORIZONTAL) {
+@@ -391,6 +415,12 @@ public class MultiToggleImageButton extends ImageButton {
+ 
+         // combine 'em
+         Bitmap bitmap = null;
++        if (!CameraUtil.AUTO_ROTATE_SENSOR) {
++            if (CameraUtil.mIsPortrait)
++                mAnimDirection = ANIM_DIRECTION_VERTICAL;
++            else
++                mAnimDirection = ANIM_DIRECTION_HORIZONTAL;
++        }
+         if (mAnimDirection == ANIM_DIRECTION_VERTICAL) {
+             int bitmapHeight = (height*2) + ((mParentSize - height)/2);
+             int oldBitmapOffset = height + ((mParentSize - height)/2);
+diff --git a/src/com/android/camera/ShutterButton.java b/src/com/android/camera/ShutterButton.java
+index 956b863d7..0482b0362 100755
+--- a/src/com/android/camera/ShutterButton.java
++++ b/src/com/android/camera/ShutterButton.java
+@@ -60,6 +60,7 @@ public class ShutterButton extends ImageView {
+          * Called when shutter button is held down for a long press.
+          */
+         void onShutterButtonLongPressed();
++        void onShutterButtonLongClickRelease();
+     }
+ 
+     /**
+@@ -69,6 +70,7 @@ public class ShutterButton extends ImageView {
+         @Override
+         public void onLongPress(MotionEvent event) {
+             for (OnShutterButtonListener listener : mListeners) {
++                mOldLongPressed = true;
+                 listener.onShutterButtonLongPressed();
+             }
+         }
+@@ -78,6 +80,8 @@ public class ShutterButton extends ImageView {
+         = new ArrayList<OnShutterButtonListener>();
+     private boolean mOldPressed;
+ 
++    private boolean mOldLongPressed;
++
+     public ShutterButton(Context context, AttributeSet attrs) {
+         super(context, attrs);
+         mGestureDetector = new GestureDetector(context, new LongPressGestureListener());
+@@ -118,6 +122,14 @@ public class ShutterButton extends ImageView {
+             if (m.getActionMasked() == MotionEvent.ACTION_UP) {
+                 mTouchCoordinate = new TouchCoordinate(m.getX(), m.getY(), this.getMeasuredWidth(),
+                         this.getMeasuredHeight());
++                if (mOldLongPressed) {
++                    mOldLongPressed = false;
++                    for (OnShutterButtonListener listener : mListeners) {
++                        listener.onShutterCoordinate(mTouchCoordinate);
++                        mTouchCoordinate = null;
++                        listener.onShutterButtonLongClickRelease();
++                    }
++                }
+             }
+             return super.dispatchTouchEvent(m);
+         } else {
+@@ -136,7 +148,7 @@ public class ShutterButton extends ImageView {
+      */
+     @Override
+     protected void drawableStateChanged() {
+-        super.drawableStateChanged();
++        //super.drawableStateChanged();
+         final boolean pressed = isPressed();
+         if (pressed != mOldPressed) {
+             if (!pressed) {
+@@ -192,4 +204,12 @@ public class ShutterButton extends ImageView {
+         }
+         return result;
+     }
++
++    @Override
++    public void setLongClickable(boolean longClickable) {
++        // TODO Auto-generated method stub
++        if (mGestureDetector != null)
++            mGestureDetector.setIsLongpressEnabled(longClickable);
++        super.setLongClickable(longClickable);
++    }
+ }
+diff --git a/src/com/android/camera/ui/DetailsDialog.java b/src/com/android/camera/ui/DetailsDialog.java
+index 9561ef542..21701d2b2 100644
+--- a/src/com/android/camera/ui/DetailsDialog.java
++++ b/src/com/android/camera/ui/DetailsDialog.java
+@@ -203,6 +203,8 @@ public class DetailsDialog {
+             if (bitmap == null)
+                 return;
+             onResolutionAvailable(bitmap.getWidth(), bitmap.getHeight());
++            bitmap.recycle();
++            bitmap = null;
+         }
+ 
+         @Override
+diff --git a/src/com/android/camera/ui/MainActivityLayout.java b/src/com/android/camera/ui/MainActivityLayout.java
+index 98f708980..90fb639f1 100644
+--- a/src/com/android/camera/ui/MainActivityLayout.java
++++ b/src/com/android/camera/ui/MainActivityLayout.java
+@@ -19,17 +19,21 @@ package com.android.camera.ui;
+ import android.app.Activity;
+ import android.content.Context;
+ import android.content.Intent;
++import android.content.pm.ActivityInfo;
++import android.graphics.Rect;
+ import android.provider.MediaStore;
+ import android.util.AttributeSet;
+ import android.view.MotionEvent;
+ import android.view.View;
+ import android.view.ViewConfiguration;
++import android.view.View.MeasureSpec;
+ import android.widget.FrameLayout;
+ 
+ import com.android.camera.app.CameraAppUI;
+ import com.android.camera.debug.Log;
+ import com.android.camera.util.CameraUtil;
+ import com.android.camera.widget.FilmstripLayout;
++import com.android.camera.widget.ModeOptionsOverlay;
+ import com.android.camera2.R;
+ 
+ public class MainActivityLayout extends FrameLayout {
+@@ -40,6 +44,8 @@ public class MainActivityLayout extends FrameLayout {
+ 
+     private ModeListView mModeList;
+     private FilmstripLayout mFilmstripLayout;
++    private TopRightWeightedLayout mModeOptionsButtons;
++    private ModeOptionsOverlay mModeOptionsOverlay;
+     private boolean mCheckToIntercept;
+     private MotionEvent mDown;
+     private final int mSlop;
+@@ -48,6 +54,9 @@ public class MainActivityLayout extends FrameLayout {
+     private final boolean mIsCaptureIntent;
+     private CameraAppUI.NonDecorWindowSizeChangedListener mNonDecorWindowSizeChangedListener = null;
+ 
++    private int mWidth;
++    private int mHeight;
++
+     // TODO: This can be removed once we come up with a new design for b/13751653.
+     @Deprecated
+     private boolean mSwipeEnabled = true;
+@@ -102,38 +111,114 @@ public class MainActivityLayout extends FrameLayout {
+             }
+             int deltaX = (int) (ev.getX() - mDown.getX());
+             int deltaY = (int) (ev.getY() - mDown.getY());
++            if (!CameraUtil.AUTO_ROTATE_SENSOR) {
++                if (CameraUtil.mScreenOrientation
++                        == ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE) {
++                    deltaX = (int) (ev.getY() - mDown.getY());
++                    deltaY = (int) (mDown.getX() - ev.getX());
++                } else if (CameraUtil.mScreenOrientation
++                        == ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT) {
++                    deltaX = (int) (mDown.getX() - ev.getX());
++                    deltaY = (int) (mDown.getY() - ev.getY());
++                } else if (CameraUtil.mScreenOrientation
++                        == ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE) {
++                    deltaX = (int) (mDown.getY() - ev.getY());
++                    deltaY = (int) (ev.getX() - mDown.getX());
++                }
++            }
+             if (ev.getActionMasked() == MotionEvent.ACTION_MOVE
+                     && Math.abs(deltaX) > mSlop) {
++                // Intercept right/left by ModeOptionsButton
++                if (mModeOptionsButtons.isScrollable()
++                        && Math.abs(deltaX) >= Math.abs(deltaY) * 2
++                        && mModeOptionsButtons.getVisibility() == View.VISIBLE) {
++                    Rect r = new Rect();
++                    mModeOptionsButtons.getGlobalVisibleRect(r);
++                    if (r.contains((int) mDown.getX(), (int) mDown.getY())){
++                        Log.i(TAG, "Intercept right/left by ModeOptionsButton");
++                        mTouchReceiver = mModeOptionsButtons;
++                        onTouchEvent(mDown);
++                        mModeOptionsOverlay.closeManualFocusBar();
++                        return true;
++                    }
++                }
+                 // Intercept right swipe
+                 if (deltaX >= Math.abs(deltaY) * 2) {
++                    Log.i(TAG, "Intercept right swipe");
+                     mTouchReceiver = mModeList;
+                     onTouchEvent(mDown);
++                    mModeOptionsOverlay.closeManualFocusBar();
+                     return true;
+                 }
+                 // Intercept left swipe
+                 else if (deltaX < -Math.abs(deltaY) * 2) {
++                    Log.i(TAG, "Intercept left swipe");
+                     mTouchReceiver = mFilmstripLayout;
+                     onTouchEvent(mDown);
++                    mModeOptionsOverlay.closeManualFocusBar();
+                     return true;
+                 }
+             }
++            if (ev.getActionMasked() == MotionEvent.ACTION_MOVE
++                    && Math.abs(deltaY) > mSlop) {
++                // Intercept up/down by ModeOptionsButton
++                if (mModeOptionsButtons.isScrollable()
++                        && Math.abs(deltaY) >= Math.abs(deltaX) * 2
++                        && mModeOptionsButtons.getVisibility() == View.VISIBLE) {
++                    Rect r = new Rect();
++                    mModeOptionsButtons.getGlobalVisibleRect(r);
++                    if (r.contains((int) mDown.getX(), (int) mDown.getY())){
++                        Log.i(TAG, "Intercept up/down by ModeOptionsButton");
++                        mTouchReceiver = mModeOptionsButtons;
++                        onTouchEvent(mDown);
++                        mModeOptionsOverlay.closeManualFocusBar();
++                        return true;
++                    }
++                }
++            }
+         }
+         return false;
+     }
+ 
+     @Override
+     public boolean onTouchEvent(MotionEvent ev) {
++        if (ev.getActionMasked() == MotionEvent.ACTION_UP) {
++            if (mTouchUpListener != null)
++                mTouchUpListener.onTouch(null, ev);
++        }
+         if (mTouchReceiver != null) {
+             mTouchReceiver.setVisibility(VISIBLE);
++            if (!CameraUtil.AUTO_ROTATE_SENSOR) {
++                if (mTouchReceiver == mModeList || mTouchReceiver == mFilmstripLayout) {
++                    if (CameraUtil.mScreenOrientation
++                            == ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE) {
++                        ev.setLocation(ev.getY(), mWidth - ev.getX());
++                    } else if (CameraUtil.mScreenOrientation
++                            == ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT) {
++                        ev.setLocation(mWidth - ev.getX(), mHeight - ev.getY());
++                    } else if (CameraUtil.mScreenOrientation
++                            == ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE) {
++                        ev.setLocation(mHeight - ev.getY(), ev.getX());
++                    }
++                }
++            }
+             return mTouchReceiver.dispatchTouchEvent(ev);
+         }
+         return false;
+     }
+ 
++    private View.OnTouchListener mTouchUpListener;
++    public void setTouchUpListener(View.OnTouchListener listener) {
++        mTouchUpListener = listener;
++    }
++
+     @Override
+     public void onFinishInflate() {
+         mModeList = (ModeListView) findViewById(R.id.mode_list_layout);
+         mFilmstripLayout = (FilmstripLayout) findViewById(R.id.filmstrip_layout);
++        mModeOptionsButtons = (TopRightWeightedLayout) findViewById(R.id.mode_options_buttons);
++        mModeOptionsOverlay
++            = (ModeOptionsOverlay) findViewById(R.id.mode_options_overlay);
+     }
+ 
+     public void redirectTouchEventsTo(View touchReceiver) {
+@@ -153,6 +238,18 @@ public class MainActivityLayout extends FrameLayout {
+                     CameraUtil.getDisplayRotation((Activity) getContext()));
+         }
+         super.onMeasure(widthMeasureSpec, heightMeasureSpec);
++        mWidth = MeasureSpec.getSize(widthMeasureSpec);
++        mHeight = MeasureSpec.getSize(heightMeasureSpec);
++    }
++
++    @Override
++    protected void onLayout(boolean changed, int left, int top, int right,
++            int bottom) {
++        // TODO Auto-generated method stub
++        super.onLayout(changed, left, top, right, bottom);
++        if (!CameraUtil.AUTO_ROTATE_SENSOR && mModeList != null) {
++            updateModeListViewByOrientation();
++        }
+     }
+ 
+     /**
+@@ -169,4 +266,29 @@ public class MainActivityLayout extends FrameLayout {
+                     CameraUtil.getDisplayRotation((Activity) getContext()));
+         }
+     }
++
++    private void updateModeListViewByOrientation() {
++        int rootViewWidth = getWidth();
++        int rootViewHeight = getHeight();
++        if (rootViewWidth > rootViewHeight) {
++            int tmp = rootViewWidth;
++            rootViewWidth = rootViewHeight;
++            rootViewHeight = tmp;
++        }
++        if (CameraUtil.mIsPortrait) {
++            mModeList.measure(MeasureSpec.makeMeasureSpec(rootViewWidth, MeasureSpec.EXACTLY),
++                    MeasureSpec.makeMeasureSpec(rootViewHeight, MeasureSpec.EXACTLY));
++            mModeList.layout(0, 0, rootViewWidth, rootViewHeight);
++            mModeList.setTranslationX(0);
++            mModeList.setTranslationY(0);
++        } else {
++            mModeList.measure(MeasureSpec.makeMeasureSpec(rootViewHeight, MeasureSpec.EXACTLY),
++                    MeasureSpec.makeMeasureSpec(rootViewWidth, MeasureSpec.EXACTLY));
++            mModeList.layout(0, 0, rootViewHeight, rootViewWidth);
++            mModeList.setTranslationX((rootViewWidth - rootViewHeight) / 2.0f);
++            mModeList.setTranslationY((rootViewHeight - rootViewWidth) / 2.0f);
++        }
++        mModeList.setRotation(CameraUtil.mUIRotated);
++    }
++
+ }
+diff --git a/src/com/android/camera/ui/PreviewOverlay.java b/src/com/android/camera/ui/PreviewOverlay.java
+index 80286a3a4..f6f39955c 100644
+--- a/src/com/android/camera/ui/PreviewOverlay.java
++++ b/src/com/android/camera/ui/PreviewOverlay.java
+@@ -33,6 +33,7 @@ import android.widget.Button;
+ import com.android.camera.debug.Log;
+ import com.android.camera2.R;
+ 
++import java.util.ArrayList;
+ import java.util.List;
+ 
+ /**
+@@ -66,7 +67,9 @@ public class PreviewOverlay extends View
+     private GestureDetector mGestureDetector = null;
+     private View.OnTouchListener mTouchListener = null;
+     private OnZoomChangedListener mZoomListener = null;
+-    private OnPreviewTouchedListener mOnPreviewTouchedListener;
++    private boolean mZoomEnabled;
++    private ArrayList<OnPreviewTouchedListener> mOnPreviewTouchedListener = new ArrayList<OnPreviewTouchedListener>();
++    private View mOverlayView;
+ 
+     /** Maximum zoom; intialize to 1.0 (disabled) */
+     private float mMaxZoom = MIN_ZOOM;
+@@ -124,6 +127,23 @@ public class PreviewOverlay extends View
+                           OnZoomChangedListener zoomChangeListener) {
+         mZoomListener = zoomChangeListener;
+         mZoomProcessor.setupZoom(zoomMaxRatio, zoom);
++        mZoomEnabled = true;
++    }
++
++    public void setOverlayView(View view) {
++        mOverlayView = view;
++    }
++
++    public void setZoomEnabled(boolean enable) {
++        mZoomEnabled = enable;
++    }
++
++    private boolean isManualFocusing() {
++        if (mOverlayView == null) return false;
++        View parent = (View) mOverlayView.getParent();
++        if (parent != null && parent.getVisibility() == View.VISIBLE)
++            return true;
++        return false;
+     }
+ 
+     /**
+@@ -182,9 +202,10 @@ public class PreviewOverlay extends View
+         if (mTouchListener != null) {
+             mTouchListener.onTouch(this, m);
+         }
+-        mScaleDetector.onTouchEvent(m);
+-        if (mOnPreviewTouchedListener != null) {
+-            mOnPreviewTouchedListener.onPreviewTouched(m);
++        if (!isManualFocusing() && mZoomEnabled)
++            mScaleDetector.onTouchEvent(m);
++        for (OnPreviewTouchedListener listener : mOnPreviewTouchedListener) {
++            listener.onPreviewTouched(m);
+         }
+         return true;
+     }
+@@ -193,8 +214,8 @@ public class PreviewOverlay extends View
+      * Set an {@link OnPreviewTouchedListener} to be executed on any preview
+      * touch event.
+      */
+-    public void setOnPreviewTouchedListener(OnPreviewTouchedListener listener) {
+-        mOnPreviewTouchedListener = listener;
++    public void addOnPreviewTouchedListener(OnPreviewTouchedListener listener) {
++        mOnPreviewTouchedListener.add(listener);
+     }
+ 
+     @Override
+diff --git a/src/com/android/camera/ui/RadioOptions.java b/src/com/android/camera/ui/RadioOptions.java
+index 7159540ac..0221bb8ae 100644
+--- a/src/com/android/camera/ui/RadioOptions.java
++++ b/src/com/android/camera/ui/RadioOptions.java
+@@ -125,6 +125,10 @@ public class RadioOptions extends TopRightWeightedLayout {
+             if (mOnOptionClickListener != null) {
+                 mOnOptionClickListener.onOptionClicked(view);
+             }
++        } else {
++            for (int i = 0; i < getChildCount(); i++) {
++                getChildAt(i).setBackground(null);
++            }
+         }
+     }
+ }
+\ No newline at end of file
+diff --git a/src/com/android/camera/ui/TopRightWeightedLayout.java b/src/com/android/camera/ui/TopRightWeightedLayout.java
+index 317cb3e5f..f71fe2fbf 100644
+--- a/src/com/android/camera/ui/TopRightWeightedLayout.java
++++ b/src/com/android/camera/ui/TopRightWeightedLayout.java
+@@ -20,6 +20,7 @@ import android.content.Context;
+ import android.content.res.Configuration;
+ import android.util.AttributeSet;
+ import android.view.Gravity;
++import android.view.MotionEvent;
+ import android.view.View;
+ import android.view.ViewGroup;
+ import android.widget.LinearLayout;
+@@ -47,13 +48,109 @@ public class TopRightWeightedLayout extends LinearLayout {
+     public void onConfigurationChanged(Configuration configuration) {
+         super.onConfigurationChanged(configuration);
+         checkOrientation(configuration.orientation);
++        scrollTo(0, 0);
++    }
++
++    private int mInvisibleLenght;
++    private float mLastX;
++    private float mLastY;
++    @Override
++    public boolean onTouchEvent(MotionEvent event) {
++        // TODO Auto-generated method stub
++        if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
++            mLastX = event.getX();
++            mLastY = event.getY();
++        } else {
++            if (event.getActionMasked() == MotionEvent.ACTION_MOVE) {
++                int direction = getOrientation();
++                if (direction == LinearLayout.HORIZONTAL) {
++                    if (event.getX() - mLastX >= 0) {//right
++                        int scrollX = getScrollX();
++                        float scrollTo = scrollX - (event.getX() - mLastX);
++                        float scrollBy = Math.abs(scrollTo) > mInvisibleLenght / 2
++                                ? (Math.abs(scrollTo) - mInvisibleLenght / 2) - (event.getX() - mLastX)
++                                : - (event.getX() - mLastX);
++                        if (Math.abs(scrollBy) > 2.0f)
++                            scrollBy((int) scrollBy, 0);
++                    } else if (event.getX() - mLastX < 0) {//left
++                        int scrollX = getScrollX();
++                        float scrollTo = scrollX - (event.getX() - mLastX);
++                        float scrollBy = Math.abs(scrollTo) > mInvisibleLenght / 2
++                                ? (event.getX() - mLastX) + (Math.abs(scrollTo) - mInvisibleLenght / 2)
++                                : - (event.getX() - mLastX);
++                        if (Math.abs(scrollBy) > 2.0f)
++                            scrollBy((int) scrollBy, 0);
++                    }
++                } else if (direction == LinearLayout.VERTICAL) {
++                    if (event.getY() - mLastY >= 0) {//down
++                        int scrollY = getScrollY();
++                        float scrollTo = scrollY - (event.getY() - mLastY);
++                        float scrollBy = Math.abs(scrollTo) > mInvisibleLenght / 2
++                                ? (Math.abs(scrollTo) - mInvisibleLenght / 2) - (event.getY() - mLastY)
++                                : - (event.getY() - mLastY);
++                        if (Math.abs(scrollBy) > 2.0f)
++                            scrollBy(0, (int) scrollBy);
++                    } else if (event.getY() - mLastY < 0) {//up
++                        int scrollY = getScrollY();
++                        float scrollTo = scrollY - (event.getY() - mLastY);
++                        float scrollBy = Math.abs(scrollTo) > mInvisibleLenght / 2
++                                ? (event.getY() - mLastY) + (Math.abs(scrollTo) - mInvisibleLenght / 2)
++                                : - (event.getY() - mLastY);
++                        if (Math.abs(scrollBy) > 2.0f)
++                            scrollBy(0, (int) scrollBy);
++                    }
++                }
++            }
++            mLastX = event.getX();
++            mLastY = event.getY();
++        }
++        return super.onTouchEvent(event);
++    }
++
++    @Override
++    protected void onLayout(boolean changed, int l, int t, int r, int b) {
++        // TODO Auto-generated method stub
++        super.onLayout(changed, l, t, r, b);
++        computeScrollZone(getOrientation());
++    }
++
++    private void computeScrollZone(int direction) {
++        if (direction == LinearLayout.HORIZONTAL) {
++            int VisibleChildViewLenght = 0;
++            int VisibleLenght = getWidth();
++            for (int i = getChildCount() - 1; i >= 0; i--) {
++                View child = getChildAt(i);
++                if (child.getVisibility() == View.VISIBLE) {
++                    LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) child.getLayoutParams();
++                    VisibleChildViewLenght += (child.getWidth() + lp.leftMargin + lp.rightMargin);
++                }
++            }
++            mInvisibleLenght = VisibleChildViewLenght - VisibleLenght;
++        } else if (direction == LinearLayout.VERTICAL) {
++            int VisibleChildViewLenght = 0;
++            int VisibleLenght = getHeight();
++            for (int i = getChildCount() - 1; i >= 0; i--) {
++                View child = getChildAt(i);
++                if (child.getVisibility() == View.VISIBLE) {
++                    LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) child.getLayoutParams();
++                    VisibleChildViewLenght += (child.getHeight() + lp.topMargin + lp.bottomMargin);
++                }
++            }
++            mInvisibleLenght = VisibleChildViewLenght - VisibleLenght;
++        }
++    }
++
++    public boolean isScrollable() {
++        if (mInvisibleLenght > 0)
++            return true;
++        return false;
+     }
+ 
+     /**
+      * Set the orientation of this layout if it has changed,
+      * and center the elements based on the new orientation.
+      */
+-    private void checkOrientation(int orientation) {
++    public void checkOrientation(int orientation) {
+         final boolean isHorizontal = LinearLayout.HORIZONTAL == getOrientation();
+         final boolean isPortrait = Configuration.ORIENTATION_PORTRAIT == orientation;
+         if (isPortrait && !isHorizontal) {
+diff --git a/src/com/android/camera/ui/ZoomView.java b/src/com/android/camera/ui/ZoomView.java
+index 71d295efb..a02c1e7a9 100644
+--- a/src/com/android/camera/ui/ZoomView.java
++++ b/src/com/android/camera/ui/ZoomView.java
+@@ -157,7 +157,17 @@ public class ZoomView extends ImageView {
+             }
+             Matrix rotation = new Matrix();
+             rotation.setRotate(mOrientation);
+-            return Bitmap.createBitmap(b, 0, 0, b.getWidth(), b.getHeight(), rotation, false);
++            try {
++                Bitmap b1 = Bitmap.createBitmap(b, 0, 0, b.getWidth(), b.getHeight(), rotation, false);
++                if (b1 != b) {
++                    b.recycle();
++                    b = b1;
++                }
++            } catch (OutOfMemoryError e) {
++                // We have no memory to rotate. Return the original bitmap.
++                System.gc();
++            }
++            return b;//Bitmap.createBitmap(b, 0, 0, b.getWidth(), b.getHeight(), rotation, false);
+         }
+ 
+         @Override
+-- 
+2.53.0
+

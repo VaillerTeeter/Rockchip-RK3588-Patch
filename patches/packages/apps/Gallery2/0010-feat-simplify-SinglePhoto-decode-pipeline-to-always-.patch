@@ -1,0 +1,112 @@
+From 2770903adf6e96ef3ab52b1d807d9d808c2f566c Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Sat, 11 Jul 2026 13:41:15 +0800
+Subject: [PATCH 37/51] feat: simplify SinglePhoto decode pipeline to always
+ load full image, add null-safe slideshow rotation correction
+
+Change-Id: I9b5eada4901dc23835b23c5372077d39d4015593
+---
+ .../gallery3d/app/SinglePhotoDataAdapter.java | 23 +++++++++++++------
+ .../gallery3d/app/SlideshowDataAdapter.java   |  2 +-
+ .../android/gallery3d/app/SlideshowPage.java  |  2 +-
+ 3 files changed, 18 insertions(+), 9 deletions(-)
+
+diff --git a/src/com/android/gallery3d/app/SinglePhotoDataAdapter.java b/src/com/android/gallery3d/app/SinglePhotoDataAdapter.java
+index 00f2fe78f..6e8e8001b 100644
+--- a/src/com/android/gallery3d/app/SinglePhotoDataAdapter.java
++++ b/src/com/android/gallery3d/app/SinglePhotoDataAdapter.java
+@@ -44,7 +44,7 @@ public class SinglePhotoDataAdapter extends TileImageViewAdapter
+     private static final int MSG_UPDATE_IMAGE = 1;
+ 
+     private MediaItem mItem;
+-    private boolean mHasFullImage;
++    private boolean mHasFullImage = true;
+     private Future<?> mTask;
+     private Handler mHandler;
+ 
+@@ -56,19 +56,20 @@ public class SinglePhotoDataAdapter extends TileImageViewAdapter
+     public SinglePhotoDataAdapter(
+             AbstractGalleryActivity activity, PhotoView view, MediaItem item) {
+         mItem = Utils.checkNotNull(item);
+-        mHasFullImage = (item.getSupportedOperations() &
+-                MediaItem.SUPPORT_FULL_IMAGE) != 0;
++//        mHasFullImage = (item.getSupportedOperations() &
++//                MediaItem.SUPPORT_FULL_IMAGE) != 0;
+         mPhotoView = Utils.checkNotNull(view);
+         mHandler = new SynchronizedHandler(activity.getGLRoot()) {
+             @Override
+             @SuppressWarnings("unchecked")
+             public void handleMessage(Message message) {
+                 Utils.assertTrue(message.what == MSG_UPDATE_IMAGE);
+-                if (mHasFullImage) {
++                /*if (mHasFullImage) {
+                     onDecodeLargeComplete((ImageBundle) message.obj);
+                 } else {
+                     onDecodeThumbComplete((Future<Bitmap>) message.obj);
+-                }
++                }*/
++                onDecodeComplete((Future<Bitmap>) message.obj);
+             }
+         };
+         mThreadPool = activity.getThreadPool();
+@@ -131,7 +132,7 @@ public class SinglePhotoDataAdapter extends TileImageViewAdapter
+         }
+     }
+ 
+-    private void onDecodeThumbComplete(Future<Bitmap> future) {
++    private void onDecodeComplete(Future<Bitmap> future) {
+         try {
+             Bitmap backup = future.get();
+             if (backup == null) {
+@@ -151,8 +152,11 @@ public class SinglePhotoDataAdapter extends TileImageViewAdapter
+     public void resume() {
+         if (mTask == null) {
+             if (mHasFullImage) {
++                //mTask = mThreadPool.submit(
++                //        mItem.requestLargeImage(), mLargeListener);
+                 mTask = mThreadPool.submit(
+-                        mItem.requestLargeImage(), mLargeListener);
++                        mItem.requestImage(MediaItem.TYPE_DECODE),
++                        mThumbListener);
+             } else {
+                 mTask = mThreadPool.submit(
+                         mItem.requestImage(MediaItem.TYPE_THUMBNAIL),
+@@ -260,4 +264,9 @@ public class SinglePhotoDataAdapter extends TileImageViewAdapter
+     public int getLoadingState(int offset) {
+         return mLoadingState;
+     }
++
++    @Override
++    public MediaItem getCurrentMediaItem() {
++        return mItem;
++    }
+ }
+diff --git a/src/com/android/gallery3d/app/SlideshowDataAdapter.java b/src/com/android/gallery3d/app/SlideshowDataAdapter.java
+index 7a0fba5fb..de5e3b47a 100644
+--- a/src/com/android/gallery3d/app/SlideshowDataAdapter.java
++++ b/src/com/android/gallery3d/app/SlideshowDataAdapter.java
+@@ -128,7 +128,7 @@ public class SlideshowDataAdapter implements SlideshowPage.Model {
+                 }
+ 
+                 Bitmap bitmap = item
+-                        .requestImage(MediaItem.TYPE_THUMBNAIL)
++                        .requestImage(MediaItem.TYPE_DECODE)
+                         .run(jc);
+ 
+                 if (bitmap != null) {
+diff --git a/src/com/android/gallery3d/app/SlideshowPage.java b/src/com/android/gallery3d/app/SlideshowPage.java
+index 174058dc8..a54506523 100644
+--- a/src/com/android/gallery3d/app/SlideshowPage.java
++++ b/src/com/android/gallery3d/app/SlideshowPage.java
+@@ -161,7 +161,7 @@ public class SlideshowPage extends ActivityState {
+             return;
+         }
+ 
+-        mSlideshowView.next(slide.bitmap, slide.item.getRotation());
++        mSlideshowView.next(slide.bitmap, slide.item.getRotation()>0?(slide.item.getRotation()-90):slide.item.getRotation());
+ 
+         setStateResult(Activity.RESULT_OK, mResultIntent
+                 .putExtra(KEY_ITEM_PATH, slide.item.getPath().toString())
+-- 
+2.53.0
+

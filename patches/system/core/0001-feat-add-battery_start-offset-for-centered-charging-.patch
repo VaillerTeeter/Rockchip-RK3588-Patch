@@ -1,0 +1,80 @@
+From 4ac4a12b3c3eeb9a91131735596a148aacc044a2 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Sat, 11 Jul 2026 00:49:14 +0800
+Subject: [PATCH 1/6] feat: add battery_start offset for centered charging
+ battery percentage rendering
+
+Change-Id: I8a0ba67112b98a0c9c6daec45611a61dea047266
+---
+ healthd/healthd_draw.cpp         | 9 +++++----
+ healthd/healthd_draw.h           | 2 +-
+ healthd/healthd_mode_charger.cpp | 2 +-
+ 3 files changed, 7 insertions(+), 6 deletions(-)
+
+diff --git a/healthd/healthd_draw.cpp b/healthd/healthd_draw.cpp
+index 7c7931944..cfc46a20e 100644
+--- a/healthd/healthd_draw.cpp
++++ b/healthd/healthd_draw.cpp
+@@ -205,7 +205,7 @@ void HealthdDraw::draw_clock(const animation* anim) {
+     draw_text(field.font, x, y, clock_str);
+ }
+ 
+-void HealthdDraw::draw_percent(const animation* anim) {
++void HealthdDraw::draw_percent(const animation* anim, int battery_start) {
+     if (!graphics_available) return;
+     int cur_level = anim->cur_level;
+     if (anim->cur_status == BATTERY_STATUS_FULL) {
+@@ -226,20 +226,21 @@ void HealthdDraw::draw_percent(const animation* anim) {
+ 
+     LOGV("drawing percent %s %d %d\n", str.c_str(), x, y);
+     gr_color(field.color_r, field.color_g, field.color_b, field.color_a);
+-    draw_text(field.font, x, y, str.c_str());
++    draw_text(field.font, x, battery_start + y, str.c_str());
+ }
+ 
+ void HealthdDraw::draw_battery(const animation* anim) {
+     if (!graphics_available) return;
++    int battery_start = 0;
+     const animation::frame& frame = anim->frames[anim->cur_frame];
+ 
+     if (anim->num_frames != 0) {
+-        draw_surface_centered(frame.surface);
++        battery_start = draw_surface_centered(frame.surface);
+         LOGV("drawing frame #%d min_cap=%d time=%d\n", anim->cur_frame, frame.min_level,
+              frame.disp_time);
+     }
+     draw_clock(anim);
+-    draw_percent(anim);
++    draw_percent(anim, battery_start);
+ }
+ 
+ void HealthdDraw::draw_unknown(GRSurface* surf_unknown) {
+diff --git a/healthd/healthd_draw.h b/healthd/healthd_draw.h
+index 016db8e07..ef0ee594e 100644
+--- a/healthd/healthd_draw.h
++++ b/healthd/healthd_draw.h
+@@ -61,7 +61,7 @@ class HealthdDraw {
+   // Draws clock text, if animation contains text_field data.
+   virtual void draw_clock(const animation* anim);
+   // Draws battery percentage text if animation contains text_field data.
+-  virtual void draw_percent(const animation* anim);
++  virtual void draw_percent(const animation* anim, int battery_start);
+   // Draws charger->surf_unknown or basic text.
+   virtual void draw_unknown(GRSurface* surf_unknown);
+ 
+diff --git a/healthd/healthd_mode_charger.cpp b/healthd/healthd_mode_charger.cpp
+index 282ffa248..58e755435 100644
+--- a/healthd/healthd_mode_charger.cpp
++++ b/healthd/healthd_mode_charger.cpp
+@@ -201,7 +201,7 @@ void Charger::InitDefaultAnimationFrames() {
+ }
+ 
+ Charger::Charger(ChargerConfigurationInterface* configuration)
+-    : batt_anim_(BASE_ANIMATION), configuration_(configuration) {}
++    : batt_anim_(BASE_ANIMATION), healthd_draw_(nullptr), configuration_(configuration) {}
+ 
+ Charger::~Charger() {}
+ 
+-- 
+2.53.0
+

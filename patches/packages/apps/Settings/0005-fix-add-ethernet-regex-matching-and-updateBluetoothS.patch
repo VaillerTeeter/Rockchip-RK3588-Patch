@@ -1,0 +1,66 @@
+From 216fde8eea5fe76f831f9f74626ee75bf4d9f90d Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Sat, 11 Jul 2026 20:53:15 +0800
+Subject: [PATCH 61/67] fix: add ethernet regex matching and
+ updateBluetoothState callback for Rockchip TetherSettings
+
+Change-Id: I92363d46997f6f2853512fbb5f6576972d9bc184
+---
+ src/com/android/settings/TetherSettings.java | 10 +++++++---
+ 1 file changed, 7 insertions(+), 3 deletions(-)
+
+diff --git a/src/com/android/settings/TetherSettings.java b/src/com/android/settings/TetherSettings.java
+index 18c78556ac..792a218885 100644
+--- a/src/com/android/settings/TetherSettings.java
++++ b/src/com/android/settings/TetherSettings.java
+@@ -122,6 +122,7 @@ public class TetherSettings extends RestrictedSettingsFragment
+     private boolean mDataSaverEnabled;
+     private Preference mDataSaverFooter;
+ 
++    private String mEthernetRegex;
+     @VisibleForTesting
+     String[] mUsbRegexs;
+     @VisibleForTesting
+@@ -183,6 +184,8 @@ public class TetherSettings extends RestrictedSettingsFragment
+         mUsbRegexs = mTm.getTetherableUsbRegexs();
+         mBluetoothRegexs = mTm.getTetherableBluetoothRegexs();
+ 
++        mEthernetRegex = "eth\\d";
++
+         final boolean usbAvailable = mUsbRegexs.length != 0;
+         final boolean bluetoothAvailable = adapter != null && mBluetoothRegexs.length != 0;
+         final boolean ethernetAvailable = (mEm != null);
+@@ -488,11 +491,11 @@ public class TetherSettings extends RestrictedSettingsFragment
+         boolean isTethered = false;
+ 
+         for (String s : available) {
+-            if (mAvailableInterfaces.contains(s)) isAvailable = true;
++            if (s.matches(mEthernetRegex)) isAvailable = true;
+         }
+ 
+         for (String s : tethered) {
+-            if (mAvailableInterfaces.contains(s)) isTethered = true;
++            if (s.matches(mEthernetRegex)) isTethered = true;
+         }
+ 
+         if (DEBUG) {
+@@ -503,7 +506,7 @@ public class TetherSettings extends RestrictedSettingsFragment
+         if (isTethered) {
+             mEthernetTether.setEnabled(!mDataSaverEnabled);
+             mEthernetTether.setChecked(true);
+-        } else if (mAvailableInterfaces.size() > 0) {
++        } else if (mAvailableInterfaces.size() > 0 || (mEm != null)) {
+             mEthernetTether.setEnabled(!mDataSaverEnabled);
+             mEthernetTether.setChecked(false);
+         } else {
+@@ -561,6 +564,7 @@ public class TetherSettings extends RestrictedSettingsFragment
+             new BluetoothProfile.ServiceListener() {
+         public void onServiceConnected(int profile, BluetoothProfile proxy) {
+             mBluetoothPan.set((BluetoothPan) proxy);
++            updateBluetoothState();
+         }
+         public void onServiceDisconnected(int profile) {
+             mBluetoothPan.set(null);
+-- 
+2.53.0
+

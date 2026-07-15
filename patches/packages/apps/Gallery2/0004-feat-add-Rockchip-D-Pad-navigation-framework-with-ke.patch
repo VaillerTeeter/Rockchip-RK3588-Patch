@@ -1,0 +1,376 @@
+From ed1b3bb0e881dc63f999a5278accf7c21844ac0e Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Sat, 11 Jul 2026 12:55:31 +0800
+Subject: [PATCH 31/51] feat: add Rockchip D-Pad navigation framework with key
+ event propagation, widget update broadcast, and permission-aware
+ initialization
+
+Change-Id: I01b28714f41d124f9e2331784dbee753e6c22e6a
+---
+ .../android/gallery3d/app/ActivityState.java  |  17 +++
+ .../gallery3d/app/GalleryActivity.java        | 108 +++++++++++++++++-
+ .../gallery3d/app/PackagesMonitor.java        |  13 +--
+ .../android/gallery3d/app/StateManager.java   |  45 +++++---
+ 4 files changed, 157 insertions(+), 26 deletions(-)
+
+diff --git a/src/com/android/gallery3d/app/ActivityState.java b/src/com/android/gallery3d/app/ActivityState.java
+index 2f1e0c9d9..01e942203 100644
+--- a/src/com/android/gallery3d/app/ActivityState.java
++++ b/src/com/android/gallery3d/app/ActivityState.java
+@@ -1,4 +1,5 @@
+ /*
++ * $_FOR_ROCKCHIP_RBOX_$
+  * Copyright (C) 2010 The Android Open Source Project
+  *
+  * Licensed under the Apache License, Version 2.0 (the "License");
+@@ -39,6 +40,12 @@ import com.android.gallery3d.ui.GLView;
+ import com.android.gallery3d.ui.PreparePageFadeoutTexture;
+ import com.android.gallery3d.util.GalleryUtils;
+ 
++//$_rbox_$_modify_$_chengmingchuan_$20140224
++//$_rbox_$_modify_$_begin
++import android.view.KeyEvent;
++//$_rbox_$_modify_$_end
++
++
+ abstract public class ActivityState {
+     protected static final int FLAG_HIDE_ACTION_BAR = 1;
+     protected static final int FLAG_HIDE_STATUS_BAR = 2;
+@@ -254,6 +261,16 @@ abstract public class ActivityState {
+         return true;
+     }
+ 
++    // $_rbox_$_modify_$_chengmingchuan_$20140224
++    // $_rbox_$_modify_$_begin
++    protected boolean onKeyDown(int keyCode, KeyEvent event) {
++        return false;
++    }
++    public void makeDirty(){
++    }
++    // $_rbox_$_modify_$_end
++
++
+     protected boolean onItemSelected(MenuItem item) {
+         return false;
+     }
+diff --git a/src/com/android/gallery3d/app/GalleryActivity.java b/src/com/android/gallery3d/app/GalleryActivity.java
+index bb2a6b8f1..878b44d1e 100644
+--- a/src/com/android/gallery3d/app/GalleryActivity.java
++++ b/src/com/android/gallery3d/app/GalleryActivity.java
+@@ -16,11 +16,13 @@
+ 
+ package com.android.gallery3d.app;
+ 
++import android.app.ActivityManager;
+ import android.app.Dialog;
+ import android.content.ContentResolver;
+ import android.content.DialogInterface;
+ import android.content.DialogInterface.OnCancelListener;
+ import android.content.Intent;
++import android.content.pm.PackageManager;
+ import android.net.Uri;
+ import android.os.Bundle;
+ import android.view.InputDevice;
+@@ -39,6 +41,16 @@ import com.android.gallery3d.data.Path;
+ import com.android.gallery3d.picasasource.PicasaSource;
+ import com.android.gallery3d.util.GalleryUtils;
+ 
++// $_rbox_$_modify_$_chengmingchuan_$20140225
++// $_rbox_$_modify_$_begin
++import android.view.KeyEvent;
++import android.os.Environment;
++import com.android.gallery3d.ui.GLRootView;
++import com.android.gallery3d.ui.GLRoot;
++import android.content.Context;
++// $_rbox_$_modify_$_end
++
++
+ public final class GalleryActivity extends AbstractGalleryActivity implements OnCancelListener {
+     public static final String EXTRA_SLIDESHOW = "slideshow";
+     public static final String EXTRA_DREAM = "dream";
+@@ -53,6 +65,7 @@ public final class GalleryActivity extends AbstractGalleryActivity implements On
+ 
+     private static final String TAG = "GalleryActivity";
+     private Dialog mVersionCheckDialog;
++    private boolean mUnInit;
+ 
+     @Override
+     protected void onCreate(Bundle savedInstanceState) {
+@@ -70,7 +83,13 @@ public final class GalleryActivity extends AbstractGalleryActivity implements On
+         if (savedInstanceState != null) {
+             getStateManager().restoreFromState(savedInstanceState);
+         } else {
+-            initializeByIntent();
++            if (CheckPermissionActivity.hasUnauthorizedPermission(this)) {
++                requestPermissions(CheckPermissionActivity.REQUEST_PERMISSIONS,
++                        CheckPermissionActivity.REQUEST_CODE_ASK_PERMISSIONS);
++                mUnInit = true;
++            } else {
++                initializeByIntent();
++            }
+         }
+     }
+ 
+@@ -173,7 +192,7 @@ public final class GalleryActivity extends AbstractGalleryActivity implements On
+                 int typeBits = GalleryUtils.determineTypeBits(this, intent);
+                 data.putInt(KEY_TYPE_BITS, typeBits);
+                 data.putString(AlbumSetPage.KEY_MEDIA_PATH,
+-                        getDataManager().getTopSetPath(typeBits));
++                        getDataManager().getTopSetPath(DataManager.INCLUDE_ALL));
+                 getStateManager().startState(AlbumSetPage.class, data);
+             } else if (contentType.startsWith(
+                     ContentResolver.CURSOR_DIR_BASE_TYPE)) {
+@@ -202,7 +221,12 @@ public final class GalleryActivity extends AbstractGalleryActivity implements On
+                     startDefaultPage();
+                 }
+             } else {
+-                Path itemPath = dm.findPathByUri(uri, contentType);
++//                Path itemPath = dm.findPathByUri(uri, contentType);
++                String type = contentType;
++                if(type.trim().equals("*/*")){
++                    type = "image/*";
++                }
++                Path itemPath = dm.findPathByUri(uri, type);
+                 Path albumPath = dm.getDefaultSetOf(itemPath);
+ 
+                 data.putString(PhotoPage.KEY_MEDIA_ITEM_PATH, itemPath.toString());
+@@ -230,7 +254,23 @@ public final class GalleryActivity extends AbstractGalleryActivity implements On
+ 
+     @Override
+     protected void onResume() {
+-        Utils.assertTrue(getStateManager().getStateCount() > 0);
++        if (mUnInit) {
++            super.onResume();
++            return;
++        }
++        try {
++            Utils.assertTrue(getStateManager().getStateCount() > 0);
++        } catch (AssertionError e) {
++            if (ActivityManager.isUserAMonkey()) {
++                super.onResume();
++                mVersionCheckDialog = null;
++                Log.v(TAG, "jump AssertionError during monkey with onResume");
++                finish();
++                return;
++            } else {
++                throw new AssertionError();
++            }
++        }
+         super.onResume();
+         if (mVersionCheckDialog != null) {
+             mVersionCheckDialog.show();
+@@ -252,6 +292,40 @@ public final class GalleryActivity extends AbstractGalleryActivity implements On
+         }
+     }
+ 
++
++    // $_rbox_$_modify_$_chengmingchuan_$_20140225_$_[Info: Handle Keycode]
++    // $_rbox_$_modify_$_begin
++    @Override
++    public boolean onKeyDown(int keyCode, KeyEvent event) {
++         if(KeyEvent.KEYCODE_BACK==keyCode){
++         this.onBackPressed();
++         return true;
++     }
++
++     GLRoot root = getGLRoot();
++        root.lockRenderThread();
++        try {
++         boolean flag = getStateManager().onKeyDown(keyCode, event);
++         if(flag){
++          ((GLRootView)root).setFocusable(true);
++          ((GLRootView)root).requestFocus();
++         }else{
++             ((GLRootView)root).setFocusable(false);
++         }
++            return flag||super.onKeyDown(keyCode, event);
++        } catch (AssertionError e){
++            if (ActivityManager.isUserAMonkey()) {
++                Log.v(TAG, "jump AssertionError during monkey with onKeyDown");
++            } else {
++                throw new AssertionError();
++            }
++            return super.onKeyDown(keyCode, event);
++        } finally {
++            root.unlockRenderThread();
++       }
++    }
++    // $_rbox_$_modify_$_end
++
+     @Override
+     public boolean onGenericMotionEvent(MotionEvent event) {
+         final boolean isTouchPad = (event.getSource()
+@@ -272,4 +346,30 @@ public final class GalleryActivity extends AbstractGalleryActivity implements On
+         }
+         return super.onGenericMotionEvent(event);
+     }
++
++    @Override
++    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
++        switch (requestCode) {
++            case CheckPermissionActivity.REQUEST_CODE_ASK_PERMISSIONS:
++                for (int result : grantResults) {
++                    if (result != PackageManager.PERMISSION_GRANTED) {
++                        // Permission Denied
++                        String toast_text = getResources().getString(R.string.err_permission);
++                            Toast.makeText(this, toast_text, Toast.LENGTH_SHORT).show();
++                        finish();
++                        return;
++                    }
++                }
++                // Permission Granted
++                mUnInit = false;
++                initializeByIntent();
++                Utils.assertTrue(getStateManager().getStateCount() > 0);
++                if (mVersionCheckDialog != null) {
++                    mVersionCheckDialog.show();
++                }
++                break;
++            default:
++                super.onRequestPermissionsResult(requestCode, permissions, grantResults);
++        }
++    }
+ }
+diff --git a/src/com/android/gallery3d/app/PackagesMonitor.java b/src/com/android/gallery3d/app/PackagesMonitor.java
+index be262fd7f..9b2412f1b 100644
+--- a/src/com/android/gallery3d/app/PackagesMonitor.java
++++ b/src/com/android/gallery3d/app/PackagesMonitor.java
+@@ -22,7 +22,6 @@ import android.content.Context;
+ import android.content.Intent;
+ import android.content.SharedPreferences;
+ import android.preference.PreferenceManager;
+-import androidx.core.app.JobIntentService;
+ 
+ import com.android.gallery3d.picasasource.PicasaSource;
+ import com.android.gallery3d.util.LightCycleHelper;
+@@ -38,18 +37,16 @@ public class PackagesMonitor extends BroadcastReceiver {
+     @Override
+     public void onReceive(final Context context, final Intent intent) {
+         intent.setClass(context, AsyncService.class);
+-        AsyncService.enqueueWork(context, intent);
++        context.startService(intent);
+     }
+ 
+-    public static class AsyncService extends JobIntentService {
+-        public static final int JOB_ID = 1;
+-
+-        public static void enqueueWork(Context context, Intent work) {
+-            enqueueWork(context, AsyncService.class, JOB_ID, work);
++    public static class AsyncService extends IntentService {
++        public AsyncService() {
++            super("GalleryPackagesMonitorAsync");
+         }
+ 
+         @Override
+-        protected void onHandleWork(Intent intent) {
++        protected void onHandleIntent(Intent intent) {
+             onReceiveAsync(this, intent);
+         }
+     }
+diff --git a/src/com/android/gallery3d/app/StateManager.java b/src/com/android/gallery3d/app/StateManager.java
+index aa372a824..0d1be011c 100644
+--- a/src/com/android/gallery3d/app/StateManager.java
++++ b/src/com/android/gallery3d/app/StateManager.java
+@@ -1,4 +1,5 @@
+ /*
++ * $_FOR_ROCKCHIP_RBOX_$
+  * Copyright (C) 2010 The Android Open Source Project
+  *
+  * Licensed under the Apache License, Version 2.0 (the "License");
+@@ -30,6 +31,12 @@ import com.android.gallery3d.util.UsageStatistics;
+ 
+ import java.util.Stack;
+ 
++//$_rbox_$_modify_$_chengmingchuan_$_20140224_$_[Info: Handle Keycode]
++//$_rbox_$_modify_$_begin
++import android.view.KeyEvent;
++//$_rbox_$_modify_$_end
++
++
+ public class StateManager {
+     @SuppressWarnings("unused")
+     private static final String TAG = "StateManager";
+@@ -143,6 +150,14 @@ public class StateManager {
+         return mStack.size();
+     }
+ 
++     //$_rbox_$_modify_$_chengmingchuan_$_20140224_$_[Info: Handle Keycode]
++    // $_rbox_$_modify_$_begin
++     public boolean onKeyDown(int keyCode, KeyEvent event) {
++         return getTopState().onKeyDown(keyCode, event);
++     }
++     // $_rbox_$_modify_$_end
++
++
+     public boolean itemSelected(MenuItem item) {
+         if (!mStack.isEmpty()) {
+             if (getTopState().onItemSelected(item)) return true;
+@@ -191,35 +206,33 @@ public class StateManager {
+ 
+         Log.v(TAG, "finishState " + state);
+         if (state != mStack.peek().activityState) {
+-            if (state.isDestroyed()) {
++        //    if (state.isDestroyed()) {
+                 Log.d(TAG, "The state is already destroyed");
+                 return;
+-            } else {
++          /*  } else {
+                 throw new IllegalArgumentException("The stateview to be finished"
+                         + " is not at the top of the stack: " + state + ", "
+                         + mStack.peek().activityState);
+-            }
++            }*/
+         }
+ 
+         // Remove the top state.
+         mStack.pop();
+         state.mIsFinishing = true;
+-        ActivityState top = !mStack.isEmpty() ? mStack.peek().activityState : null;
+-        if (mIsResumed && fireOnPause) {
+-            if (top != null) {
+-                state.transitionOnNextPause(state.getClass(), top.getClass(),
+-                        StateTransitionAnimation.Transition.Outgoing);
+-            }
+-            state.onPause();
+-        }
++        if (mIsResumed) state.onPause();
+         mActivity.getGLRoot().setContentPane(null);
+         state.onDestroy();
+ 
+-        if (top != null && mIsResumed) top.resume();
+-        if (top != null) {
+-            UsageStatistics.onContentViewChanged(UsageStatistics.COMPONENT_GALLERY,
++        if (!mStack.isEmpty()) {
++            // Restore the immediately previous state
++            ActivityState top = mStack.peek().activityState;
++            if (mIsResumed) top.resume();
++            if (top != null) {
++                UsageStatistics.onContentViewChanged(UsageStatistics.COMPONENT_GALLERY,
+                     top.getClass().getSimpleName());
++            }
+         }
++
+     }
+ 
+     public void switchState(ActivityState oldState,
+@@ -257,6 +270,8 @@ public class StateManager {
+ 
+     public void destroy() {
+         Log.v(TAG, "destroy");
++        Intent intent = new Intent("widget_update");
++        mActivity.getAndroidContext().sendBroadcast(intent);
+         while (!mStack.isEmpty()) {
+             mStack.pop().activityState.onDestroy();
+         }
+@@ -297,6 +312,8 @@ public class StateManager {
+     public void saveState(Bundle outState) {
+         Log.v(TAG, "saveState");
+ 
++        Intent intent = new Intent("widget_update");
++        mActivity.getAndroidContext().sendBroadcast(intent);
+         Parcelable list[] = new Parcelable[mStack.size()];
+         int i = 0;
+         for (StateEntry entry : mStack) {
+-- 
+2.53.0
+

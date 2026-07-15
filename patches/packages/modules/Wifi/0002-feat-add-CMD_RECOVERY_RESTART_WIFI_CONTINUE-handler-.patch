@@ -1,0 +1,45 @@
+From 267e07f1962417c17fc61c2bdae632ac9a5eb63a Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Sun, 12 Jul 2026 01:35:50 +0800
+Subject: [PATCH 92/95] feat: add CMD_RECOVERY_RESTART_WIFI_CONTINUE handler
+ with callback broadcast and explicit DisabledState transition for Rockchip
+ WiFi recovery
+
+Change-Id: Ib05d2193c067e22c73b5ede09e526899c05f114c
+---
+ .../com/android/server/wifi/ActiveModeWarden.java    | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/service/java/com/android/server/wifi/ActiveModeWarden.java b/service/java/com/android/server/wifi/ActiveModeWarden.java
+index cc6550b161..dc6bcbeb2f 100644
+--- a/service/java/com/android/server/wifi/ActiveModeWarden.java
++++ b/service/java/com/android/server/wifi/ActiveModeWarden.java
+@@ -2258,6 +2258,17 @@ public class ActiveModeWarden {
+                         // Defer the message and wait for entering disabled state.
+                         deferMessage(msg);
+                         break;
++                    case CMD_RECOVERY_RESTART_WIFI_CONTINUE:
++                        int nCallbacks = mRestartCallbacks.beginBroadcast();
++                        for (int i = 0; i < nCallbacks; i++) {
++                            try {
++                                mRestartCallbacks.getBroadcastItem(i).onSubsystemRestarted();
++                            } catch (RemoteException e) {
++                                Log.e(TAG, "Failure calling onSubsystemRestarted" + e);
++                            }
++                        }
++                        mRestartCallbacks.finishBroadcast();
++                        break;
+                     case CMD_RECOVERY_RESTART_WIFI: {
+                         final String bugTitle;
+                         final String bugDetail = (String) msg.obj;
+@@ -2293,6 +2304,7 @@ public class ActiveModeWarden {
+                         mRestartCallbacks.finishBroadcast();
+                         shutdownWifi();
+                         // onStopped will move the state machine to "DisabledState".
++                        transitionTo(mDisabledState);
+                         break;
+                     }
+                     default:
+-- 
+2.53.0
+

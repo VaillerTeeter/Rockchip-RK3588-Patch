@@ -1,0 +1,156 @@
+From d31f8ab220a5d2c578640f89c4ccb2f8a5d9a22a Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Sat, 11 Jul 2026 14:08:49 +0800
+Subject: [PATCH 40/51] feat: add widget_update broadcast for Rockchip Gallery2
+
+Change-Id: Icfa4e142dc842d95db60fb0c00cb5e8354280e11
+---
+ .../gadget/PhotoAppWidgetProvider.java        | 34 +++++++++++++++++--
+ .../gallery3d/gadget/WidgetService.java       | 32 +++++++++++++++++
+ 2 files changed, 64 insertions(+), 2 deletions(-)
+
+diff --git a/src/com/android/gallery3d/gadget/PhotoAppWidgetProvider.java b/src/com/android/gallery3d/gadget/PhotoAppWidgetProvider.java
+index 58466bf01..0d90aa1d0 100644
+--- a/src/com/android/gallery3d/gadget/PhotoAppWidgetProvider.java
++++ b/src/com/android/gallery3d/gadget/PhotoAppWidgetProvider.java
+@@ -16,28 +16,34 @@
+ 
+ package com.android.gallery3d.gadget;
+ 
++import java.util.ArrayList;
++
+ import android.annotation.TargetApi;
+ import android.app.PendingIntent;
+ import android.appwidget.AppWidgetManager;
+ import android.appwidget.AppWidgetProvider;
++import android.content.BroadcastReceiver;
+ import android.content.Context;
+ import android.content.Intent;
++import android.database.ContentObserver;
+ import android.graphics.Bitmap;
+ import android.graphics.BitmapFactory;
+ import android.net.Uri;
++import android.os.Handler;
+ import android.util.Log;
+ import android.widget.RemoteViews;
+-
++import android.content.IntentFilter;
+ import com.android.gallery3d.R;
+ import com.android.gallery3d.common.ApiHelper;
+ import com.android.gallery3d.gadget.WidgetDatabaseHelper.Entry;
+ import com.android.gallery3d.onetimeinitializer.GalleryWidgetMigrator;
++import com.android.gallery3d.util.LinkedNode.List;
+ 
+ public class PhotoAppWidgetProvider extends AppWidgetProvider {
+ 
+     private static final String TAG = "WidgetProvider";
+ 
+-    static RemoteViews buildWidget(Context context, int id, Entry entry) {
++    public static RemoteViews buildWidget(Context context, int id, Entry entry) {
+ 
+         switch (entry.type) {
+             case WidgetDatabaseHelper.TYPE_ALBUM:
+@@ -49,6 +55,8 @@ public class PhotoAppWidgetProvider extends AppWidgetProvider {
+         throw new RuntimeException("invalid type - " + entry.type);
+     }
+ 
++    private static ArrayList<Integer> appWidgetIdList = new ArrayList<Integer>();
++
+     @Override
+     public void onUpdate(Context context,
+             AppWidgetManager appWidgetManager, int[] appWidgetIds) {
+@@ -61,6 +69,7 @@ public class PhotoAppWidgetProvider extends AppWidgetProvider {
+         WidgetDatabaseHelper helper = new WidgetDatabaseHelper(context);
+         try {
+             for (int id : appWidgetIds) {
++                appWidgetIdList.add(id);
+                 Entry entry = helper.getEntry(id);
+                 if (entry != null) {
+                     RemoteViews views = buildWidget(context, id, entry);
+@@ -136,4 +145,25 @@ public class PhotoAppWidgetProvider extends AppWidgetProvider {
+         }
+         helper.close();
+     }
++
++    @Override
++    public void onReceive(Context context, Intent intent) {
++        if(intent.getAction().equals("widget_update")){
++            // migrate gallery widgets from pre-JB releases to JB due to bucket ID change
++            GalleryWidgetMigrator.migrateGalleryWidgets(context);
++
++            WidgetDatabaseHelper helper = new WidgetDatabaseHelper(context);
++                for (int i = 0;i < appWidgetIdList.size();i++) {
++                    int id = appWidgetIdList.get(i);
++                    Entry entry = helper.getEntry(id);
++                    if (entry != null) {
++                        RemoteViews views = buildWidget(context, id, entry);
++                        AppWidgetManager.getInstance(context).updateAppWidget(id, views);
++                    } else {
++                        Log.e(TAG, "cannot load widget: " + id);
++                    }
++                }
++        }
++        super.onReceive(context, intent);
++    }
+ }
+diff --git a/src/com/android/gallery3d/gadget/WidgetService.java b/src/com/android/gallery3d/gadget/WidgetService.java
+index fc54fb6e8..bbec7d5a5 100644
+--- a/src/com/android/gallery3d/gadget/WidgetService.java
++++ b/src/com/android/gallery3d/gadget/WidgetService.java
+@@ -19,8 +19,13 @@ package com.android.gallery3d.gadget;
+ import android.annotation.TargetApi;
+ import android.appwidget.AppWidgetManager;
+ import android.content.Intent;
++import android.database.ContentObserver;
+ import android.graphics.Bitmap;
+ import android.net.Uri;
++import android.os.Handler;
++import android.os.Message;
++import android.provider.MediaStore;
++import android.util.Log;
+ import android.widget.RemoteViews;
+ import android.widget.RemoteViewsService;
+ 
+@@ -77,12 +82,39 @@ public class WidgetService extends RemoteViewsService {
+             AppWidgetManager.getInstance(mApp.getAndroidContext())
+                     .notifyAppWidgetViewDataChanged(
+                     mAppWidgetId, R.id.appwidget_stack_view);
++            mApp.getContentResolver().registerContentObserver(
++                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI, true, mObserver);
+         }
+ 
++        private ContentObserver mObserver = new ContentObserver(new Handler()) {
++            @Override
++            public void onChange(boolean selfChange) {
++                mHandler.removeMessages(MSG);
++                mHandler.sendEmptyMessageDelayed(MSG, 3000);
++            }
++        };
++
++        private final int MSG = 0x01;
++        private Handler mHandler = new Handler(){
++            @Override
++            public void handleMessage(Message msg) {
++                switch (msg.what) {
++                case MSG:
++                    mSource.reload();
++                    AppWidgetManager.getInstance(mApp.getAndroidContext())
++                    .notifyAppWidgetViewDataChanged(
++                    mAppWidgetId, R.id.appwidget_stack_view);
++                    break;
++                }
++            }
++
++        };
++
+         @Override
+         public void onDestroy() {
+             mSource.close();
+             mSource = null;
++            mApp.getContentResolver().unregisterContentObserver(mObserver);
+         }
+ 
+         @Override
+-- 
+2.53.0
+

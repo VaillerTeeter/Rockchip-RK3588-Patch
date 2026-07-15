@@ -1,0 +1,68 @@
+From dcb8400c67f7c77c7c574e25a29ff234fca38879 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 15:06:18 +0800
+Subject: [PATCH] feat: add HDMI-in capture support to screenrecord
+
+Change-Id: Ic085190317757980cb5d2df2438f51de3ce77367
+
+diff --git a/cmds/screenrecord/screenrecord.cpp b/cmds/screenrecord/screenrecord.cpp
+index d866c18fe2..4c25b0030e 100644
+--- a/cmds/screenrecord/screenrecord.cpp
++++ b/cmds/screenrecord/screenrecord.cpp
+@@ -120,6 +120,7 @@ static uint32_t gVideoWidth = 0;        // default width+height
+ static uint32_t gVideoHeight = 0;
+ static uint32_t gBitRate = 20000000;     // 20Mbps
+ static uint32_t gTimeLimitSec = kMaxTimeLimitSec;
++static uint32_t gHdmiInLimitSec = 0;
+ static uint32_t gBframes = 0;
+ static PhysicalDisplayId gPhysicalDisplayId;
+ // Set by signal handler to stop recording.
+@@ -496,7 +497,12 @@ static status_t runEncoder(const sp<MediaCodec>& encoder,
+     ssize_t metaTrackIdx = -1;
+     uint32_t debugNumFrames = 0;
+     int64_t startWhenNsec = systemTime(CLOCK_MONOTONIC);
+-    int64_t endWhenNsec = startWhenNsec + seconds_to_nanoseconds(gTimeLimitSec);
++    int64_t endWhenNsec = startWhenNsec;
++    if (gHdmiInLimitSec > 0) {
++        endWhenNsec += gHdmiInLimitSec * 1000000;
++    } else {
++        endWhenNsec += seconds_to_nanoseconds(gTimeLimitSec);
++    }
+     Vector<int64_t> timestampsMonotonicUs;
+     bool firstFrame = true;
+ 
+@@ -1144,6 +1150,7 @@ int main(int argc, char* const argv[]) {
+         { "persistent-surface", no_argument,        NULL, 'p' },
+         { "bframes",            required_argument,  NULL, 'B' },
+         { "display-id",         required_argument,  NULL, 'd' },
++        { "capture-hdmiin",     required_argument,  NULL, 'c' },
+         { NULL,                 0,                  NULL, 0 }
+     };
+ 
+@@ -1154,6 +1161,7 @@ int main(int argc, char* const argv[]) {
+     }
+ 
+     gPhysicalDisplayId = *displayId;
++    gHdmiInLimitSec = 0;
+ 
+     while (true) {
+         int optionIndex = 0;
+@@ -1258,6 +1266,9 @@ int main(int argc, char* const argv[]) {
+ 
+             fprintf(stderr, "Invalid physical display ID\n");
+             return 2;
++        case 'c':
++            gHdmiInLimitSec = atoi(optarg);
++            break;
+         default:
+             if (ic != '?') {
+                 fprintf(stderr, "getopt_long returned unexpected value 0x%x\n", ic);
+@@ -1286,7 +1297,7 @@ int main(int argc, char* const argv[]) {
+     }
+ 
+     status_t err = recordScreen(fileName);
+-    if (err == NO_ERROR) {
++    if (err == NO_ERROR && gHdmiInLimitSec == 0) {
+         // Try to notify the media scanner.  Not fatal if this fails.
+         notifyMediaScanner(fileName);
+     }

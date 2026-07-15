@@ -1,0 +1,762 @@
+From d41319695fcd000428798d1cd1c80377ed65fb7e Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Sat, 11 Jul 2026 02:19:01 +0800
+Subject: [PATCH 16/27] feat: add FilmstripContentQueries and enhance
+ photo/video data adapters for Rockchip media provider integration
+
+Change-Id: I532f348ab57833e8885cde7dec46d73e63e29eba
+---
+ .../data/CameraFilmstripDataAdapter.java      |  24 +-
+ .../camera/data/FilmstripContentQueries.java  | 260 +++++++++++++++++-
+ .../camera/data/FilmstripItemList.java        |  18 +-
+ .../camera/data/FilmstripItemUtils.java       |  15 +-
+ .../android/camera/data/PhotoDataFactory.java |   2 +
+ .../android/camera/data/PhotoDataQuery.java   |  26 +-
+ src/com/android/camera/data/PhotoItem.java    |   4 +
+ .../android/camera/data/PhotoItemFactory.java |  11 +-
+ .../android/camera/data/VideoDataFactory.java |   3 +
+ .../android/camera/data/VideoDataQuery.java   |   6 +-
+ src/com/android/camera/data/VideoItem.java    |   2 +
+ .../android/camera/data/VideoItemFactory.java |  13 +-
+ .../data/VideoRotationMetadataLoader.java     |   5 +-
+ 13 files changed, 345 insertions(+), 44 deletions(-)
+
+diff --git a/src/com/android/camera/data/CameraFilmstripDataAdapter.java b/src/com/android/camera/data/CameraFilmstripDataAdapter.java
+index c26c4e0fe..8b0b402d4 100644
+--- a/src/com/android/camera/data/CameraFilmstripDataAdapter.java
++++ b/src/com/android/camera/data/CameraFilmstripDataAdapter.java
+@@ -47,6 +47,8 @@ public class CameraFilmstripDataAdapter implements LocalFilmstripDataAdapter {
+ 
+     private FilmstripItemList mFilmstripItems;
+ 
++    private boolean mLoadingAll = false;
++    private boolean mLoadingNewPhoto = false;
+ 
+     private Listener mListener;
+     private FilmstripItemListener mFilmstripItemListener;
+@@ -72,12 +74,14 @@ public class CameraFilmstripDataAdapter implements LocalFilmstripDataAdapter {
+ 
+     @Override
+     public void requestLoadNewPhotos() {
++        if (mLoadingNewPhoto) Log.w(TAG, "LoadNewPhotosTask is loading");
+         LoadNewPhotosTask ltask = new LoadNewPhotosTask(mContext, mLastPhotoId);
+         ltask.execute(mContext.getContentResolver());
+     }
+ 
+     @Override
+     public void requestLoad(Callback<Void> onDone) {
++        if (mLoadingAll) Log.w(TAG, "requestLoad is loading");
+         QueryTask qtask = new QueryTask(onDone);
+         qtask.execute(mContext);
+     }
+@@ -151,14 +155,21 @@ public class CameraFilmstripDataAdapter implements LocalFilmstripDataAdapter {
+     @Override
+     public void setListener(Listener listener) {
+         mListener = listener;
+-        if (mFilmstripItems.size() != 0) {
++        if (mFilmstripItems.size() != 0 && mListener != null) {
+             mListener.onFilmstripItemLoaded();
+         }
+     }
+ 
+     @Override
+     public void removeAt(int index) {
++        boolean isVideo = mFilmstripItems.get(index).getData().getMimeType().contains("video");
++        String title = mFilmstripItems.get(index).getData().getTitle();
+         FilmstripItem d = mFilmstripItems.remove(index);
++        if (isVideo) {
++            mVideoItemFactory.deleteForAllVideo(title);
++        } else {
++            mPhotoItemFactory.deleteForAllPhoto(title);
++        }
+         if (d == null) {
+             return;
+         }
+@@ -166,7 +177,8 @@ public class CameraFilmstripDataAdapter implements LocalFilmstripDataAdapter {
+         // Delete previously removed data first.
+         executeDeletion();
+         mFilmstripItemToDelete = d;
+-        mListener.onFilmstripItemRemoved(index, d);
++        if (mListener != null)
++            mListener.onFilmstripItemRemoved(index, d);
+     }
+ 
+     @Override
+@@ -330,11 +342,12 @@ public class CameraFilmstripDataAdapter implements LocalFilmstripDataAdapter {
+          */
+         @Override
+         protected List<PhotoItem> doInBackground(ContentResolver... contentResolvers) {
+-            if (mMinPhotoId != FilmstripItemBase.QUERY_ALL_MEDIA_ID) {
++            mLoadingNewPhoto = true;
++            /*if (mMinPhotoId != FilmstripItemBase.QUERY_ALL_MEDIA_ID) {
+                 Log.v(TAG, "updating media metadata with photos newer than id: " + mMinPhotoId);
+                 final ContentResolver cr = contentResolvers[0];
+                 return mPhotoItemFactory.queryAll(PhotoDataQuery.CONTENT_URI, mMinPhotoId);
+-            }
++            }*/
+             return new ArrayList<>(0);
+         }
+ 
+@@ -363,6 +376,7 @@ public class CameraFilmstripDataAdapter implements LocalFilmstripDataAdapter {
+                     addOrUpdate(filmstripItem);
+                 }
+             }
++            mLoadingNewPhoto = false;
+         }
+     }
+ 
+@@ -396,6 +410,7 @@ public class CameraFilmstripDataAdapter implements LocalFilmstripDataAdapter {
+          */
+         @Override
+         protected QueryTaskResult doInBackground(Context... contexts) {
++            mLoadingAll = true;
+             final Context context = contexts[0];
+             FilmstripItemList l = new FilmstripItemList();
+             // Photos and videos
+@@ -450,6 +465,7 @@ public class CameraFilmstripDataAdapter implements LocalFilmstripDataAdapter {
+             // Now check for any photos added since this task was kicked off
+             LoadNewPhotosTask ltask = new LoadNewPhotosTask(mContext, mLastPhotoId);
+             ltask.execute(mContext.getContentResolver());
++            mLoadingAll = false;
+         }
+     }
+ 
+diff --git a/src/com/android/camera/data/FilmstripContentQueries.java b/src/com/android/camera/data/FilmstripContentQueries.java
+index 4b607d40a..75bbcd78d 100644
+--- a/src/com/android/camera/data/FilmstripContentQueries.java
++++ b/src/com/android/camera/data/FilmstripContentQueries.java
+@@ -19,6 +19,7 @@ package com.android.camera.data;
+ import android.content.ContentResolver;
+ import android.database.Cursor;
+ import android.net.Uri;
++import android.os.Environment;
+ import android.provider.MediaStore;
+ 
+ import com.android.camera.Storage;
+@@ -32,6 +33,18 @@ import java.util.List;
+  */
+ public class FilmstripContentQueries {
+     private static final Log.Tag TAG = new Log.Tag("LocalDataQuery");
++    private static final String PHOTO_PATH = "%" + Environment.DIRECTORY_PICTURES + "%";
++    private static final String VIDEO_PATH = "%" + Environment.DIRECTORY_MOVIES + "%";
++    private static final String SELECT_BY_PATH = MediaStore.MediaColumns.DATA + " LIKE ?";
++    private static final String CAMERA2_PACKAGENAME = "com.android.camera2";
++    private static final String OWNER_PACKAGE_NAME = "owner_package_name";
++    private static final boolean isDebugOn = false;
++    private static int mAllImagesCount = 0;
++    private static int mLoadNewImagesCount = 0;
++    private static int mVideosCount = 0;
++    private static List<PhotoItem> mAllImagesResult = new ArrayList<>();
++    private static List<PhotoItem> mLoadNewImagesResult = new ArrayList<>();
++    private static List<VideoItem> mVideosResult = new ArrayList<>();
+ 
+     public interface CursorToFilmstripItemFactory<I extends FilmstripItem> {
+ 
+@@ -44,6 +57,213 @@ public class FilmstripContentQueries {
+         public I get(Cursor cursor);
+     }
+ 
++    public static List<PhotoItem> forAllCameraPathPhoto(ContentResolver contentResolver,
++          Uri contentUri, String[] projection, long minimumId, String orderBy,
++          CursorToFilmstripItemFactory<PhotoItem> factory) {
++        if (isDebugOn) Log.e(TAG, "---zc forAllCameraPathPhoto contentUri:" + contentUri + ",minimumId:" + minimumId);
++        String selection = SELECT_BY_PATH + " AND " + MediaStore.MediaColumns._ID + " > ?" +
++                " AND " + OWNER_PACKAGE_NAME + " = ?";
++        String[] selectionArgs = new String[] { PHOTO_PATH, Long.toString(minimumId), CAMERA2_PACKAGENAME };
++
++        Cursor cursor = contentResolver.query(contentUri, projection,
++              selection, selectionArgs, orderBy);
++
++        if (isDebugOn) Log.e(TAG, "---zc forAllCameraPathPhoto getCount:" + cursor.getCount() + ",mAllImagesCount:" + mAllImagesCount);
++        if (cursor.getCount() != mAllImagesCount) {
++            if (cursor != null) {
++                if (mAllImagesCount ==0) {
++                    while (cursor.moveToNext()) {
++                        int size = cursor.getInt(PhotoDataQuery.COL_SIZE);
++                        if (isDebugOn)Log.e(TAG, "---zc forAllCameraPathPhoto size1:" + size);
++                        if (size > 0) {
++                            PhotoItem item = factory.get(cursor);
++                            if (item != null) {
++                                if (isDebugOn) Log.e(TAG, "---zc forAllCameraPathPhoto item:" + item.toString());
++                                mAllImagesResult.add(item);
++                            } else {
++                                final int dataIndex = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATA);
++                                Log.e(TAG, "Error loading data:" + cursor.getString(dataIndex));
++                            }
++                        }
++                    }
++                } else {
++                    if (cursor.getCount() != 0) {
++                        if (cursor.getCount() > mAllImagesCount) {
++                            cursor.moveToFirst();
++                            int size = cursor.getInt(PhotoDataQuery.COL_SIZE);
++                            if (isDebugOn) Log.e(TAG, "---zc forAllCameraPathPhoto size2:" + size);
++                            if (size > 0) {
++                                PhotoItem item = factory.get(cursor);
++                                if (item != null) {
++                                    if (isDebugOn) Log.e(TAG, "---zc forAllCameraPathPhoto item:" + item.toString());
++                                    mAllImagesResult.add(item);
++                                } else {
++                                    final int dataIndex = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATA);
++                                    Log.e(TAG, "Error loading data:" + cursor.getString(dataIndex));
++                                }
++                            }
++                        } else {
++                            mAllImagesResult.clear();
++                            while (cursor.moveToNext()) {
++                                int size = cursor.getInt(PhotoDataQuery.COL_SIZE);
++                                if (isDebugOn) Log.e(TAG, "---zc forAllCameraPathPhoto size3:" + size);
++                                if (size > 0) {
++                                    PhotoItem item = factory.get(cursor);
++                                    if (item != null) {
++                                        if (isDebugOn) Log.e(TAG, "---zc forAllCameraPathPhoto item:" + item.toString());
++                                        mAllImagesResult.add(item);
++                                    } else {
++                                        final int dataIndex = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATA);
++                                        Log.e(TAG, "Error loading data:" + cursor.getString(dataIndex));
++                                    }
++                                }
++                            }
++                        }
++                    } else {
++                        mAllImagesResult = new ArrayList<>();
++                    }
++                }
++                mAllImagesCount = mAllImagesResult.size();
++                cursor.close();
++            } else {
++                Log.e(TAG, "images cursor == null");
++            }
++        } else {
++            if (isDebugOn) Log.e(TAG, "---zc cursor.getCount() == mAllImagesCount");
++        }
++        return mAllImagesResult;
++    }
++
++    public static List<PhotoItem> forLoadNewCameraPathPhoto(ContentResolver contentResolver,
++          Uri contentUri, String[] projection, long minimumId, String orderBy,
++          CursorToFilmstripItemFactory<PhotoItem> factory) {
++        if (isDebugOn) Log.e(TAG, "---zc forLoadNewCameraPathPhoto contentUri:" + contentUri + ",minimumId:" + minimumId);
++        String selection = SELECT_BY_PATH + " AND " + MediaStore.MediaColumns._ID + " > ?" +
++                " AND " + OWNER_PACKAGE_NAME + " = ?";
++        String[] selectionArgs = new String[] { PHOTO_PATH, Long.toString(minimumId), CAMERA2_PACKAGENAME };
++
++        Cursor cursor = contentResolver.query(contentUri, projection,
++              selection, selectionArgs, orderBy);
++
++        if (isDebugOn) Log.e(TAG, "---zc forLoadNewCameraPathPhoto getCount:" + cursor.getCount() + ",mLoadNewImagesCount:" + mLoadNewImagesCount);
++        if (cursor.getCount() != mLoadNewImagesCount) {
++            if (cursor != null) {
++                if (mLoadNewImagesCount ==0) {
++                    while (cursor.moveToNext()) {
++                        PhotoItem item = factory.get(cursor);
++                        if (item != null) {
++                            if (isDebugOn) Log.e(TAG, "---zc forLoadNewCameraPathPhoto item:" + item.toString());
++                            mLoadNewImagesResult.add(item);
++                        } else {
++                            final int dataIndex = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATA);
++                            Log.e(TAG, "Error loading data:" + cursor.getString(dataIndex));
++                        }
++                    }
++                } else {
++                    if (cursor.getCount() != 0) {
++                        if (cursor.getCount() > mLoadNewImagesCount) {
++                            cursor.moveToFirst();
++                            PhotoItem item = factory.get(cursor);
++                            if (item != null) {
++                                if (isDebugOn) Log.e(TAG, "---zc forLoadNewCameraPathPhoto item:" + item.toString());
++                                mLoadNewImagesResult.add(item);
++                            } else {
++                                final int dataIndex = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATA);
++                                Log.e(TAG, "Error loading data:" + cursor.getString(dataIndex));
++                            }
++                        } else {
++                            mLoadNewImagesResult.clear();
++                            while (cursor.moveToNext()) {
++                                PhotoItem item = factory.get(cursor);
++                                if (item != null) {
++                                    if (isDebugOn) Log.e(TAG, "---zc forLoadNewCameraPathPhoto item:" + item.toString());
++                                    mLoadNewImagesResult.add(item);
++                                } else {
++                                    final int dataIndex = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATA);
++                                    Log.e(TAG, "Error loading data:" + cursor.getString(dataIndex));
++                                }
++                            }
++                        }
++                    } else {
++                        mLoadNewImagesResult = new ArrayList<>();
++                    }
++                }
++                mLoadNewImagesCount = mLoadNewImagesResult.size();
++                cursor.close();
++            } else {
++                Log.e(TAG, "images cursor == null");
++            }
++        } else {
++            if (isDebugOn) Log.e(TAG, "---zc cursor.getCount() == mLoadNewImagesCount");
++        }
++        return mLoadNewImagesResult;
++    }
++
++    public static List<VideoItem> forCameraPathVideo(ContentResolver contentResolver,
++          Uri contentUri, String[] projection, long minimumId, String orderBy,
++          CursorToFilmstripItemFactory<VideoItem> factory) {
++        if (isDebugOn) Log.e(TAG, "---zc forCameraPathVideo contentUri:" + contentUri + ",minimumId:" + minimumId);
++        String selection = SELECT_BY_PATH + " AND " + MediaStore.MediaColumns._ID + " > ?" +
++                " AND " + OWNER_PACKAGE_NAME + " = ?";
++        String[] selectionArgs = new String[] { VIDEO_PATH, Long.toString(minimumId), CAMERA2_PACKAGENAME };
++
++        Cursor cursor = contentResolver.query(contentUri, projection,
++              selection, selectionArgs, orderBy);
++
++        if (isDebugOn) Log.e(TAG, "---zc forCameraPathVideo getCount:" + cursor.getCount() + ",mVideosCount:" + mVideosCount);
++        if (cursor.getCount() != mVideosCount) {
++            if (cursor != null) {
++                if (mVideosCount ==0) {
++                    while (cursor.moveToNext()) {
++                        VideoItem item = factory.get(cursor);
++                        if (item != null) {
++                            if (isDebugOn) Log.e(TAG, "---zc forCameraPathVideo item:" + item.toString());
++                            mVideosResult.add(item);
++                        } else {
++                            final int dataIndex = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATA);
++                            Log.e(TAG, "Error loading data:" + cursor.getString(dataIndex));
++                        }
++                    }
++                } else {
++                    if (cursor.getCount() != 0) {
++                        if (cursor.getCount() > mVideosCount) {
++                            cursor.moveToFirst();
++                            VideoItem item = factory.get(cursor);
++                            if (item != null) {
++                                if (isDebugOn) Log.e(TAG, "---zc forCameraPathVideo item:" + item.toString());
++                                mVideosResult.add(item);
++                            } else {
++                                final int dataIndex = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATA);
++                                Log.e(TAG, "Error loading data:" + cursor.getString(dataIndex));
++                            }
++                        } else {
++                            mVideosResult.clear();
++                            while (cursor.moveToNext()) {
++                                VideoItem item = factory.get(cursor);
++                                if (item != null) {
++                                    if (isDebugOn) Log.e(TAG, "---zc forCameraPathVideo item:" + item.toString());
++                                    mVideosResult.add(item);
++                                } else {
++                                    final int dataIndex = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATA);
++                                    Log.e(TAG, "Error loading data:" + cursor.getString(dataIndex));
++                                }
++                            }
++                        }
++                    } else {
++                        mVideosResult = new ArrayList<>();
++                    }
++                }
++                mVideosCount = mVideosResult.size();
++                cursor.close();
++            } else {
++                Log.e(TAG, "video cursor == null");
++            }
++        } else {
++            if (isDebugOn) Log.e(TAG, "---zc cursor.getCount() == mVideosCount");
++        }
++        return mVideosResult;
++    }
++
+     /**
+      * Query the camera storage directory and convert it to local data
+      * objects.
+@@ -59,25 +279,47 @@ public class FilmstripContentQueries {
+     public static <I extends FilmstripItem> List<I> forCameraPath(ContentResolver contentResolver,
+           Uri contentUri, String[] projection, long minimumId, String orderBy,
+           CursorToFilmstripItemFactory<I> factory) {
+-        String selection = MediaStore.MediaColumns._ID + " > ?";
+-        String[] selectionArgs = new String[] { Long.toString(minimumId) };
++        if (isDebugOn) Log.e(TAG, "---zc forCameraPath  contentUri:" + contentUri + ",minimumId:" + minimumId);
++        String selection = SELECT_BY_PATH + " AND " + MediaStore.MediaColumns._ID + " > ?";
++        String[] selectionArgs = new String[] { PhotoDataQuery.CONTENT_URI.equals(contentUri) ? PHOTO_PATH : VIDEO_PATH, Long.toString(minimumId) };
+ 
+         Cursor cursor = contentResolver.query(contentUri, projection,
+               selection, selectionArgs, orderBy);
+         List<I> result = new ArrayList<>();
++        if (isDebugOn) Log.e(TAG, "---zc forCameraPath getCount:" + cursor.getCount());
+         if (cursor != null) {
+             while (cursor.moveToNext()) {
+-                I item = factory.get(cursor);
+-                if (item != null) {
+-                    result.add(item);
+-                } else {
+-                    final int dataIndex = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATA);
+-                    Log.e(TAG, "Error loading data:" + cursor.getString(dataIndex));
++                int owner_package_name_index = cursor.getColumnIndex("owner_package_name");
++                if (owner_package_name_index > -1) {
++                    String packageName = cursor.getString(owner_package_name_index);
++                    if (packageName != null && packageName.equals(CAMERA2_PACKAGENAME)) {
++                        I item = factory.get(cursor);
++                        if (item != null) {
++                            if (isDebugOn) Log.e(TAG, "---zc forCameraPath item:" + item.toString());
++                            result.add(item);
++                        } else {
++                            final int dataIndex = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATA);
++                            Log.e(TAG, "Error loading data:" + cursor.getString(dataIndex));
++                        }
++                    }
+                 }
+             }
+-
+             cursor.close();
+         }
+         return result;
+     }
++
++    public static void deleteForAllPhoto(String title) {
++        if (isDebugOn) Log.e(TAG, "---zc deleteForAll mAllImagesCount1:" + mAllImagesCount);
++        mAllImagesResult.removeIf(e -> (e.getData().getTitle().equals(title)));
++        mAllImagesCount = mAllImagesResult.size();
++        if (isDebugOn) Log.e(TAG, "---zc deleteForAll mAllImagesCount2:" + mAllImagesCount);
++    }
++
++    public static void deleteForAllVideo(String title) {
++        if (isDebugOn) Log.e(TAG, "---zc deleteForAll mVideosCount1:" + mVideosCount);
++        mVideosResult.removeIf(e -> (e.getData().getTitle().equals(title)));
++        mVideosCount = mVideosResult.size();
++        if (isDebugOn) Log.e(TAG, "---zc deleteForAll mVideosCount2:" + mVideosCount);
++    }
+ }
+diff --git a/src/com/android/camera/data/FilmstripItemList.java b/src/com/android/camera/data/FilmstripItemList.java
+index a2979e55a..70f4633c1 100644
+--- a/src/com/android/camera/data/FilmstripItemList.java
++++ b/src/com/android/camera/data/FilmstripItemList.java
+@@ -55,7 +55,7 @@ public class FilmstripItemList {
+     private final LinkedList<FilmstripItem> mList = new LinkedList<FilmstripItem>();
+     private final HashMap<Uri, FilmstripItem> mUriMap = new HashMap<Uri, FilmstripItem>();
+ 
+-    public FilmstripItem get(int index) {
++    public synchronized FilmstripItem get(int index) {
+         return mList.get(index);
+     }
+ 
+@@ -77,36 +77,36 @@ public class FilmstripItemList {
+         }
+     }
+ 
+-    public FilmstripItem get(Uri uri) {
++    public synchronized FilmstripItem get(Uri uri) {
+         return mUriMap.get(uri);
+     }
+ 
+-    public void set(int pos, FilmstripItem data) {
++    public synchronized void set(int pos, FilmstripItem data) {
+         mList.set(pos, data);
+         mUriMap.put(data.getData().getUri(), data);
+     }
+ 
+-    public void add(FilmstripItem data) {
++    public synchronized void add(FilmstripItem data) {
+         mList.add(data);
+         mUriMap.put(data.getData().getUri(), data);
+     }
+ 
+-    public void add(int pos, FilmstripItem data) {
++    public synchronized void add(int pos, FilmstripItem data) {
+         mList.add(pos, data);
+         mUriMap.put(data.getData().getUri(), data);
+     }
+ 
+-    public void addAll(List<? extends FilmstripItem> filmstripItemList) {
++    public synchronized void addAll(List<? extends FilmstripItem> filmstripItemList) {
+         for (FilmstripItem filmstripItem : filmstripItemList) {
+             add(filmstripItem);
+         }
+     }
+ 
+-    public int size() {
++    public synchronized int size() {
+         return mList.size();
+     }
+ 
+-    public void sort(Comparator<FilmstripItem> comparator) {
++    public synchronized void sort(Comparator<FilmstripItem> comparator) {
+         Collections.sort(mList, comparator);
+     }
+ 
+@@ -115,7 +115,7 @@ public class FilmstripItemList {
+      * O(n) but has a fast exit path for when the uri is not contained in the
+      * list, and immediately returns -1;
+      */
+-    public int indexOf(Uri uri) {
++    public synchronized int indexOf(Uri uri) {
+         if (!mUriMap.containsKey(uri)) {
+             return -1;
+         }
+diff --git a/src/com/android/camera/data/FilmstripItemUtils.java b/src/com/android/camera/data/FilmstripItemUtils.java
+index 590f96dcb..c7a417c10 100644
+--- a/src/com/android/camera/data/FilmstripItemUtils.java
++++ b/src/com/android/camera/data/FilmstripItemUtils.java
+@@ -148,7 +148,16 @@ public class FilmstripItemUtils {
+         if (orientation != 0 && b != null) {
+             Matrix m = new Matrix();
+             m.setRotate(orientation);
+-            b = Bitmap.createBitmap(b, 0, 0, b.getWidth(), b.getHeight(), m, false);
++            try {
++                Bitmap b1 = Bitmap.createBitmap(b, 0, 0, b.getWidth(), b.getHeight(), m, false);
++                if (b1 != b) {
++                    b.recycle();
++                    b = b1;
++                }
++            } catch (OutOfMemoryError e) {
++                // We have no memory to rotate. Return the original bitmap.
++                System.gc();
++            }
+         }
+ 
+         return b;
+@@ -161,6 +170,7 @@ public class FilmstripItemUtils {
+      * @return {@code null} if the loading failed.
+      */
+     public static Bitmap loadVideoThumbnail(String path) {
++        Log.d(TAG, "MediaMetadataRetriever loadVideoThumbnail");
+         Bitmap bitmap = null;
+         MediaMetadataRetriever retriever = new MediaMetadataRetriever();
+         try {
+@@ -172,7 +182,7 @@ public class FilmstripItemUtils {
+             if (bitmap == null) {
+                 bitmap = retriever.getFrameAtTime();
+             }
+-        } catch (IllegalArgumentException e) {
++        } catch (Exception e) {
+             Log.e(TAG, "MediaMetadataRetriever.setDataSource() fail:" + e.getMessage());
+         }
+         try {
+@@ -180,6 +190,7 @@ public class FilmstripItemUtils {
+         } catch (IOException e) {
+             // We ignore errors occurred while releasing the MediaMetadataRetriever.
+         }
++        Log.d(TAG, "MediaMetadataRetriever loadVideoThumbnail end");
+         return bitmap;
+     }
+ }
+diff --git a/src/com/android/camera/data/PhotoDataFactory.java b/src/com/android/camera/data/PhotoDataFactory.java
+index 05b1aef6e..291c2cab9 100644
+--- a/src/com/android/camera/data/PhotoDataFactory.java
++++ b/src/com/android/camera/data/PhotoDataFactory.java
+@@ -110,6 +110,8 @@ public class PhotoDataFactory {
+             }
+             width = b.getWidth();
+             height = b.getHeight();
++            b.recycle();
++            b = null;
+             if (width == 0 || height == 0) {
+                 Log.w(TAG, "PhotoData skipped. Bitmap size 0 for " + filePath);
+                 return null;
+diff --git a/src/com/android/camera/data/PhotoDataQuery.java b/src/com/android/camera/data/PhotoDataQuery.java
+index 3c318eae4..6cfd074fe 100644
+--- a/src/com/android/camera/data/PhotoDataQuery.java
++++ b/src/com/android/camera/data/PhotoDataQuery.java
+@@ -38,22 +38,24 @@ public class PhotoDataQuery {
+     public static final int COL_SIZE = 9;
+     public static final int COL_LATITUDE = 10;
+     public static final int COL_LONGITUDE = 11;
++    public static final int COL_OWNER_PACKAGE_NAME = 12;
+ 
+     /**
+      * These values should be kept in sync with column IDs (COL_*) above.
+      */
+     public static final String[] QUERY_PROJECTION = {
+-          MediaStore.Images.ImageColumns._ID,           // 0, int
+-          MediaStore.Images.ImageColumns.TITLE,         // 1, string
+-          MediaStore.Images.ImageColumns.MIME_TYPE,     // 2, string
+-          MediaStore.Images.ImageColumns.DATE_TAKEN,    // 3, int
+-          MediaStore.Images.ImageColumns.DATE_MODIFIED, // 4, int
+-          MediaStore.Images.ImageColumns.DATA,          // 5, string
+-          MediaStore.Images.ImageColumns.ORIENTATION,   // 6, int, 0, 90, 180, 270
+-          MediaStore.Images.ImageColumns.WIDTH,         // 7, int
+-          MediaStore.Images.ImageColumns.HEIGHT,        // 8, int
+-          MediaStore.Images.ImageColumns.SIZE,          // 9, long
+-          MediaStore.Images.ImageColumns.LATITUDE,      // 10, double
+-          MediaStore.Images.ImageColumns.LONGITUDE      // 11, double
++          MediaStore.Images.ImageColumns._ID,                   // 0, int
++          MediaStore.Images.ImageColumns.TITLE,                 // 1, string
++          MediaStore.Images.ImageColumns.MIME_TYPE,             // 2, string
++          MediaStore.Images.ImageColumns.DATE_TAKEN,            // 3, int
++          MediaStore.Images.ImageColumns.DATE_MODIFIED,         // 4, int
++          MediaStore.Images.ImageColumns.DATA,                  // 5, string
++          MediaStore.Images.ImageColumns.ORIENTATION,           // 6, int, 0, 90, 180, 270
++          MediaStore.Images.ImageColumns.WIDTH,                 // 7, int
++          MediaStore.Images.ImageColumns.HEIGHT,                // 8, int
++          MediaStore.Images.ImageColumns.SIZE,                  // 9, long
++          MediaStore.Images.ImageColumns.LATITUDE,              // 10, double
++          MediaStore.Images.ImageColumns.LONGITUDE,             // 11, double
++          MediaStore.Images.ImageColumns.OWNER_PACKAGE_NAME     // 12, string
+     };
+ }
+\ No newline at end of file
+diff --git a/src/com/android/camera/data/PhotoItem.java b/src/com/android/camera/data/PhotoItem.java
+index 0dcacb1c1..590f0253f 100644
+--- a/src/com/android/camera/data/PhotoItem.java
++++ b/src/com/android/camera/data/PhotoItem.java
+@@ -102,6 +102,10 @@ public class PhotoItem extends FilmstripItemBase<FilmstripItemData> {
+             MediaDetails mediaDetails = optionalDetails.get();
+             MediaDetails.extractExifInfo(mediaDetails, mData.getFilePath());
+             mediaDetails.addDetail(MediaDetails.INDEX_ORIENTATION, mData.getOrientation());
++            int width = mData.getOrientation() % 180 == 0 ? mData.getDimensions().getWidth() : mData.getDimensions().getHeight();
++            int height = mData.getOrientation() % 180 == 0 ? mData.getDimensions().getHeight() : mData.getDimensions().getWidth();
++            mediaDetails.addDetail(MediaDetails.INDEX_WIDTH, width);
++            mediaDetails.addDetail(MediaDetails.INDEX_HEIGHT, height);
+         }
+         return optionalDetails;
+     }
+diff --git a/src/com/android/camera/data/PhotoItemFactory.java b/src/com/android/camera/data/PhotoItemFactory.java
+index 00076075f..56c494ea7 100644
+--- a/src/com/android/camera/data/PhotoItemFactory.java
++++ b/src/com/android/camera/data/PhotoItemFactory.java
+@@ -75,17 +75,24 @@ public class PhotoItemFactory implements CursorToFilmstripItemFactory<PhotoItem>
+     /** Query for all the photo data items */
+     public List<PhotoItem> queryAll(Uri uri, long lastId) {
+         return FilmstripContentQueries
+-              .forCameraPath(mContentResolver, uri, PhotoDataQuery.QUERY_PROJECTION, lastId,
++              .forAllCameraPathPhoto(mContentResolver, uri, PhotoDataQuery.QUERY_PROJECTION, lastId,
+                     PhotoDataQuery.QUERY_ORDER, this);
+     }
+ 
+     /** Query for a single data item */
+     public PhotoItem queryContentUri(Uri uri) {
+         // TODO: Consider refactoring this, this approach may be slow.
+-        List<PhotoItem> newPhotos = queryAll(uri, FilmstripItemBase.QUERY_ALL_MEDIA_ID);
++        //List<PhotoItem> newPhotos = queryAll(uri, FilmstripItemBase.QUERY_ALL_MEDIA_ID);
++        List<PhotoItem> newPhotos = FilmstripContentQueries
++              .forCameraPath(mContentResolver, uri, PhotoDataQuery.QUERY_PROJECTION, FilmstripItemBase.QUERY_ALL_MEDIA_ID,
++                    PhotoDataQuery.QUERY_ORDER, this);
+         if (newPhotos.isEmpty()) {
+             return null;
+         }
+         return newPhotos.get(0);
+     }
++
++    public void deleteForAllPhoto(String title) {
++        FilmstripContentQueries.deleteForAllPhoto(title);
++    }
+ }
+diff --git a/src/com/android/camera/data/VideoDataFactory.java b/src/com/android/camera/data/VideoDataFactory.java
+index 4dfdc8fa3..3163aff17 100644
+--- a/src/com/android/camera/data/VideoDataFactory.java
++++ b/src/com/android/camera/data/VideoDataFactory.java
+@@ -37,6 +37,9 @@ public class VideoDataFactory {
+         String title = c.getString(VideoDataQuery.COL_TITLE);
+         String mimeType = c.getString(VideoDataQuery.COL_MIME_TYPE);
+         long creationDateInMilliSeconds = c.getLong(VideoDataQuery.COL_DATE_TAKEN);
++        Log.d(TAG, "video creationDateInMilliSeconds:" + creationDateInMilliSeconds);
++        if (creationDateInMilliSeconds <= 0)
++             creationDateInMilliSeconds = c.getLong(VideoDataQuery.COL_DATE_ADDED) * 1000;
+         long lastModifiedDateInSeconds = c.getLong(VideoDataQuery.COL_DATE_MODIFIED);
+         Date creationDate = new Date(creationDateInMilliSeconds);
+         Date lastModifiedDate = new Date(lastModifiedDateInSeconds * 1000);
+diff --git a/src/com/android/camera/data/VideoDataQuery.java b/src/com/android/camera/data/VideoDataQuery.java
+index 64e5ae351..4702da6b7 100644
+--- a/src/com/android/camera/data/VideoDataQuery.java
++++ b/src/com/android/camera/data/VideoDataQuery.java
+@@ -34,6 +34,8 @@ public class VideoDataQuery {
+     public static final int COL_LATITUDE = 9;
+     public static final int COL_LONGITUDE = 10;
+     public static final int COL_DURATION = 11;
++    public static final int COL_DATE_ADDED = 12;
++    public static final int COL_OWNER_PACKAGE_NAME = 13;
+ 
+     /**
+      * These values should be kept in sync with column IDs (COL_*) above.
+@@ -50,6 +52,8 @@ public class VideoDataQuery {
+           MediaStore.Video.VideoColumns.SIZE,          // 8 long
+           MediaStore.Video.VideoColumns.LATITUDE,      // 9 double
+           MediaStore.Video.VideoColumns.LONGITUDE,     // 10 double
+-          MediaStore.Video.VideoColumns.DURATION       // 11 long
++          MediaStore.Video.VideoColumns.DURATION,       // 11 long
++          MediaStore.MediaColumns.DATE_ADDED,
++          MediaStore.Video.VideoColumns.OWNER_PACKAGE_NAME     // 13, string
+     };
+ }
+diff --git a/src/com/android/camera/data/VideoItem.java b/src/com/android/camera/data/VideoItem.java
+index ec134f753..9fb11d3fb 100644
+--- a/src/com/android/camera/data/VideoItem.java
++++ b/src/com/android/camera/data/VideoItem.java
+@@ -134,6 +134,8 @@ public class VideoItem extends FilmstripItemBase<VideoItemData> {
+             String duration = MediaDetails.formatDuration(mContext,
+                     TimeUnit.MILLISECONDS.toSeconds(mData.getVideoDurationMillis()));
+             mediaDetails.addDetail(MediaDetails.INDEX_DURATION, duration);
++            mediaDetails.addDetail(MediaDetails.INDEX_WIDTH, getWidth());
++            mediaDetails.addDetail(MediaDetails.INDEX_HEIGHT, getHeight());
+         }
+         return optionalDetails;
+     }
+diff --git a/src/com/android/camera/data/VideoItemFactory.java b/src/com/android/camera/data/VideoItemFactory.java
+index d045cd8e0..4c00cb4f4 100644
+--- a/src/com/android/camera/data/VideoItemFactory.java
++++ b/src/com/android/camera/data/VideoItemFactory.java
+@@ -80,18 +80,25 @@ public class VideoItemFactory implements CursorToFilmstripItemFactory<VideoItem>
+     /** Query for all the video data items */
+     public List<VideoItem> queryAll(Uri uri, long lastId) {
+         return FilmstripContentQueries
+-              .forCameraPath(mContentResolver, uri, VideoDataQuery.QUERY_PROJECTION, lastId,
++              .forCameraPathVideo(mContentResolver, uri, VideoDataQuery.QUERY_PROJECTION, lastId,
+                     QUERY_ORDER, this);
+     }
+ 
+     /** Query for a single data item */
+     public VideoItem queryContentUri(Uri uri) {
+         // TODO: Consider refactoring this, this approach may be slow.
+-        List<VideoItem> videos = queryAll(uri,
+-              FilmstripItemBase.QUERY_ALL_MEDIA_ID);
++        //List<VideoItem> videos = queryAll(uri,
++              //FilmstripItemBase.QUERY_ALL_MEDIA_ID);
++        List<VideoItem> videos = FilmstripContentQueries
++              .forCameraPath(mContentResolver, uri, VideoDataQuery.QUERY_PROJECTION, FilmstripItemBase.QUERY_ALL_MEDIA_ID,
++                    QUERY_ORDER, this);
+         if (videos.isEmpty()) {
+             return null;
+         }
+         return videos.get(0);
+     }
++
++    public void deleteForAllVideo(String title) {
++        FilmstripContentQueries.deleteForAllVideo(title);
++    }
+ }
+diff --git a/src/com/android/camera/data/VideoRotationMetadataLoader.java b/src/com/android/camera/data/VideoRotationMetadataLoader.java
+index 59e140212..7ca6f27b8 100644
+--- a/src/com/android/camera/data/VideoRotationMetadataLoader.java
++++ b/src/com/android/camera/data/VideoRotationMetadataLoader.java
+@@ -19,7 +19,6 @@ package com.android.camera.data;
+ import android.media.MediaMetadataRetriever;
+ 
+ import com.android.camera.debug.Log;
+-
+ import java.io.IOException;
+ 
+ public class VideoRotationMetadataLoader {
+@@ -34,6 +33,7 @@ public class VideoRotationMetadataLoader {
+     }
+ 
+     static boolean loadRotationMetadata(final FilmstripItem data) {
++        Log.d(TAG, "MediaMetadataRetriever loadRotationMetadata");
+         final String path = data.getData().getFilePath();
+         MediaMetadataRetriever retriever = new MediaMetadataRetriever();
+         try {
+@@ -50,7 +50,7 @@ public class VideoRotationMetadataLoader {
+                     MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT);
+ 
+             data.getMetadata().setVideoHeight(Integer.parseInt(val));
+-        } catch (RuntimeException ex) {
++        } catch (Exception ex) {
+             // setDataSource() can cause RuntimeException beyond
+             // IllegalArgumentException. e.g: data contain *.avi file.
+             Log.e(TAG, "MediaMetdataRetriever.setDataSource() fail", ex);
+@@ -61,6 +61,7 @@ public class VideoRotationMetadataLoader {
+                 // Ignore errors occurred while releasing the MediaMetadataRetriever.
+             }
+         }
++        Log.d(TAG, "MediaMetadataRetriever loadRotationMetadata end");
+         return true;
+     }
+ }
+-- 
+2.53.0
+

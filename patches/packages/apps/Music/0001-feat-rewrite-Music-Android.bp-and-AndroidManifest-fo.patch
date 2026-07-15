@@ -1,0 +1,350 @@
+From f0158ebe46b7ea5976a942108013cbbc64419ee6 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Sat, 11 Jul 2026 14:23:04 +0800
+Subject: [PATCH 53/56] feat: rewrite Music Android.bp and AndroidManifest for
+ Rockchip platform with full permissions, activities, and widget support
+
+Change-Id: Ic5eb7e4d1bb6c41ed068ac0b54d9c1a14a700e75
+---
+ Android.bp                 |  21 +++-
+ AndroidManifest.xml        | 223 ++++++++++++++++++++++++++++++++++---
+ kotlin/Android.bp          |   6 +-
+ kotlin/AndroidManifest.xml |   2 +-
+ 4 files changed, 229 insertions(+), 23 deletions(-)
+
+diff --git a/Android.bp b/Android.bp
+index 2f2e6f8..97abddf 100644
+--- a/Android.bp
++++ b/Android.bp
+@@ -1,11 +1,26 @@
+ package {
+-    // See: http://go/android-license-faq
+-    default_applicable_licenses: ["Android-Apache-2.0"],
++    default_applicable_licenses: ["packages_apps_Music_license"],
++}
++
++// Added automatically by a large-scale-change
++// See: http://go/android-license-faq
++license {
++    name: "packages_apps_Music_license",
++    visibility: [":__subpackages__"],
++    license_kinds: [
++        "SPDX-license-identifier-Apache-2.0",
++    ],
++    license_text: [
++        "NOTICE",
++    ],
+ }
+ 
+ android_app {
+     name: "Music",
+-    srcs: ["src/**/*.java"],
++    srcs: [
++        "src/**/*.java",
++        "src/com/android/music/IMediaPlaybackService.aidl",
++    ],
+     resource_dirs: ["kotlin/res"],
+     sdk_version: "current",
+     product_specific: true,
+diff --git a/AndroidManifest.xml b/AndroidManifest.xml
+index 7788947..b02d645 100644
+--- a/AndroidManifest.xml
++++ b/AndroidManifest.xml
+@@ -17,7 +17,7 @@
+ 
+ <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+           package="com.android.music"
+-          xmlns:tools="http://schemas.android.com/tools">
++	  xmlns:tools="http://schemas.android.com/tools">
+ 
+     <!-- Package Name -->
+     <original-package android:name="com.android.music"/>
+@@ -27,19 +27,86 @@
+               android:targetSdkVersion="30"/>
+ 
+     <!-- Permissions -->
+-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
++    <uses-permission android:name="android.permission.WRITE_SETTINGS" />
++    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
++    <uses-permission android:name="android.permission.WAKE_LOCK" />
++    <uses-permission android:name="android.permission.INTERNET" />
++    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
++    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
++    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
++    <uses-permission android:name="android.permission.BROADCAST_STICKY" />
++    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
++    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+ 
+     <!-- App Declaration -->
+-    <application
+-            android:allowBackup="true"
+-            android:label="@string/app_name"
+-            android:supportsRtl="true"
+-            android:launchMode="singleTop"
+-            android:requestLegacyExternalStorage="true">
++    <application android:icon="@drawable/app_music"
++        android:label="@string/musicbrowserlabel"
++        android:taskAffinity="android.task.music"
++        android:allowTaskReparenting="true"
++        android:usesCleartextTraffic="true">
++
++        <meta-data
++            android:name="android.app.default_searchable"
++            android:value="com.android.music.QueryBrowserActivity"/>
++
++        <!-- The main activity -->
++        <activity android:name="com.android.music.MusicBrowserActivity"
++            android:theme="@android:style/Theme.NoTitleBar"
++            android:exported="true">
++            <intent-filter>
++                <action android:name="android.intent.action.MAIN" />
++                <action android:name="android.intent.action.MUSIC_PLAYER" />
++                <category android:name="android.intent.category.DEFAULT" />
++                <category android:name="android.intent.category.LAUNCHER" />
++                <category android:name="android.intent.category.APP_MUSIC" />
++            </intent-filter>
++        </activity>
++
++        <receiver android:name="com.android.music.MediaButtonIntentReceiver">
++            <intent-filter>
++                <action android:name="android.intent.action.MEDIA_BUTTON" />
++                <action android:name="android.media.AUDIO_BECOMING_NOISY" />
++            </intent-filter>
++        </receiver>
++
++        <!-- This is the "current music playing" panel, which has special
++             launch behavior.  We clear its task affinity, so it will not
++             be associated with the main media task and if launched
++             from a notification will not bring the rest of the media app
++             to the foreground.  We make it singleTask so that when others
++             launch it (such as media) we will launch in to our own task.
++             We set clearTaskOnLaunch because the user
++             can go to a playlist from this activity, so if they later return
++             to it we want it back in its initial state.  We exclude from
++             recents since this is accessible through a notification when
++             appropriate. -->
++        <activity android:name="com.android.music.MediaPlaybackActivity"
++                android:theme="@android:style/Theme.NoTitleBar"
++                android:label="@string/mediaplaybacklabel"
++                android:taskAffinity=""
++                android:launchMode="singleTask"
++                android:clearTaskOnLaunch="true"
++                android:excludeFromRecents="true"
++                android:exported="true" >
++            <intent-filter>
++                <action android:name="android.intent.action.VIEW" />
++                <category android:name="android.intent.category.DEFAULT" />
++                <data android:scheme="content"/>
++                <data android:host="media"/>
++                <data android:mimeType="audio/*"/>
++                <data android:mimeType="application/ogg"/>
++                <data android:mimeType="application/x-ogg"/>
++                <data android:mimeType="application/itunes"/>
++            </intent-filter>
++            <intent-filter>
++                <action android:name="com.android.music.PLAYBACK_VIEWER" />
++                <category android:name="android.intent.category.DEFAULT" />
++            </intent-filter>
++        </activity>
+ 
+         <activity android:name="AudioPreview" android:theme="@android:style/Theme.Dialog"
+-                  android:taskAffinity=""
+-                  android:excludeFromRecents="true" android:exported="true" >
++                android:taskAffinity=""
++                android:excludeFromRecents="true" android:exported="true" >
+             <intent-filter>
+                 <action android:name="android.intent.action.VIEW" />
+                 <category android:name="android.intent.category.DEFAULT" />
+@@ -60,7 +127,7 @@
+                 <data android:mimeType="application/itunes"/>
+             </intent-filter>
+             <intent-filter
+-                    android:priority="-1">
++                android:priority="-1">
+                 <action android:name="android.intent.action.VIEW" />
+                 <category android:name="android.intent.category.DEFAULT" />
+                 <category android:name="android.intent.category.BROWSABLE" />
+@@ -72,8 +139,118 @@
+             </intent-filter>
+         </activity>
+ 
++        <activity android:name="com.android.music.ArtistAlbumBrowserActivity" android:exported="false" >
++            <intent-filter>
++                <action android:name="android.intent.action.PICK" />
++                <category android:name="android.intent.category.DEFAULT" />
++                <data android:mimeType="vnd.android.cursor.dir/artistalbum"/>
++            </intent-filter>
++        </activity>
++        <activity android:name="com.android.music.AlbumBrowserActivity" android:exported="false" >
++            <intent-filter>
++                <action android:name="android.intent.action.PICK" />
++                <category android:name="android.intent.category.DEFAULT" />
++                <data android:mimeType="vnd.android.cursor.dir/album"/>
++            </intent-filter>
++        </activity>
++        <activity android:name="com.android.music.NowPlayingActivity" android:exported="false" >
++            <intent-filter>
++                <action android:name="android.intent.action.PICK" />
++                <category android:name="android.intent.category.DEFAULT" />
++                <data android:mimeType="vnd.android.cursor.dir/nowplaying"/>
++            </intent-filter>
++        </activity>
++        <activity android:name="com.android.music.TrackBrowserActivity" android:exported="false" >
++            <intent-filter>
++                <action android:name="android.intent.action.EDIT" />
++                <action android:name="android.intent.action.PICK" />
++                <category android:name="android.intent.category.DEFAULT" />
++                <data android:mimeType="vnd.android.cursor.dir/track"/>
++            </intent-filter>
++        </activity>
++        <activity android:name="com.android.music.QueryBrowserActivity"
++                android:theme="@android:style/Theme.NoTitleBar"
++                android:exported="true" >
++            <intent-filter>
++                <action android:name="android.intent.action.SEARCH" />
++                <action android:name="android.intent.action.MEDIA_SEARCH" />
++                <category android:name="android.intent.category.DEFAULT" />
++            </intent-filter>
++            <meta-data
++                android:name="android.app.searchable"
++                android:resource="@xml/searchable"
++            />
++        </activity>
++        <activity android:name="com.android.music.PlaylistBrowserActivity"
++                android:label="@string/musicbrowserlabel"
++                android:exported="true" >
++            <intent-filter>
++                <action android:name="android.intent.action.PICK" />
++                <category android:name="android.intent.category.DEFAULT" />
++                <data android:mimeType="vnd.android.cursor.dir/playlist"/>
++            </intent-filter>
++            <intent-filter>
++                <action android:name="android.intent.action.VIEW" />
++                <category android:name="android.intent.category.DEFAULT" />
++                <data android:mimeType="vnd.android.cursor.dir/playlist"/>
++            </intent-filter>
++        </activity>
++        <activity-alias android:name="com.android.music.PlaylistShortcutActivity"
++            android:targetActivity="com.android.music.PlaylistBrowserActivity"
++            android:label="@string/musicshortcutlabel"
++            android:icon="@drawable/ic_launcher_shortcut_music_playlist"
++            android:exported="true" >
++
++            <intent-filter>
++                <action android:name="android.intent.action.CREATE_SHORTCUT" />
++                <category android:name="android.intent.category.DEFAULT" />
++            </intent-filter>
++
++        </activity-alias>
++        <activity android:name="com.android.music.VideoBrowserActivity"
++            android:taskAffinity="android.task.video"
++            android:label="@string/videobrowserlabel"
++            android:icon="@drawable/app_video"
++            android:exported="false" >
++            <intent-filter>
++                <action android:name="android.intent.action.PICK" />
++                <category android:name="android.intent.category.DEFAULT" />
++                <data android:mimeType="vnd.android.cursor.dir/video"/>
++            </intent-filter>
++<!--
++            <intent-filter>
++                <action android:name="android.intent.action.MAIN" />
++                <category android:name="android.intent.category.DEFAULT" />
++                <category android:name="android.intent.category.LAUNCHER" />
++            </intent-filter>
++-->
++        </activity>
++        <activity android:name="com.android.music.MediaPickerActivity"
++                android:label="@string/mediapickerlabel" android:exported="false" >
++<!--
++            <intent-filter>
++                <action android:name="android.intent.action.PICK" />
++                <category android:name="android.intent.category.DEFAULT" />
++                <data android:mimeType="media/*"/>
++                <data android:mimeType="audio/*"/>
++                <data android:mimeType="application/ogg"/>
++                <data android:mimeType="application/x-ogg"/>
++                <data android:mimeType="video/*"/>
++            </intent-filter>
++            <intent-filter>
++                <action android:name="android.intent.action.GET_CONTENT" />
++                <category android:name="android.intent.category.DEFAULT" />
++                <category android:name="android.intent.category.OPENABLE" />
++                <data android:mimeType="media/*"/>
++                <data android:mimeType="audio/*"/>
++                <data android:mimeType="application/ogg"/>
++                <data android:mimeType="application/x-ogg"/>
++                <data android:mimeType="video/*"/>
++            </intent-filter>
++-->
++        </activity>
+         <activity android:name="com.android.music.MusicPicker"
+-                  android:label="@string/music_picker_title" android:exported="true" >
++                android:label="@string/music_picker_title" android:exported="true" >
+             <!-- First way to invoke us: someone asks to get content of
+                  any of the audio types we support. -->
+             <intent-filter>
+@@ -93,15 +270,25 @@
+                 <data android:mimeType="vnd.android.cursor.dir/audio"/>
+             </intent-filter>
+         </activity>
+-
++        <activity android:name="com.android.music.CreatePlaylist"
++            android:theme="@android:style/Theme.Dialog" android:exported="false" />
++        <activity android:name="com.android.music.RenamePlaylist"
++            android:theme="@android:style/Theme.Dialog" android:exported="false" />
++        <activity android:name="com.android.music.WeekSelector"
++            android:theme="@android:style/Theme.Dialog" android:exported="false" />
++        <activity android:name="com.android.music.DeleteItems"
++            android:theme="@android:style/Theme.Dialog" android:exported="false" />
++        <activity android:name="com.android.music.ScanningProgress"
++            android:theme="@android:style/Theme.Dialog" android:exported="false" />
+         <service android:name="com.android.music.MediaPlaybackService"
+-                 android:exported="true"
+-                 android:label="Android Open Source Music Playback Service">
++            android:exported="false" />
++
++        <receiver android:name="com.android.music.MediaAppWidgetProvider">
+             <intent-filter>
+-                <action android:name="android.media.browse.MediaBrowserService" />
++                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+             </intent-filter>
+-        </service>
+-
++            <meta-data android:name="android.appwidget.provider" android:resource="@xml/appwidget_info" />
++        </receiver>
+     </application>
+ 
+ </manifest>
+diff --git a/kotlin/Android.bp b/kotlin/Android.bp
+index 1772e78..1eb13de 100644
+--- a/kotlin/Android.bp
++++ b/kotlin/Android.bp
+@@ -1,6 +1,10 @@
+ package {
+     // See: http://go/android-license-faq
+-    default_applicable_licenses: ["Android-Apache-2.0"],
++    // A large-scale-change added 'default_applicable_licenses' to import
++    // all of the 'license_kinds' from "packages_apps_Music_license"
++    // to get the below license kinds:
++    //   SPDX-license-identifier-Apache-2.0
++    default_applicable_licenses: ["packages_apps_Music_license"],
+ }
+ 
+ android_app {
+diff --git a/kotlin/AndroidManifest.xml b/kotlin/AndroidManifest.xml
+index 7788947..7fddbde 100644
+--- a/kotlin/AndroidManifest.xml
++++ b/kotlin/AndroidManifest.xml
+@@ -17,7 +17,7 @@
+ 
+ <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+           package="com.android.music"
+-          xmlns:tools="http://schemas.android.com/tools">
++	  xmlns:tools="http://schemas.android.com/tools">
+ 
+     <!-- Package Name -->
+     <original-package android:name="com.android.music"/>
+-- 
+2.53.0
+

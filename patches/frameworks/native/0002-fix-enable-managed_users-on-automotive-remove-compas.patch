@@ -1,0 +1,43 @@
+From a69b66a33a1baf8cacd85f45053cdb1605e07221 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 15:26:24 +0800
+Subject: [PATCH] fix: enable managed_users on automotive, remove compass from
+ go/tablet hardware config
+
+Change-Id: I207c3408286cfbf21604bf5c52e36447e40d405a
+
+diff --git a/data/etc/android.hardware.type.automotive.xml b/data/etc/android.hardware.type.automotive.xml
+index 113945b0c5..a9b4b0526a 100644
+--- a/data/etc/android.hardware.type.automotive.xml
++++ b/data/etc/android.hardware.type.automotive.xml
+@@ -17,6 +17,4 @@
+ <!-- These features determine that the device running android is a car. -->
+ <permissions>
+     <feature name="android.hardware.type.automotive" />
+-    <!-- TODO: Revert this after enabling work profiles refer b/170332519 -->
+-    <unavailable-feature name="android.software.managed_users"/>
+ </permissions>
+diff --git a/data/etc/go_handheld_core_hardware.xml b/data/etc/go_handheld_core_hardware.xml
+index 8df7fdbb16..ee829728c8 100644
+--- a/data/etc/go_handheld_core_hardware.xml
++++ b/data/etc/go_handheld_core_hardware.xml
+@@ -26,7 +26,6 @@
+     <feature name="android.hardware.camera" />
+     <feature name="android.hardware.location" />
+     <feature name="android.hardware.location.network" />
+-    <feature name="android.hardware.sensor.compass" />
+     <feature name="android.hardware.sensor.accelerometer" />
+     <feature name="android.hardware.bluetooth" />
+     <feature name="android.hardware.touchscreen" />
+diff --git a/data/etc/tablet_core_hardware.xml b/data/etc/tablet_core_hardware.xml
+index 59d5b10947..6f8c050c99 100644
+--- a/data/etc/tablet_core_hardware.xml
++++ b/data/etc/tablet_core_hardware.xml
+@@ -29,7 +29,6 @@
+     <feature name="android.hardware.audio.output" />
+     <feature name="android.hardware.location" />
+     <feature name="android.hardware.location.network" />
+-    <feature name="android.hardware.sensor.compass" />
+     <feature name="android.hardware.sensor.accelerometer" />
+     <feature name="android.hardware.bluetooth" />
+     <feature name="android.hardware.touchscreen" />

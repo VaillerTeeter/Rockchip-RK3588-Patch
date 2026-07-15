@@ -1,0 +1,29 @@
+From 8b167f92195b84ae082494c72cb8272885bd09b8 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Sat, 11 Jul 2026 01:01:12 +0800
+Subject: [PATCH] fix: remove UID check to allow unrestricted su access on
+ Rockchip
+
+Change-Id: I62d1104e508a9fa8ae7eaa7109485ada7ca6c4d0
+---
+ su/su.cpp | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/su/su.cpp b/su/su.cpp
+index 1a1ab6bf..af3d2a68 100644
+--- a/su/su.cpp
++++ b/su/su.cpp
+@@ -80,8 +80,8 @@ void extract_uidgids(const char* uidgids, uid_t* uid, gid_t* gid, gid_t* gids, i
+ }
+ 
+ int main(int argc, char** argv) {
+-    uid_t current_uid = getuid();
+-    if (current_uid != AID_ROOT && current_uid != AID_SHELL) error(1, 0, "not allowed");
++    //uid_t current_uid = getuid();
++    //if (current_uid != AID_ROOT && current_uid != AID_SHELL) error(1, 0, "not allowed");
+ 
+     // Handle -h and --help.
+     ++argv;
+-- 
+2.53.0
+

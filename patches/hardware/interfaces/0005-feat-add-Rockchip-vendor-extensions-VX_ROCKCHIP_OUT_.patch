@@ -1,0 +1,47 @@
+From 08aa7320a2958165187cb2931d3ca491e6610f58 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 23:08:31 +0800
+Subject: [PATCH] feat: add Rockchip vendor extensions
+ VX_ROCKCHIP_OUT_HDMI0/SPDIF0/IN_HDMI0 to audio policy
+
+Change-Id: I3c40575ff9495e5188aeb4aa7a5ec60483c2e5e0
+---
+ audio/7.1/config/api/current.txt                | 7 +++++++
+ audio/7.1/config/audio_policy_configuration.xsd | 3 +++
+ 2 files changed, 10 insertions(+)
+
+diff --git a/audio/7.1/config/api/current.txt b/audio/7.1/config/api/current.txt
+index 75fc5c044..d5dcb1499 100644
+--- a/audio/7.1/config/api/current.txt
++++ b/audio/7.1/config/api/current.txt
+@@ -569,6 +569,13 @@ package android.audio.policy.configuration.V7_1 {
+     method public void setFormats(@Nullable android.audio.policy.configuration.V7_1.SurroundFormats);
+   }
+ 
++  public enum VendorExtension {
++    method @NonNull public String getRawName();
++    enum_constant public static final android.audio.policy.configuration.V7_1.VendorExtension VX_ROCKCHIP_IN_HDMI0;
++    enum_constant public static final android.audio.policy.configuration.V7_1.VendorExtension VX_ROCKCHIP_OUT_HDMI0;
++    enum_constant public static final android.audio.policy.configuration.V7_1.VendorExtension VX_ROCKCHIP_OUT_SPDIF0;
++  }
++
+   public enum Version {
+     method @NonNull public String getRawName();
+     enum_constant public static final android.audio.policy.configuration.V7_1.Version _7_0;
+diff --git a/audio/7.1/config/audio_policy_configuration.xsd b/audio/7.1/config/audio_policy_configuration.xsd
+index 7e1da9051..f71b7e71d 100644
+--- a/audio/7.1/config/audio_policy_configuration.xsd
++++ b/audio/7.1/config/audio_policy_configuration.xsd
+@@ -330,6 +330,9 @@
+         -->
+         <xs:restriction base="xs:string">
+             <xs:pattern value="VX_[A-Z0-9]{3,}_[_A-Z0-9]+"/>
++            <xs:enumeration value="VX_ROCKCHIP_OUT_HDMI0"/>
++            <xs:enumeration value="VX_ROCKCHIP_OUT_SPDIF0"/>
++            <xs:enumeration value="VX_ROCKCHIP_IN_HDMI0"/>
+         </xs:restriction>
+     </xs:simpleType>
+     <xs:simpleType name="extendableAudioDevice">
+-- 
+2.53.0
+

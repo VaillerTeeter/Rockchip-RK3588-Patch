@@ -1,0 +1,54 @@
+From 6f1734c55fcd05a1958d1339315832f28868825c Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 17:26:51 +0800
+Subject: [PATCH] chore: update SystemUI build config and resources
+
+Change-Id: I0fecc0c7cd8567e87318310b7803091ed1cb3ca2
+
+diff --git a/packages/SystemUI/Android.bp b/packages/SystemUI/Android.bp
+index ed62c5f012bc..7a8835e5cebc 100644
+--- a/packages/SystemUI/Android.bp
++++ b/packages/SystemUI/Android.bp
+@@ -177,6 +177,8 @@ android_library {
+         "lottie",
+         "LowLightDreamLib",
+         "motion_tool_lib",
++	"rockchip.hardware.hdmi-V1.0-java",
++	"rockchip.hardware.hdmi-V1.0-java-shallow",
+     ],
+     manifest: "AndroidManifest.xml",
+ 
+@@ -311,6 +313,8 @@ android_library {
+         "motion_tool_lib",
+         "androidx.core_core-animation-testing-nodeps",
+         "androidx.compose.ui_ui",
++	"rockchip.hardware.hdmi-V1.0-java",
++	"rockchip.hardware.hdmi-V1.0-java-shallow",
+     ],
+ }
+ 
+diff --git a/packages/SystemUI/customization/res/values/donottranslate.xml b/packages/SystemUI/customization/res/values/donottranslate.xml
+index 383d5521f156..ada05a2e75a1 100644
+--- a/packages/SystemUI/customization/res/values/donottranslate.xml
++++ b/packages/SystemUI/customization/res/values/donottranslate.xml
+@@ -16,7 +16,7 @@
+ 
+ <resources xmlns:xliff="urn:oasis:names:tc:xliff:document:1.2">
+     <!-- Skeleton string format for displaying the time in 12-hour format. -->
+-    <string name="clock_12hr_format">hm</string>
++    <string name="clock_12hr_format">ahm</string>
+ 
+     <!-- Skeleton string format for displaying the time in 24-hour format. -->
+     <string name="clock_24hr_format">Hm</string>
+diff --git a/packages/SystemUI/res/values/config.xml b/packages/SystemUI/res/values/config.xml
+index f545dae05b56..9fae4d3e0855 100644
+--- a/packages/SystemUI/res/values/config.xml
++++ b/packages/SystemUI/res/values/config.xml
+@@ -479,7 +479,6 @@
+      -->
+     <string-array name="config_statusBarIconsToExclude" translatable="false">
+         <item>@*android:string/status_bar_rotate</item>
+-        <item>@*android:string/status_bar_headset</item>
+     </string-array>
+ 
+ 

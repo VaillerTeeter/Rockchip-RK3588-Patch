@@ -1,0 +1,26 @@
+From b91ef56e478569d8705f523c06049c16090d79d2 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Sun, 12 Jul 2026 02:14:12 +0800
+Subject: [PATCH 87/89] fix: add BTM role switch timing for Rockchip BT
+ compatibility
+
+Change-Id: I394373670dbdc2cce443916143ac53e117293cf6
+---
+ system/stack/btm/btm_int_types.h | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/system/stack/btm/btm_int_types.h b/system/stack/btm/btm_int_types.h
+index 360db83a4d..93c65fa7cd 100644
+--- a/system/stack/btm/btm_int_types.h
++++ b/system/stack/btm/btm_int_types.h
+@@ -397,4 +397,7 @@ typedef struct tBTM_CB {
+ 
+ typedef uint8_t tBTM_SEC_ACTION;
+ 
++#define BTM_IS_AIC_SEMI_CONTROLLER()                                 \
++  (controller_get_interface()->get_bt_version()->manufacturer == \
++   LMP_COMPID_AIC_SEMI)
+ #endif  // BTM_INT_TYPES_H
+-- 
+2.53.0
+

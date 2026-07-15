@@ -1,0 +1,428 @@
+From f43ce9d7a0b380398014546a0819b3bd5ef45e4c Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Sat, 11 Jul 2026 02:52:52 +0800
+Subject: [PATCH 03/27] feat: add Rockchip camera settings arrays, preferences,
+ styles and resource definitions
+
+Change-Id: Ibcf725d1732f9e0aa45e9e57d90402a2458c6de9
+---
+ res/values/arrays.xml          | 136 +++++++++++++++++++++++++++++++++
+ res/values/attrs.xml           |   1 +
+ res/values/colors.xml          |   3 +
+ res/values/dimens.xml          |  12 +++
+ res/values/strings.xml         |  89 ++++++++++++++++++++-
+ res/values/styles.xml          |   6 ++
+ res/xml/camera_preferences.xml |  46 ++++++++++-
+ 7 files changed, 291 insertions(+), 2 deletions(-)
+
+diff --git a/res/values/arrays.xml b/res/values/arrays.xml
+index 487265780..d985004b6 100644
+--- a/res/values/arrays.xml
++++ b/res/values/arrays.xml
+@@ -164,6 +164,11 @@
+     <string-array name="pref_camera_scenemode_entryvalues" translatable="false">
+         <item>auto</item>
+         <item>hdr</item>
++        <item>portrait</item>
++        <item>landscape</item>
++        <item>night</item>
++        <item>sports</item>
++        <item>barcode</item>
+     </string-array>
+ 
+     <array name="camera_id_entries" translatable="false">
+@@ -517,6 +522,11 @@
+         <item>@string/pref_video_quality_entry_1080p_notrans</item>
+         <item>@string/pref_video_quality_entry_qvga_notrans</item>
+         <item>@string/pref_video_quality_entry_2160p_notrans</item>
++        <item>@string/pref_video_quality_entry_vga_notrans</item>
++        <item>@string/pref_video_quality_entry_4kdci_notrans</item>
++        <item>@string/pref_video_quality_entry_qhd_notrans</item>
++        <item>@string/pref_video_quality_entry_2k_notrans</item>
++        <item>@string/pref_video_quality_entry_8kuhd_notrans</item>
+     </array>
+ 
+     <array name="pref_default_boolean_entryvalues">
+@@ -533,4 +543,130 @@
+         <item>@drawable/shutter_button_background_still</item>
+         <item>@drawable/shutter_button_background_still</item>
+     </array>
++
++    <string-array name="scene_mode_text">
++        <item>@string/scene_mode_auto</item>
++        <item>@string/scene_mode_portrait</item>
++        <item>@string/scene_mode_landscape</item>
++        <item>@string/scene_mode_night</item>
++        <item>@string/scene_mode_sports</item>
++        <item>@string/scene_mode_barcode</item>
++    </string-array>
++
++    <string-array name="pref_camera_whitebalance_entry" translatable="false">
++        <item>auto</item>
++        <item>cloudy-daylight</item>
++        <item>daylight</item>
++        <item>fluorescent</item>
++        <item>incandescent</item>
++    </string-array>
++
++    <string-array name="pref_camera_color_effect_entry" translatable="false">
++        <item>none</item>
++        <item>mono</item>
++        <item>negative</item>
++        <item>sepia</item>
++    </string-array>
++
++    <array name="zsl_icons" translatable="false">
++      <item>@drawable/ic_zsl_off</item>
++      <item>@drawable/ic_zsl_on</item>
++    </array>
++
++    <array name="zsl_indicator_icons" translatable="false">
++      <item>@drawable/ic_zsl_off_indicator</item>
++      <item>@drawable/ic_zsl_on_indicator</item>
++    </array>
++
++    <array name="zsl_descriptions" translatable="false">
++      <item>@string/zsl_off_desc</item>
++      <item>@string/zsl_on_desc</item>
++    </array>
++
++    <array name="smile_shutter_icons" translatable="false">
++      <item>@drawable/ic_smile_shutter_off</item>
++      <item>@drawable/ic_smile_shutter_on</item>
++    </array>
++
++    <array name="smile_shutter_indicator_icons" translatable="false">
++      <item>@drawable/ic_smile_shutter_off_indicator</item>
++      <item>@drawable/ic_smile_shutter_on_indicator</item>
++    </array>
++
++    <array name="smile_shutter_descriptions" translatable="false">
++      <item>@string/smile_shutter_off_desc</item>
++      <item>@string/smile_shutter_on_desc</item>
++    </array>
++
++    <array name="threednr_icons" translatable="false">
++      <item>@drawable/ic_3dnr_off</item>
++      <item>@drawable/ic_3dnr_on</item>
++    </array>
++
++    <array name="threednr_indicator_icons" translatable="false">
++      <item>@android:color/transparent</item>
++      <item>@drawable/ic_3dnr_on_indicator</item>
++    </array>
++
++    <array name="threednr_descriptions" translatable="false">
++      <item>@string/ic_3dnr_off_desc</item>
++      <item>@string/ic_3dnr_on_desc</item>
++    </array>
++
++    <string-array name="pref_camera_saturation_entry" translatable="false">
++        <item>normal</item>
++        <item>low</item>
++        <item>high</item>
++    </string-array>
++
++    <string-array name="pref_camera_contrast_entry" translatable="false">
++        <item>normal</item>
++        <item>soft</item>
++        <item>hard</item>
++    </string-array>
++
++    <string-array name="pref_camera_sharpness_entry" translatable="false">
++        <item>normal</item>
++        <item>low</item>
++        <item>high</item>
++    </string-array>
++
++    <string-array name="pref_camera_brightness_entry" translatable="false">
++        <item>normal</item>
++        <item>low</item>
++        <item>high</item>
++    </string-array>
++
++    <string-array name="pref_camera_hue_entry" translatable="false">
++        <item>normal</item>
++        <item>low</item>
++        <item>high</item>
++    </string-array>
++
++    <!-- Camera Preferences AntiBanding entries -->
++    <string-array name="pref_antibanding_entryvalues" translatable="false">
++        <item>@string/pref_antibanding_off</item>
++        <item>@string/pref_antibanding_50hz</item>
++        <item>@string/pref_antibanding_60hz</item>
++        <item>@string/pref_antibanding_auto</item>
++    </string-array>
++
++    <!-- Camera Preferences AntiBanding names -->
++    <string-array name="pref_antibanding_names">
++        <item>@string/setting_antibanding_off_summary</item>
++        <item>@string/setting_antibanding_50hz_summary</item>
++        <item>@string/setting_antibanding_60hz_summary</item>
++        <item>@string/setting_antibanding_auto_summary</item>
++    </string-array>
++
++    <!-- Camera Preferences storage path names -->
++    <string-array name="pref_media_save_path_entries">
++        <item>@string/media_save_path_flash_label</item>
++        <item>@string/media_save_path_external_sd_label</item>
++    </string-array>
++
++    <string-array name="pref_media_save_path_entryvalues" translatable="false">
++        <item>@string/pref_media_save_path_flash</item>
++        <item>@string/pref_media_save_path_external_sd</item>
++    </string-array>
+ </resources>
+diff --git a/res/values/attrs.xml b/res/values/attrs.xml
+index 833e80dc1..50a1df261 100644
+--- a/res/values/attrs.xml
++++ b/res/values/attrs.xml
+@@ -48,5 +48,6 @@
+     </declare-styleable>
+     <declare-styleable name="RadioOptions">
+         <attr name="selected_drawable" format="reference" />
++        <attr name="option_height" format="reference"/>
+     </declare-styleable>
+ </resources>
+diff --git a/res/values/colors.xml b/res/values/colors.xml
+index 3f0ea51a5..74edbb1c2 100644
+--- a/res/values/colors.xml
++++ b/res/values/colors.xml
+@@ -77,5 +77,8 @@
+     <color name="mode_icon_hover_highlight">#2DFFFFFF</color>
+ 
+     <color name="blue_button_text_color">#00838F</color>
++
++    <color name="settings_title_color">#ff009688</color>
++    <color name="settings_background_color">#ffe1e1e0</color>
+     <color name="ic_launcher_background">#4285f4</color>
+ </resources>
+diff --git a/res/values/dimens.xml b/res/values/dimens.xml
+index 3389f709f..497701da5 100644
+--- a/res/values/dimens.xml
++++ b/res/values/dimens.xml
+@@ -216,4 +216,16 @@
+     <dimen name="rounded_thumbnail_ripple_ring_diameter_max">70dp</dimen>
+     <dimen name="rounded_thumbnail_ripple_ring_thick_max">5dp</dimen>
+     <dimen name="rounded_thumbnail_ripple_ring_thick_min">1dp</dimen>
++
++    <dimen name="scene_options_height">96dp</dimen>
++    <dimen name="progress_bar_text_size">20sp</dimen>
++    <dimen name="progress_bar_size">96dp</dimen>
++
++    <dimen name="preference_list_divider_height">1dp</dimen>
++
++    <dimen name="mode_options_screen_effects_width">350dp</dimen>
++
++    <dimen name="scene_mode_item_margin">5dp</dimen>
++    <dimen name="burst_saving_message_top_margin">40dp</dimen>
++    <dimen name="manual_focus_seek_padding">30dp</dimen>
+ </resources>
+diff --git a/res/values/strings.xml b/res/values/strings.xml
+index 923a068c4..4731a6997 100644
+--- a/res/values/strings.xml
++++ b/res/values/strings.xml
+@@ -405,7 +405,7 @@
+     <string name="dialog_dismiss">Dismiss</string>
+ 
+     <!-- Low-memory dialog message [CHAR LIMIT=NONE] -->
+-    <string name="spaceIsLow_content" product="default">Your SD card is running out of space. Change the quality setting or delete some images or other files.</string>
++    <string name="spaceIsLow_content" product="default">Your device is running out of space. Change the quality setting or delete some images or other files.</string>
+ 
+     <!-- Camera format string for new image files. Passed to java.text.SimpleDateFormat. -->
+     <string name="image_file_name_format" translatable="false">"'IMG'_yyyyMMdd_HHmmss"</string>
+@@ -903,6 +903,8 @@
+     <string name="pref_video_quality_entry_qvga">QVGA</string>
+     <!-- Video quality setting entry. Videos will be recorded in 2160p quality. [CHAR LIMIT=24] -->
+     <string name="pref_video_quality_entry_2160p">UHD 4K</string>
++    <string name="pref_video_quality_entry_4kdci">4KDCI</string>
++    <string name="pref_video_quality_entry_8kuhd">UHD 8K</string>
+ 
+     <!--  The strings below will not be translated. We're using them until the above translations are sane. -->
+     <string name="pref_video_quality_entry_qcif_notrans" translatable="false">QCIF</string>
+@@ -912,6 +914,11 @@
+     <string name="pref_video_quality_entry_1080p_notrans" translatable="false">HD 1080p</string>
+     <string name="pref_video_quality_entry_qvga_notrans" translatable="false">QVGA</string>
+     <string name="pref_video_quality_entry_2160p_notrans" translatable="false">UHD 4K</string>
++    <string name="pref_video_quality_entry_vga_notrans" translatable="false">VGA</string>
++    <string name="pref_video_quality_entry_4kdci_notrans" translatable="false">4KDCI</string>
++    <string name="pref_video_quality_entry_qhd_notrans" translatable="false">QHD</string>
++    <string name="pref_video_quality_entry_2k_notrans" translatable="false">2K</string>
++    <string name="pref_video_quality_entry_8kuhd_notrans" translatable="false">UHD 8K</string>
+ 
+     <!-- Message shown in the settings summary for how many megapixels have been selected. [CHAR LIMIT=24]-->
+     <string name="setting_summary_x_megapixels">%1$s megapixels</string>
+@@ -960,4 +967,84 @@
+ 
+     <!-- Shown to the user while an image/video is being saved to disk. -->
+     <string name="session_saving_image">Saving\u2026</string>
++
++    <string name="scene_mode_auto">Auto</string>
++    <string name="scene_mode_portrait">Portrait</string>
++    <string name="scene_mode_landscape">Landscape</string>
++    <string name="scene_mode_night">Night</string>
++    <string name="scene_mode_sports">Sports</string>
++    <string name="scene_mode_barcode">Barcode</string>
++
++    <string name="pref_camera_color_effect_default" translatable="false">none</string>
++    <string name="pref_camera_saturation_default" translatable="false">normal</string>
++    <string name="pref_camera_contrast_default" translatable="false">normal</string>
++    <string name="pref_camera_brightness_default" translatable="false">normal</string>
++    <string name="pref_camera_sharpness_default" translatable="false">normal</string>
++    <string name="pref_camera_hue_default" translatable="false">normal</string>
++
++    <string name="pref_camera_sound_title">Capture Sound</string>
++
++    <string name="pref_burst_saving">Burst Capture Saving, Please wait...</string>
++    <string name="pref_burst_finish">Burst Capture Finish</string>
++
++    <string name="pref_busrt_capture_on_title" translatable="false">ZSL</string>
++    <string name="pref_preview_fullsize_title">Fullsize Preview</string>
++
++    <string name="color_none">Normal</string>
++    <string name="color_mono">Mono</string>
++    <string name="color_negative">Negative</string>
++    <string name="color_sepia">Sepia</string>
++
++    <!-- Accessibility text for zsl toggle button states [CHAR_LIMIT=NONE] -->
++    <string name="zsl_off_desc">ZSL off</string>
++    <string name="zsl_on_desc">ZSL on</string>
++
++    <!-- Accessibility text for smile shutter toggle button states [CHAR_LIMIT=NONE] -->
++    <string name="smile_shutter_off_desc">Smile Shutter off</string>
++    <string name="smile_shutter_on_desc">Smile Shutter on</string>
++
++    <!-- Accessibility text for 3dnr toggle button states [CHAR_LIMIT=NONE] -->
++    <string name="ic_3dnr_off_desc">3DNR off</string>
++    <string name="ic_3dnr_on_desc">3DNR on</string>
++
++    <string name="exposure_options_lable">Exposure</string>
++    <string name="saturation_options_lable">Saturation</string>
++    <string name="contrast_options_lable">Contrast</string>
++    <string name="brightness_options_lable">Brightness</string>
++    <string name="sharpness_options_lable">Sharpness</string>
++    <string name="hue_options_lable">Hue</string>
++
++    <string name="pref_camera_screen_effects">Color Processing</string>
++
++    <string name="smile_shutter_tip">&#160;&#160;&#160;After press shutterButton, Taking picture\nautomatically when camera finds smile face.</string>
++
++    <string name="pref_restore_default_settings_title">Restore Default Settings</string>
++    <string name="pref_restore_default_settings_msg">Restore Camera Default Settings?</string>
++
++    <string name="pref_antibanding_off" translatable="false">off</string>
++    <string name="pref_antibanding_50hz" translatable="false">50hz</string>
++    <string name="pref_antibanding_60hz" translatable="false">60hz</string>
++    <string name="pref_antibanding_auto" translatable="false">auto</string>
++    <string name="setting_camera_antibanding">Anti-banding</string>
++    <string name="setting_antibanding_off_summary">Off</string>
++    <string name="setting_antibanding_50hz_summary">50 HZ</string>
++    <string name="setting_antibanding_60hz_summary">60 HZ</string>
++    <string name="setting_antibanding_auto_summary">Auto</string>
++
++    <string name="back_to_exit_msg">Press again to exit</string>
++    <string name="gallery_name">Gallery</string>
++
++    <string name="pref_face_detection_enabled_title">Face detection</string>
++    <string name="smile_shutter_auto_tip">Taking picture automatically when camera finds smile face</string>
++
++    <string name="setting_media_save_path">Picture and Video Save Location</string>
++    <string name="pref_media_save_path_flash" translatable="false">flash</string>
++    <string name="pref_media_save_path_external_sd" translatable="false">external_sd</string>
++    <string name="media_save_path_flash_label">Camera default storage</string>
++    <string name="media_save_path_external_sd_label">External SD</string>
++    <string name="external_sd_unmounted">External SD Unmounted</string>
++    <string name="external_sd_pull_out">External SD pull out,Exit Camera</string>
++    <!-- Low-memory dialog message [CHAR LIMIT=NONE] -->
++    <string name="flash_spaceIsLow_content" product="default">Your Default Storage is running out of space. Change Storage To External SD.</string>
++    <string name="exsd_spaceIsLow_content" product="default">Your External SD is running out of space. Change Storage To Default Storage.</string>
+  </resources>
+diff --git a/res/values/styles.xml b/res/values/styles.xml
+index 4db6627b6..e637bd968 100644
+--- a/res/values/styles.xml
++++ b/res/values/styles.xml
+@@ -243,4 +243,10 @@
+              here with a Material-style black asset -->
+         <item name="android:button">@drawable/checkbox_material_black</item>
+     </style>
++    <style name="ColorProcessModeOption">
++      <item name="android:layout_width">40dp</item>
++      <item name="android:layout_height">40dp</item>
++      <item name="android:layout_margin">6dp</item>
++      <item name="android:background">@null</item>
++    </style>
+ </resources>
+diff --git a/res/xml/camera_preferences.xml b/res/xml/camera_preferences.xml
+index 9c2a1a274..42e596257 100644
+--- a/res/xml/camera_preferences.xml
++++ b/res/xml/camera_preferences.xml
+@@ -54,12 +54,32 @@
+     </PreferenceCategory>
+   </PreferenceScreen>
+ 
++  <!-- Camera Sound -->
++  <com.android.camera.settings.ManagedSwitchPreference
++      android:defaultValue="true"
++      android:key="pref_camera_sound_enable_key"
++      android:title="@string/pref_camera_sound_title" />
++
+   <!-- Location -->
+   <com.android.camera.settings.ManagedSwitchPreference
+       android:defaultValue="false"
+       android:key="pref_camera_recordlocation_key"
+       android:title="@string/pref_camera_save_location_title" />
+ 
++  <!-- Face Detection enable -->
++  <com.android.camera.settings.ManagedSwitchPreference
++      android:defaultValue="true"
++      android:key="pref_face_detection_enabled_key"
++      android:title="@string/pref_face_detection_enabled_title" />
++
++  <!-- media save path -->
++  <!--<ListPreference
++      android:defaultValue="@string/pref_media_save_path_flash"
++      android:entries="@array/pref_media_save_path_entries"
++      android:entryValues="@array/pref_media_save_path_entryvalues"
++      android:key="pref_media_save_path_key"
++      android:title="@string/setting_media_save_path" /> -->
++
+   <!-- Advanced -->
+   <PreferenceScreen
+       android:key="pref_category_advanced"
+@@ -68,7 +88,31 @@
+     <com.android.camera.settings.ManagedSwitchPreference
+         android:defaultValue="false"
+         android:key="pref_camera_exposure_compensation_key"
+-        android:title="@string/pref_camera_exposure_compensation" />
++        android:title="@string/pref_camera_screen_effects" />
++    <com.android.camera.settings.ManagedSwitchPreference
++        android:defaultValue="false"
++        android:key="pref_camera_whitebalance_enable_key"
++        android:title="@string/pref_camera_whitebalance_title" />
++    <!-- Anti banding
++    <ListPreference
++        android:defaultValue="@string/pref_antibanding_auto"
++        android:entryValues="@array/pref_antibanding_entryvalues"
++        android:key="pref_camera_antibanding_key"
++        android:title="@string/setting_camera_antibanding" /> -->
+   </PreferenceScreen>
+ 
++  <com.android.camera.settings.MyDialogPreference
++      android:key="pref_restore_settings"
++      android:title="@string/pref_restore_default_settings_title"
++      android:dialogMessage="@string/pref_restore_default_settings_msg"
++      android:dialogTitle="@string/pref_restore_default_settings_title"
++      android:positiveButtonText="@android:string/ok"
++      android:negativeButtonText="@android:string/cancel"
++      />
++
++  <!-- Google Help and feedback launcher -->
++  <!-- <Preference
++      android:key="pref_launch_help"
++      android:title="@string/setting_google_help_and_feedback" /> -->
++
+ </PreferenceScreen>
+-- 
+2.53.0
+

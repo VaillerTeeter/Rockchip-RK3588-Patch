@@ -1,0 +1,60 @@
+From b34ec7a38854c6d136542f0d573defa3fc435538 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 22:38:24 +0800
+Subject: [PATCH] feat: add Quectel and Fibocom 5G modem prebuilt support in
+ libril
+
+Change-Id: I907c992e2ff0ef9cda47029fefd35917ef9efcb7
+---
+ libril/Android.mk | 31 +++++++++++++++++++++++++++++++
+ 1 file changed, 31 insertions(+)
+
+diff --git a/libril/Android.mk b/libril/Android.mk
+index 12b58cf..01f095f 100644
+--- a/libril/Android.mk
++++ b/libril/Android.mk
+@@ -3,6 +3,35 @@
+ LOCAL_PATH:= $(call my-dir)
+ include $(CLEAR_VARS)
+ 
++ifeq ($(BOARD_HAS_QUECTEL_5G_MODEM), true)
++LOCAL_MODULE_SUFFIX := .so
++LOCAL_MODULE := libril
++LOCAL_MODULE_TAGS := optional
++LOCAL_MODULE_CLASS := SHARED_LIBRARIES
++LOCAL_PROPRIETARY_MODULE := true
++
++LOCAL_MULTILIB := both
++LOCAL_SRC_FILES_arm := lib32/libril-quectel.so
++LOCAL_SRC_FILES_arm64 := lib64/libril-quectel.so
++
++LOCAL_CHECK_ELF_FILES := false
++include $(BUILD_PREBUILT)
++
++else ifeq ($(BOARD_HAS_FIBOCOM_5G_MODEM), true)
++LOCAL_MODULE_SUFFIX := .so
++LOCAL_MODULE := libril
++LOCAL_MODULE_TAGS := optional
++LOCAL_MODULE_CLASS := SHARED_LIBRARIES
++LOCAL_PROPRIETARY_MODULE := true
++
++LOCAL_MULTILIB := both
++LOCAL_SRC_FILES_arm := lib32/libril-modem-lib.so
++LOCAL_SRC_FILES_arm64 := lib64/libril-modem-lib.so
++
++LOCAL_CHECK_ELF_FILES := false
++include $(BUILD_PREBUILT)
++else
++
+ LOCAL_VENDOR_MODULE := true
+ 
+ LOCAL_SRC_FILES:= \
+@@ -48,3 +77,5 @@ LOCAL_NOTICE_FILE:= $(LOCAL_PATH)/NOTICE
+ LOCAL_SANITIZE := integer
+ 
+ include $(BUILD_SHARED_LIBRARY)
++
++endif
+-- 
+2.53.0
+

@@ -1,0 +1,21 @@
+From 366a58b5a572aed3ff7fa2b914da6afafbbb5b20 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 17:24:42 +0800
+Subject: [PATCH] fix: add USB host charge notification override
+
+Change-Id: Ia3fb44e472485bc8a57bd7ab74fa79994ca4421b
+
+diff --git a/services/usb/java/com/android/server/usb/UsbDeviceManager.java b/services/usb/java/com/android/server/usb/UsbDeviceManager.java
+index 468bf1719d89..74c5525c0ae5 100644
+--- a/services/usb/java/com/android/server/usb/UsbDeviceManager.java
++++ b/services/usb/java/com/android/server/usb/UsbDeviceManager.java
+@@ -1213,7 +1213,8 @@ public class UsbDeviceManager implements ActivityTaskManagerInternal.ScreenObser
+ 
+             // Dont show the notification when connected to a USB peripheral
+             // and the link does not support PR_SWAP and DR_SWAP
+-            if (mHideUsbNotification && !mSupportsAllCombinations) {
++            if (mHideUsbNotification && !mSupportsAllCombinations
++                && !"true".equals(SystemProperties.get("ro.sys.host_unhide_charge_notify"))) {
+                 if (mUsbNotificationId != 0) {
+                     mNotificationManager.cancelAsUser(null, mUsbNotificationId,
+                             UserHandle.ALL);

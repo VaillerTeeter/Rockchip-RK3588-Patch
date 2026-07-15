@@ -1,0 +1,141 @@
+From dd8eb7bc76e7193c601f9ca5db126ec216264b45 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 17:27:14 +0800
+Subject: [PATCH] fix: Jetpack folding feature producer listener registration
+ order
+
+Change-Id: Ie35a63dec9d61e3e6441e5aca750290b022ab4dc
+
+diff --git a/libs/WindowManager/Jetpack/src/androidx/window/common/DeviceStateManagerFoldingFeatureProducer.java b/libs/WindowManager/Jetpack/src/androidx/window/common/DeviceStateManagerFoldingFeatureProducer.java
+index 0bdf98c8680f..defc07ec3982 100644
+--- a/libs/WindowManager/Jetpack/src/androidx/window/common/DeviceStateManagerFoldingFeatureProducer.java
++++ b/libs/WindowManager/Jetpack/src/androidx/window/common/DeviceStateManagerFoldingFeatureProducer.java
+@@ -38,7 +38,6 @@ import java.util.ArrayList;
+ import java.util.List;
+ import java.util.Objects;
+ import java.util.Optional;
+-import java.util.Set;
+ import java.util.function.Consumer;
+ 
+ /**
+@@ -129,14 +128,13 @@ public final class DeviceStateManagerFoldingFeatureProducer
+     }
+ 
+     @Override
+-    protected void onListenersChanged(
+-            @NonNull Set<Consumer<List<CommonFoldingFeature>>> callbacks) {
+-        super.onListenersChanged(callbacks);
+-        if (callbacks.isEmpty()) {
++    protected void onListenersChanged() {
++        super.onListenersChanged();
++        if (hasListeners()) {
++            mRawFoldSupplier.addDataChangedCallback(this::notifyFoldingFeatureChange);
++        } else {
+             mCurrentDeviceState = INVALID_DEVICE_STATE;
+             mRawFoldSupplier.removeDataChangedCallback(this::notifyFoldingFeatureChange);
+-        } else {
+-            mRawFoldSupplier.addDataChangedCallback(this::notifyFoldingFeatureChange);
+         }
+     }
+ 
+diff --git a/libs/WindowManager/Jetpack/src/androidx/window/common/RawFoldingFeatureProducer.java b/libs/WindowManager/Jetpack/src/androidx/window/common/RawFoldingFeatureProducer.java
+index 7906342d445d..8906e6d3d02e 100644
+--- a/libs/WindowManager/Jetpack/src/androidx/window/common/RawFoldingFeatureProducer.java
++++ b/libs/WindowManager/Jetpack/src/androidx/window/common/RawFoldingFeatureProducer.java
+@@ -31,7 +31,6 @@ import androidx.window.util.BaseDataProducer;
+ import com.android.internal.R;
+ 
+ import java.util.Optional;
+-import java.util.Set;
+ import java.util.function.Consumer;
+ 
+ /**
+@@ -86,11 +85,11 @@ public final class RawFoldingFeatureProducer extends BaseDataProducer<String> {
+     }
+ 
+     @Override
+-    protected void onListenersChanged(Set<Consumer<String>> callbacks) {
+-        if (callbacks.isEmpty()) {
+-            unregisterObserversIfNeeded();
+-        } else {
++    protected void onListenersChanged() {
++        if (hasListeners()) {
+             registerObserversIfNeeded();
++        } else {
++            unregisterObserversIfNeeded();
+         }
+     }
+ 
+diff --git a/libs/WindowManager/Jetpack/src/androidx/window/extensions/layout/WindowLayoutComponentImpl.java b/libs/WindowManager/Jetpack/src/androidx/window/extensions/layout/WindowLayoutComponentImpl.java
+index 8386131b177d..dd2d0ec57d54 100644
+--- a/libs/WindowManager/Jetpack/src/androidx/window/extensions/layout/WindowLayoutComponentImpl.java
++++ b/libs/WindowManager/Jetpack/src/androidx/window/extensions/layout/WindowLayoutComponentImpl.java
+@@ -381,24 +381,15 @@ public class WindowLayoutComponentImpl implements WindowLayoutComponent {
+             final Rect taskBounds = taskConfig.windowConfiguration.getBounds();
+             final WindowManager windowManager = Objects.requireNonNull(
+                     context.getSystemService(WindowManager.class));
+-            final Rect currentBounds = windowManager.getCurrentWindowMetrics().getBounds();
+             final Rect maxBounds = windowManager.getMaximumWindowMetrics().getBounds();
+             boolean isTaskExpanded = maxBounds.equals(taskBounds);
+-            boolean isActivityExpanded = maxBounds.equals(currentBounds);
+             /*
+              * We need to proxy being in full screen because when a user enters PiP and exits PiP
+              * the task windowingMode will report multi-window/pinned until the transition is
+              * finished in WM Shell.
+              * maxBounds == taskWindowBounds is a proxy check to verify the window is full screen
+-             * For tasks that are letterboxed, we use currentBounds == maxBounds to filter these
+-             * out.
+              */
+-            // TODO(b/262900133) remove currentBounds check when letterboxed apps report bounds.
+-            // currently we don't want to report to letterboxed apps since they do not update the
+-            // window bounds when the Activity is moved.  An inaccurate fold will be reported so
+-            // we skip.
+-            return isTaskExpanded && (isActivityExpanded
+-                    || mTaskFragmentOrganizer.isActivityEmbedded(activityToken));
++            return isTaskExpanded;
+         } else {
+             // TODO(b/242674941): use task windowing mode for window context that associates with
+             //  activity.
+diff --git a/libs/WindowManager/Jetpack/src/androidx/window/util/BaseDataProducer.java b/libs/WindowManager/Jetpack/src/androidx/window/util/BaseDataProducer.java
+index 46c925aaf8a2..de52f0969fa8 100644
+--- a/libs/WindowManager/Jetpack/src/androidx/window/util/BaseDataProducer.java
++++ b/libs/WindowManager/Jetpack/src/androidx/window/util/BaseDataProducer.java
+@@ -51,10 +51,10 @@ public abstract class BaseDataProducer<T> implements DataProducer<T>,
+     public final void addDataChangedCallback(@NonNull Consumer<T> callback) {
+         synchronized (mLock) {
+             mCallbacks.add(callback);
+-            Optional<T> currentData = getCurrentData();
+-            currentData.ifPresent(callback);
+-            onListenersChanged(mCallbacks);
+         }
++        Optional<T> currentData = getCurrentData();
++        currentData.ifPresent(callback);
++        onListenersChanged();
+     }
+ 
+     /**
+@@ -67,11 +67,22 @@ public abstract class BaseDataProducer<T> implements DataProducer<T>,
+     public final void removeDataChangedCallback(@NonNull Consumer<T> callback) {
+         synchronized (mLock) {
+             mCallbacks.remove(callback);
+-            onListenersChanged(mCallbacks);
+         }
++        onListenersChanged();
+     }
+ 
+-    protected void onListenersChanged(Set<Consumer<T>> callbacks) {}
++    /**
++     * Returns {@code true} if there are any registered callbacks {@code false} if there are no
++     * registered callbacks.
++     */
++    // TODO(b/278132889) Improve the structure of BaseDataProdcuer while avoiding known issues.
++    public final boolean hasListeners() {
++        synchronized (mLock) {
++            return !mCallbacks.isEmpty();
++        }
++    }
++
++    protected void onListenersChanged() {}
+ 
+     /**
+      * @return the current data if available and {@code Optional.empty()} otherwise.

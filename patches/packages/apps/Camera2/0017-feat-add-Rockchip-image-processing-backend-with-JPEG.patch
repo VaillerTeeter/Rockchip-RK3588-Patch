@@ -1,0 +1,209 @@
+From 7bb47f3d162207e466637123fa06d83e2c5b2b77 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Sat, 11 Jul 2026 02:27:20 +0800
+Subject: [PATCH 18/27] feat: add Rockchip image processing backend with JPEG
+ compression task and shadow image support
+
+Change-Id: I26c48088adf1ee4f5ee9f8e2dfb412f4c531f619
+---
+ .../camera/processing/ProcessingService.java       | 14 ++++++++++----
+ .../processing/ProcessingServiceManager.java       |  4 +++-
+ .../processing/imagebackend/ImageBackend.java      |  4 ++++
+ .../imagebackend/ImageProcessorProxyListener.java  |  2 +-
+ .../processing/imagebackend/ImageShadowTask.java   |  4 ++++
+ .../imagebackend/TaskCompressImageToJpeg.java      | 11 ++++++-----
+ 6 files changed, 28 insertions(+), 11 deletions(-)
+
+diff --git a/src/com/android/camera/processing/ProcessingService.java b/src/com/android/camera/processing/ProcessingService.java
+index 1e4809563..84602f805 100644
+--- a/src/com/android/camera/processing/ProcessingService.java
++++ b/src/com/android/camera/processing/ProcessingService.java
+@@ -17,6 +17,7 @@
+ package com.android.camera.processing;
+ 
+ import android.app.Notification;
++import android.app.NotificationChannel;
+ import android.app.NotificationManager;
+ import android.app.Service;
+ import android.content.BroadcastReceiver;
+@@ -73,7 +74,7 @@ public class ProcessingService extends Service implements ProgressListener {
+ 
+     private static final Log.Tag TAG = new Log.Tag("ProcessingService");
+     private static final int THREAD_PRIORITY = Process.THREAD_PRIORITY_BACKGROUND;
+-    private static final int CAMERA_NOTIFICATION_ID = 2;
++    private static final int CAMERA_NOTIFICATION_ID = 0;
+     private Notification.Builder mNotificationBuilder;
+     private NotificationManager mNotificationManager;
+ 
+@@ -101,6 +102,7 @@ public class ProcessingService extends Service implements ProgressListener {
+ 
+     @Override
+     public void onCreate() {
++        Log.d(TAG, "onCreate");
+         mProcessingServiceManager = ProcessingServiceManager.instance();
+         mSessionManager = getServices().getCaptureSessionManager();
+ 
+@@ -113,8 +115,8 @@ public class ProcessingService extends Service implements ProgressListener {
+         intentFilter.addAction(ACTION_PAUSE_PROCESSING_SERVICE);
+         intentFilter.addAction(ACTION_RESUME_PROCESSING_SERVICE);
+         LocalBroadcastManager.getInstance(this).registerReceiver(mServiceController, intentFilter);
+-        mNotificationBuilder = createInProgressNotificationBuilder();
+         mNotificationManager = AndroidServices.instance().provideNotificationManager();
++        mNotificationBuilder = createInProgressNotificationBuilder();
+     }
+ 
+     @Override
+@@ -252,14 +254,18 @@ public class ProcessingService extends Service implements ProgressListener {
+     }
+ 
+     private void postNotification() {
+-        mNotificationManager.notify(CAMERA_NOTIFICATION_ID, mNotificationBuilder.build());
++        //mNotificationManager.notify(CAMERA_NOTIFICATION_ID, mNotificationBuilder.build());
+     }
+ 
+     /**
+      * Creates a notification to indicate that a computation is in progress.
+      */
+     private Notification.Builder createInProgressNotificationBuilder() {
+-        return new Notification.Builder(this)
++        NotificationChannel channel = new NotificationChannel("camera_save",
++                "camera_save", NotificationManager.IMPORTANCE_DEFAULT);
++        mNotificationManager.createNotificationChannel(channel);
++
++        return new Notification.Builder(this, "camera_save")
+                 .setSmallIcon(R.drawable.ic_notification)
+                 .setWhen(System.currentTimeMillis())
+                 .setOngoing(true)
+diff --git a/src/com/android/camera/processing/ProcessingServiceManager.java b/src/com/android/camera/processing/ProcessingServiceManager.java
+index 810c71e76..f7faff779 100644
+--- a/src/com/android/camera/processing/ProcessingServiceManager.java
++++ b/src/com/android/camera/processing/ProcessingServiceManager.java
+@@ -77,7 +77,8 @@ public class ProcessingServiceManager implements ProcessingTaskConsumer {
+     @Override
+     public synchronized void enqueueTask(ProcessingTask task) {
+         mQueue.add(task);
+-        Log.d(TAG, "Task added. Queue size now: " + mQueue.size());
++        Log.d(TAG, "Task added. Queue size now: " + mQueue.size()
++                + ", ServiceRunning:" + mServiceRunning + ",HoldProcessing:" + mHoldProcessing);
+ 
+         if (!mServiceRunning && !mHoldProcessing) {
+             startService();
+@@ -156,6 +157,7 @@ public class ProcessingServiceManager implements ProcessingTaskConsumer {
+      * itself automatically and call #stitchingFinished().
+      */
+     private void startService() {
++        Log.d(TAG, "startService ProcessingService");
+         mAppContext.startService(new Intent(mAppContext, ProcessingService.class));
+         mServiceRunning = true;
+     }
+diff --git a/src/com/android/camera/processing/imagebackend/ImageBackend.java b/src/com/android/camera/processing/imagebackend/ImageBackend.java
+index fdfeea578..058d5ef91 100644
+--- a/src/com/android/camera/processing/imagebackend/ImageBackend.java
++++ b/src/com/android/camera/processing/imagebackend/ImageBackend.java
+@@ -501,11 +501,13 @@ public class ImageBackend implements ImageConsumer, ImageTaskManager {
+                 // Request job that creates both filmstrip thumbnail from YUV,
+                 // JPEG compression of the YUV Image, and writes the result to
+                 // disk
++                Log.d(TAG, "add TaskPreviewChainedJpeg");
+                 tasksToExecute.add(new TaskPreviewChainedJpeg(img, executor, this, session,
+                         FILMSTRIP_THUMBNAIL_TARGET_SIZE, mByteBufferDirectPool));
+             } else {
+                 // Request job that only does JPEG compression and writes the
+                 // result to disk
++                Log.d(TAG, "add TaskCompressImageToJpeg");
+                 tasksToExecute.add(new TaskCompressImageToJpeg(img, executor, this, session,
+                       mByteBufferDirectPool));
+             }
+@@ -527,6 +529,7 @@ public class ImageBackend implements ImageConsumer, ImageTaskManager {
+             Runnable unregisterRunnable = new Runnable() {
+                 @Override
+                 public void run() {
++                    Log.d(TAG, "unregister finalImageProcessorListener");
+                     getProxyListener().unregisterListener(finalImageProcessorListener);
+                 }
+             };
+@@ -540,6 +543,7 @@ public class ImageBackend implements ImageConsumer, ImageTaskManager {
+                 processingFlags.contains(ImageTaskFlags.CLOSE_ON_ALL_TASKS_RELEASE),
+                 runnableOptional)) {
+             if (imageProcessorListener.isPresent()) {
++                Log.d(TAG, "register finalImageProcessorListener");
+                 getProxyListener().registerListener(imageProcessorListener.get(), img.proxy);
+             }
+             return true;
+diff --git a/src/com/android/camera/processing/imagebackend/ImageProcessorProxyListener.java b/src/com/android/camera/processing/imagebackend/ImageProcessorProxyListener.java
+index a67c02fc5..4d65675b2 100644
+--- a/src/com/android/camera/processing/imagebackend/ImageProcessorProxyListener.java
++++ b/src/com/android/camera/processing/imagebackend/ImageProcessorProxyListener.java
+@@ -54,7 +54,7 @@ public class ImageProcessorProxyListener implements ImageProcessorListener {
+      */
+     protected void logWrapper(String message) {
+         // Uncomment for more verbose messaging.
+-        // Log.v(TAG, message);
++        Log.d(TAG, message);
+     }
+ 
+     ImageProcessorProxyListener() {
+diff --git a/src/com/android/camera/processing/imagebackend/ImageShadowTask.java b/src/com/android/camera/processing/imagebackend/ImageShadowTask.java
+index 2bb505de6..d60463c98 100644
+--- a/src/com/android/camera/processing/imagebackend/ImageShadowTask.java
++++ b/src/com/android/camera/processing/imagebackend/ImageShadowTask.java
+@@ -94,17 +94,21 @@ class ImageShadowTask implements ProcessingTask {
+ 
+     @Override
+     public ProcessingResult process(Context context, CameraServices services, CaptureSession session) {
++        Log.d(TAG,"ImageShadowTask block");
+         try {
+             mProtocol.block();
+         } catch (InterruptedException e) {
+             // Exit cleanly on Interrupt.
+             Log.w(TAG, "Image Shadow task Interrupted.");
+         }
++        Log.d(TAG,"ImageShadowTask block exit");
+ 
+         ProcessingResult finalResult = new ProcessingResult(true, mCaptureSession);
+         // Always finishes alright.
+         if (mDoneListener != null) {
++            Log.d(TAG, "mDoneListener start");
+             mDoneListener.onDone(finalResult);
++            Log.d(TAG, "mDoneListener end");
+         }
+         return finalResult;
+     }
+diff --git a/src/com/android/camera/processing/imagebackend/TaskCompressImageToJpeg.java b/src/com/android/camera/processing/imagebackend/TaskCompressImageToJpeg.java
+index 7a2caf9fb..9713757f7 100644
+--- a/src/com/android/camera/processing/imagebackend/TaskCompressImageToJpeg.java
++++ b/src/com/android/camera/processing/imagebackend/TaskCompressImageToJpeg.java
+@@ -106,6 +106,7 @@ public class TaskCompressImageToJpeg extends TaskJpegEncode {
+ 
+     @Override
+     public void run() {
++        Log.d(TAG, "run CompressImageToJpeg");
+         ImageToProcess img = mImage;
+         mSession.getCollector().markProcessingTimeStart();
+         final Rect safeCrop;
+@@ -207,17 +208,17 @@ public class TaskCompressImageToJpeg extends TaskJpegEncode {
+                         // Crop the image
+                         resultImage = new TaskImage(
+                                 exifDerivedRotation,
+-                                safeCrop.width(),
+-                                safeCrop.height(),
++                                imageHeight,//safeCrop.width(),
++                                imageWidth,//safeCrop.height(),
+                                 img.proxy.getFormat(), null);
+ 
+                         byte[] croppedResult = decompressCropAndRecompressJpegData(
+                                 compressedData.array(), safeCrop,
+                                 getJpegCompressionQuality());
+ 
+-                        compressedData = ByteBuffer.allocate(croppedResult.length);
+-                        compressedData.put(ByteBuffer.wrap(croppedResult));
+-                        compressedData.rewind();
++                        //compressedData = ByteBuffer.allocate(croppedResult.length);
++                        //compressedData.put(ByteBuffer.wrap(croppedResult));
++                        //compressedData.rewind();
+                     } else {
+                         // Pass-though the JPEG data
+                         resultImage = inputImage;
+-- 
+2.53.0
+
