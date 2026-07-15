@@ -1,0 +1,35 @@
+From 6e6b2224b9403f1e468fd30b9ff4705f020128ce Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Thu, 9 Jul 2026 11:13:12 +0800
+Subject: [PATCH] fix: fix discarded const qualifier warning in libfdt
+ fdt_overlay.c
+
+---
+ scripts/dtc/libfdt/fdt_overlay.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/scripts/dtc/libfdt/fdt_overlay.c b/scripts/dtc/libfdt/fdt_overlay.c
+index bd81241e66..b97a79ce75 100644
+--- a/scripts/dtc/libfdt/fdt_overlay.c
++++ b/scripts/dtc/libfdt/fdt_overlay.c
+@@ -439,7 +439,7 @@ static int overlay_fixup_phandle(void *fdt, void *fdto, int symbols_off,
+ 		const char *fixup_str = value;
+ 		uint32_t path_len, name_len;
+ 		uint32_t fixup_len;
+-		char *sep, *endptr;
++		const char *sep, *endptr;
+ 		int poffset, ret;
+ 
+ 		fixup_end = memchr(value, '\0', len);
+@@ -469,7 +469,7 @@ static int overlay_fixup_phandle(void *fdt, void *fdto, int symbols_off,
+ 		if (!name_len)
+ 			return -FDT_ERR_BADOVERLAY;
+ 
+-		poffset = strtoul(sep + 1, &endptr, 10);
++		poffset = strtoul(sep + 1, (char **)&endptr, 10);
+ 		if ((*endptr != '\0') || (endptr <= (sep + 1)))
+ 			return -FDT_ERR_BADOVERLAY;
+ 
+-- 
+2.53.0
+

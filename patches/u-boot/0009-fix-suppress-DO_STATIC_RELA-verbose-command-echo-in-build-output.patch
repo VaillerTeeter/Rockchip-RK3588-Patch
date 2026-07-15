@@ -1,0 +1,26 @@
+From e3a67badf96c67c6310568cd721f180e780e78f1 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Thu, 9 Jul 2026 14:53:52 +0800
+Subject: [PATCH] fix: suppress DO_STATIC_RELA verbose command echo in build
+ output
+
+---
+ Makefile | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/Makefile b/Makefile
+index 2e0fd9b9ad..295b4a250a 100644
+--- a/Makefile
++++ b/Makefile
+@@ -977,7 +977,7 @@ binary_size_check: u-boot-nodtb.bin FORCE
+ 
+ u-boot-nodtb.bin: u-boot FORCE
+ 	$(call if_changed,objcopy)
+-	$(call DO_STATIC_RELA,$<,$@,$(CONFIG_SYS_TEXT_BASE))
++	$(Q)$(call DO_STATIC_RELA,$<,$@,$(CONFIG_SYS_TEXT_BASE))
+ 	$(BOARD_SIZE_CHECK)
+ 
+ u-boot.ldr:	u-boot
+-- 
+2.53.0
+

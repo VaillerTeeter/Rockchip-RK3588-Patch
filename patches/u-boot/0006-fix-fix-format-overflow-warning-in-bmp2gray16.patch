@@ -1,0 +1,25 @@
+From 7dffa227de68fc3bbf591e0dbb5eadaabca808f1 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Thu, 9 Jul 2026 13:06:40 +0800
+Subject: [PATCH] fix: fix format-overflow warning in bmp2gray16.c
+
+---
+ tools/rockchip/bmp2gray16.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/tools/rockchip/bmp2gray16.c b/tools/rockchip/bmp2gray16.c
+index 382d4099c4..b3ad2bae77 100644
+--- a/tools/rockchip/bmp2gray16.c
++++ b/tools/rockchip/bmp2gray16.c
+@@ -106,7 +106,7 @@ struct input_img_info {
+ struct input_img_info in_img_info[16];
+ uint32_t screen_w;
+ uint32_t screen_h;
+-static const char version[4] = "1.00";
++static const char version[] = "1.00";
+ static const char *PROG;
+ 
+ static const char *fix_path(const char *path)
+-- 
+2.53.0
+

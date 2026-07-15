@@ -1,0 +1,25 @@
+From a5cc07e15489cb29f9c1f69b4b6be99d8ccfd256 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Thu, 9 Jul 2026 10:41:53 +0800
+Subject: [PATCH] fix: fix discarded const qualifier warning in atmelimage.c
+
+---
+ tools/atmelimage.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/tools/atmelimage.c b/tools/atmelimage.c
+index 9b3600d62d..8fbda1927e 100644
+--- a/tools/atmelimage.c
++++ b/tools/atmelimage.c
+@@ -56,7 +56,7 @@ static const char * const configs[] = {
+ static int atmel_find_pmecc_parameter_in_token(const char *token)
+ {
+ 	size_t pos;
+-	char *param;
++	const char *param;
+ 
+ 	debug("token: '%s'\n", token);
+ 
+-- 
+2.53.0
+

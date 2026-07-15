@@ -1,0 +1,32 @@
+From 2f151cfb8cd34d0aca07cfe41e567a0ccf6fef38 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Thu, 9 Jul 2026 13:43:33 +0800
+Subject: [PATCH] fix: split multi-target pattern rule to silence peer-target
+ warnings in tools Makefile
+
+---
+ tools/Makefile | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/tools/Makefile b/tools/Makefile
+index 354b449314..4d102d9d7c 100644
+--- a/tools/Makefile
++++ b/tools/Makefile
+@@ -212,7 +212,13 @@ HOSTCFLAGS_sha256.o := -pedantic
+ quiet_cmd_wrap = WRAP    $@
+ cmd_wrap = echo "\#include <../$(patsubst $(obj)/%,%,$@)>" >$@
+ 
+-$(obj)/lib/%.c $(obj)/common/%.c $(obj)/env/%.c:
++$(obj)/lib/%.c:
++	$(call cmd,wrap)
++
++$(obj)/common/%.c:
++	$(call cmd,wrap)
++
++$(obj)/env/%.c:
+ 	$(call cmd,wrap)
+ 
+ clean-dirs := lib common
+-- 
+2.53.0
+

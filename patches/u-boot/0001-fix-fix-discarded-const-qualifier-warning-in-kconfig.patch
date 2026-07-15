@@ -1,0 +1,26 @@
+From 5650d26fe2ac1ab680107fd732c36187e39f7ab1 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Wed, 8 Jul 2026 21:54:17 +0800
+Subject: [PATCH] fix: fix discarded const qualifier warning in kconfig
+ confdata.c
+
+---
+ scripts/kconfig/confdata.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/scripts/kconfig/confdata.c b/scripts/kconfig/confdata.c
+index 745cb93050..27b59cae7c 100644
+--- a/scripts/kconfig/confdata.c
++++ b/scripts/kconfig/confdata.c
+@@ -749,7 +749,7 @@ int conf_write(const char *name)
+ 	dirname[0] = 0;
+ 	if (name && name[0]) {
+ 		struct stat st;
+-		char *slash;
++		const char *slash;
+ 
+ 		if (!stat(name, &st) && S_ISDIR(st.st_mode)) {
+ 			strcpy(dirname, name);
+-- 
+2.53.0
+

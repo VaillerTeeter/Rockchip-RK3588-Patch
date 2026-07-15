@@ -1,0 +1,25 @@
+From 234095a9c6dad646ee4c72301019cadd65226aff Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Wed, 8 Jul 2026 22:33:54 +0800
+Subject: [PATCH] fix: resolve dangling pointer warning in kconfig symbol.c
+
+---
+ scripts/kconfig/symbol.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/scripts/kconfig/symbol.c b/scripts/kconfig/symbol.c
+index 20136ffefb..fcc9907e14 100644
+--- a/scripts/kconfig/symbol.c
++++ b/scripts/kconfig/symbol.c
+@@ -1129,6 +1129,8 @@ static void sym_check_print_recursive(struct symbol *last_sym)
+ 			break;
+ 	if (!stack) {
+ 		fprintf(stderr, "unexpected recursive dependency error\n");
++		if (check_top == &cv_stack)
++			dep_stack_remove();
+ 		return;
+ 	}
+ 
+-- 
+2.53.0
+

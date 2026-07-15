@@ -1,0 +1,25 @@
+From 622ae8b8e36028976cdbf39d0a89d9129fda9099 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Thu, 9 Jul 2026 11:26:39 +0800
+Subject: [PATCH] fix: fix discarded const qualifier warning in resource_tool.c
+
+---
+ tools/rockchip/resource_tool.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/tools/rockchip/resource_tool.c b/tools/rockchip/resource_tool.c
+index c28d406887..fa040c3267 100644
+--- a/tools/rockchip/resource_tool.c
++++ b/tools/rockchip/resource_tool.c
+@@ -959,7 +959,7 @@ end:
+ static bool parse_level_conf(const char *arg, anim_level_conf *level_conf)
+ {
+ 	memset(level_conf, 0, sizeof(anim_level_conf));
+-	char *buf = NULL;
++	const char *buf = NULL;
+ 	buf = strstr(arg, OPT_CHARGE_ANIM_LEVEL_CONF);
+ 	if (buf) {
+ 		level_conf->max_level = atoi(buf + strlen(OPT_CHARGE_ANIM_LEVEL_CONF));
+-- 
+2.53.0
+
