@@ -1,0 +1,64 @@
+From 5a00321e191abef82560f8989a0ad9979363b7b5 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Thu, 16 Jul 2026 10:20:07 +0800
+Subject: [PATCH] feat: Settings: add isDead flag and BATTERY_REPLACEMENT tip
+ for battery health
+
+Change-Id: I218f0bd5fdd86a89c965bf257472637c52946036
+---
+ src/com/android/settings/fuelgauge/BatteryInfo.java      | 9 ++++-----
+ .../settings/fuelgauge/batterytip/tips/BatteryTip.java   | 4 +---
+ 2 files changed, 5 insertions(+), 8 deletions(-)
+
+diff --git a/src/com/android/settings/fuelgauge/BatteryInfo.java b/src/com/android/settings/fuelgauge/BatteryInfo.java
+index 946bd34c1e..da3bbe4d37 100644
+--- a/src/com/android/settings/fuelgauge/BatteryInfo.java
++++ b/src/com/android/settings/fuelgauge/BatteryInfo.java
+@@ -52,7 +52,6 @@ public class BatteryInfo {
+     public int pluggedStatus;
+     public boolean discharging = true;
+     public boolean isOverheated;
+-    public boolean isDead;
+     public long remainingTimeUs = 0;
+     public long averageTimeToDischarge = EstimateKt.AVERAGE_TIME_TO_DISCHARGE_UNKNOWN;
+     public String batteryPercentString;
+@@ -258,10 +257,10 @@ public class BatteryInfo {
+         info.pluggedStatus = batteryBroadcast.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0);
+         info.mCharging = info.pluggedStatus != 0;
+         info.averageTimeToDischarge = estimate.getAverageDischargeTime();
+-        final int health = batteryBroadcast.getIntExtra(
+-                BatteryManager.EXTRA_HEALTH, BatteryManager.BATTERY_HEALTH_UNKNOWN);
+-        info.isOverheated = health == BatteryManager.BATTERY_HEALTH_OVERHEAT;
+-        info.isDead = health == BatteryManager.BATTERY_HEALTH_DEAD;
++        info.isOverheated = batteryBroadcast.getIntExtra(
++                BatteryManager.EXTRA_HEALTH, BatteryManager.BATTERY_HEALTH_UNKNOWN)
++                == BatteryManager.BATTERY_HEALTH_OVERHEAT;
++
+         info.statusLabel = Utils.getBatteryStatus(context, batteryBroadcast, isCompactStatus);
+         info.batteryStatus = batteryBroadcast.getIntExtra(
+                 BatteryManager.EXTRA_STATUS, BatteryManager.BATTERY_STATUS_UNKNOWN);
+diff --git a/src/com/android/settings/fuelgauge/batterytip/tips/BatteryTip.java b/src/com/android/settings/fuelgauge/batterytip/tips/BatteryTip.java
+index 86104125a1..7a06f522ea 100644
+--- a/src/com/android/settings/fuelgauge/batterytip/tips/BatteryTip.java
++++ b/src/com/android/settings/fuelgauge/batterytip/tips/BatteryTip.java
+@@ -59,8 +59,7 @@ public abstract class BatteryTip implements Comparable<BatteryTip>, Parcelable {
+             TipType.LOW_BATTERY,
+             TipType.REMOVE_APP_RESTRICTION,
+             TipType.BATTERY_DEFENDER,
+-            TipType.DOCK_DEFENDER,
+-            TipType.BATTERY_REPLACEMENT})
++            TipType.DOCK_DEFENDER})
+     public @interface TipType {
+         int SMART_BATTERY_MANAGER = 0;
+         int APP_RESTRICTION = 1;
+@@ -72,7 +71,6 @@ public abstract class BatteryTip implements Comparable<BatteryTip>, Parcelable {
+         int REMOVE_APP_RESTRICTION = 7;
+         int BATTERY_DEFENDER = 8;
+         int DOCK_DEFENDER = 9;
+-        int BATTERY_REPLACEMENT = 10;
+     }
+ 
+     @VisibleForTesting
+-- 
+2.53.0
+
