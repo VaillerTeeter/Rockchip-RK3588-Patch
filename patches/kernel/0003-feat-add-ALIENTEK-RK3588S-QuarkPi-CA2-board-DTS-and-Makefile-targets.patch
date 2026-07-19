@@ -1,0 +1,2712 @@
+From 3245d75e607475a76bacaa4496f7153267d8434a Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Sun, 19 Jul 2026 20:00:21 +0800
+Subject: [PATCH 3/4] feat: add ALIENTEK RK3588S QuarkPi CA2 board DTS and
+ Makefile targets
+
+---
+ arch/arm64/boot/dts/rockchip/Makefile         |    5 +
+ .../boot/dts/rockchip/rk3588s-atk-camera.dtsi |  445 +++++++
+ .../boot/dts/rockchip/rk3588s-atk-lcds.dtsi   | 1051 +++++++++++++++++
+ ...88s-atk-quarkpi-ca2-mipi-10p1_800x1280.dts |  125 ++
+ ...88s-atk-quarkpi-ca2-mipi-5p5_1080x1920.dts |  124 ++
+ ...588s-atk-quarkpi-ca2-mipi-5p5_720x1280.dts |  125 ++
+ .../rk3588s-atk-quarkpi-ca2-non-mipi.dts      |   29 +
+ .../dts/rockchip/rk3588s-atk-quarkpi-ca2.dts  |   19 +
+ .../dts/rockchip/rk3588s-atk-quarkpi-ca2.dtsi |  655 ++++++++++
+ .../rockchip/rk3588s-atk-screen_choose.dtsi   |   37 +
+ 10 files changed, 2615 insertions(+)
+ create mode 100644 arch/arm64/boot/dts/rockchip/rk3588s-atk-camera.dtsi
+ create mode 100644 arch/arm64/boot/dts/rockchip/rk3588s-atk-lcds.dtsi
+ create mode 100644 arch/arm64/boot/dts/rockchip/rk3588s-atk-quarkpi-ca2-mipi-10p1_800x1280.dts
+ create mode 100644 arch/arm64/boot/dts/rockchip/rk3588s-atk-quarkpi-ca2-mipi-5p5_1080x1920.dts
+ create mode 100644 arch/arm64/boot/dts/rockchip/rk3588s-atk-quarkpi-ca2-mipi-5p5_720x1280.dts
+ create mode 100644 arch/arm64/boot/dts/rockchip/rk3588s-atk-quarkpi-ca2-non-mipi.dts
+ create mode 100644 arch/arm64/boot/dts/rockchip/rk3588s-atk-quarkpi-ca2.dts
+ create mode 100644 arch/arm64/boot/dts/rockchip/rk3588s-atk-quarkpi-ca2.dtsi
+ create mode 100644 arch/arm64/boot/dts/rockchip/rk3588s-atk-screen_choose.dtsi
+
+diff --git a/arch/arm64/boot/dts/rockchip/Makefile b/arch/arm64/boot/dts/rockchip/Makefile
+index d0e46729f1f9..778ba828e5fb 100644
+--- a/arch/arm64/boot/dts/rockchip/Makefile
++++ b/arch/arm64/boot/dts/rockchip/Makefile
+@@ -305,3 +305,8 @@ dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3588-atk-mipi-10p1_800x1280.dtb
+ dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3588-atk-mipi-5p5_1080x1920.dtb
+ dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3588-atk-mipi-5p5_720x1280.dtb
+ dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3588-atk-non-mipi.dtb
++dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3588s-atk-quarkpi-ca2.dtb
++dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3588s-atk-quarkpi-ca2-mipi-10p1_800x1280.dtb
++dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3588s-atk-quarkpi-ca2-mipi-5p5_1080x1920.dtb
++dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3588s-atk-quarkpi-ca2-mipi-5p5_720x1280.dtb
++dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3588s-atk-quarkpi-ca2-non-mipi.dtb
+diff --git a/arch/arm64/boot/dts/rockchip/rk3588s-atk-camera.dtsi b/arch/arm64/boot/dts/rockchip/rk3588s-atk-camera.dtsi
+new file mode 100644
+index 000000000000..f12cc6a8332e
+--- /dev/null
++++ b/arch/arm64/boot/dts/rockchip/rk3588s-atk-camera.dtsi
+@@ -0,0 +1,445 @@
++// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
++/*
++ * Copyright (c) 2021 Rockchip Electronics Co., Ltd.
++ *
++ */
++#define ATK_CAMERA_1    //MIPI CSI1
++#define ATK_CAMERA_2    //MIPI CSI2
++#define ATK_CAMERA_3    //MIPI CSI3
++
++
++/ {
++};
++
++/************************************** CDPHY 0 ********************************************/
++#if defined(ATK_CAMERA_1)
++&i2c2 {
++	status = "okay";
++
++	imx415@1a {
++		compatible = "sony,imx415";
++		reg = <0x1a>;
++		clocks = <&cru CLK_MIPI_CAMARAOUT_M1>;
++		clock-names = "xvclk";
++		pinctrl-names = "default";
++		pinctrl-0 = <&mipim0_camera1_clk>;
++		power-domains = <&power RK3588_PD_VI>;
++		reset-gpios = <&gpio1 RK_PB0 GPIO_ACTIVE_LOW>;
++		power-gpios = <&gpio1 RK_PB1 GPIO_ACTIVE_HIGH>;
++		rockchip,camera-module-index = <0>;
++		rockchip,camera-module-facing = "back";
++		rockchip,camera-module-name = "CMK-OT2022-PX1";
++		rockchip,camera-module-lens-name = "IR0147-50IRC-8M-F20";
++		port {
++			imx415_c1_out0: endpoint {
++				remote-endpoint = <&mipidcphy0_in_ucam0>;
++				data-lanes = <1 2 3 4>;
++			};
++		};
++	};
++};
++
++&csi2_dcphy0 {
++	status = "okay";
++
++	ports {
++		#address-cells = <1>;
++		#size-cells = <0>;
++		port@0 {
++			reg = <0>;
++			#address-cells = <1>;
++			#size-cells = <0>;
++
++			mipidcphy0_in_ucam0: endpoint@1 {
++				reg = <1>;
++				remote-endpoint = <&imx415_c1_out0>;
++				data-lanes = <1 2 3 4>;
++			};
++		};
++		port@1 {
++			reg = <1>;
++			#address-cells = <1>;
++			#size-cells = <0>;
++
++			csidcphy0_out: endpoint@0 {
++				reg = <0>;
++				remote-endpoint = <&mipi0_csi2_input>;
++			};
++		};
++	};
++};
++
++&mipi0_csi2 {
++	status = "okay";
++
++	ports {
++		#address-cells = <1>;
++		#size-cells = <0>;
++
++		port@0 {
++			reg = <0>;
++			#address-cells = <1>;
++			#size-cells = <0>;
++
++			mipi0_csi2_input: endpoint@1 {
++				reg = <1>;
++				remote-endpoint = <&csidcphy0_out>;
++			};
++		};
++
++		port@1 {
++			reg = <1>;
++			#address-cells = <1>;
++			#size-cells = <0>;
++
++			mipi0_csi2_output: endpoint@0 {
++				reg = <0>;
++				remote-endpoint = <&cif_mipi0_in0>;
++			};
++		};
++	};
++};
++
++
++&rkcif {
++	status = "okay";
++};
++
++&rkcif_mmu {
++	status = "okay";
++};
++
++&rkcif_mipi_lvds {
++	status = "okay";
++
++	port {
++		cif_mipi0_in0: endpoint {
++			remote-endpoint = <&mipi0_csi2_output>;
++		};
++	};
++};
++
++&rkcif_mipi_lvds_sditf {
++	status = "okay";
++
++	port {
++		mipi_lvds_sditf: endpoint {
++			remote-endpoint = <&isp0_vir1>;
++		};
++	};
++};
++
++&rkisp0 {
++	status = "okay";
++};
++
++&isp0_mmu {
++	status = "okay";
++};
++
++&rkisp0_vir1 {
++	status = "okay";
++
++	port {
++		#address-cells = <1>;
++		#size-cells = <0>;
++
++		isp0_vir1: endpoint@0 {
++			reg = <0>;
++			remote-endpoint = <&mipi_lvds_sditf>;
++		};
++	};
++};
++
++#endif
++/**************************************    END  ********************************************/
++
++
++/************************************** CDPHY 1 ********************************************/
++#if defined(ATK_CAMERA_2)
++&i2c0 {
++	status = "okay";
++	imx415@1a {
++		compatible = "sony,imx415";
++		reg = <0x1a>;
++		clocks = <&cru CLK_MIPI_CAMARAOUT_M2>;
++		clock-names = "xvclk";
++		pinctrl-names = "default";
++		pinctrl-0 = <&mipim0_camera2_clk>;
++		power-domains = <&power RK3588_PD_VI>;
++		reset-gpios = <&gpio1 RK_PB2 GPIO_ACTIVE_LOW>;
++		power-gpios = <&gpio1 RK_PB3 GPIO_ACTIVE_HIGH>;
++		rockchip,camera-module-index = <1>;
++		rockchip,camera-module-facing = "front";
++		rockchip,camera-module-name = "CMK-OT2022-PX1";
++		rockchip,camera-module-lens-name = "IR0147-50IRC-8M-F20";
++		port {
++			imx415_c2_out0: endpoint {
++				remote-endpoint = <&mipidcphy1_in_ucam0>;
++				data-lanes = <1 2 3 4>;
++			};
++		};
++	};
++};
++
++&csi2_dcphy1 {
++	status = "okay";
++
++	ports {
++		#address-cells = <1>;
++		#size-cells = <0>;
++		port@0 {
++			reg = <0>;
++			#address-cells = <1>;
++			#size-cells = <0>;
++
++			mipidcphy1_in_ucam0: endpoint@1 {
++				reg = <1>;
++				remote-endpoint = <&imx415_c2_out0>;
++				data-lanes = <1 2 3 4>;
++			};
++		};
++		port@1 {
++			reg = <1>;
++			#address-cells = <1>;
++			#size-cells = <0>;
++
++			csidcphy1_out: endpoint@0 {
++				reg = <0>;
++				remote-endpoint = <&mipi1_csi2_input>;
++			};
++		};
++	};
++};
++
++&mipi1_csi2 {
++	status = "okay";
++
++	ports {
++		#address-cells = <1>;
++		#size-cells = <0>;
++
++		port@0 {
++			reg = <0>;
++			#address-cells = <1>;
++			#size-cells = <0>;
++
++			mipi1_csi2_input: endpoint@1 {
++				reg = <1>;
++				remote-endpoint = <&csidcphy1_out>;
++			};
++		};
++
++		port@1 {
++			reg = <1>;
++			#address-cells = <1>;
++			#size-cells = <0>;
++
++			mipi1_csi2_output: endpoint@0 {
++				reg = <0>;
++				remote-endpoint = <&cif_mipi1_in0>;
++			};
++		};
++	};
++};
++
++&rkcif {
++	status = "okay";
++};
++
++&rkcif_mmu {
++	status = "okay";
++};
++
++&rkcif_mipi_lvds1 {
++	status = "okay";
++
++	port {
++		cif_mipi1_in0: endpoint {
++			remote-endpoint = <&mipi1_csi2_output>;
++		};
++	};
++};
++
++&rkcif_mipi_lvds1_sditf {
++	status = "okay";
++
++	port {
++		mipi_lvds1_sditf: endpoint {
++			remote-endpoint = <&isp1_vir1>;
++		};
++	};
++};
++
++&rkisp1 {
++	status = "okay";
++};
++
++&isp1_mmu {
++	status = "okay";
++};
++
++&rkisp1_vir1 {
++	status = "okay";
++
++	port {
++		#address-cells = <1>;
++		#size-cells = <0>;
++
++		isp1_vir1: endpoint@0 {
++			reg = <0>;
++			remote-endpoint = <&mipi_lvds1_sditf>;
++		};
++	};
++};
++#endif
++/**************************************   END   ********************************************/
++
++/**************************************   CSI0   ********************************************/
++#if defined(ATK_CAMERA_3)
++&i2c1 {
++
++	imx415: imx415@1a {
++		compatible = "sony,imx415";
++		reg = <0x1a>;
++		clocks = <&cru CLK_MIPI_CAMARAOUT_M3>;
++		clock-names = "xvclk";
++		pinctrl-names = "default";
++		pinctrl-0 = <&mipim0_camera3_clk>;
++		power-domains = <&power RK3588_PD_VI>;
++		reset-gpios = <&gpio1 RK_PB4 GPIO_ACTIVE_LOW>;
++		power-gpios = <&gpio1 RK_PB5 GPIO_ACTIVE_HIGH>;
++		rockchip,camera-module-index = <2>;
++		rockchip,camera-module-facing = "back";
++		rockchip,camera-module-name = "CMK-OT2022-PX1";
++		rockchip,camera-module-lens-name = "IR0147-50IRC-8M-F20";
++		port {
++			imx415_out0: endpoint {
++				remote-endpoint = <&mipidphy0_in_ucam0>;
++				data-lanes = <1 2 3 4>;
++			};
++		};
++	};
++};
++
++&csi2_dphy0 {
++	status = "okay";
++
++	ports {
++		#address-cells = <1>;
++		#size-cells = <0>;
++		port@0 {
++			reg = <0>;
++			#address-cells = <1>;
++			#size-cells = <0>;
++
++			mipidphy0_in_ucam0: endpoint@1 {
++				reg = <1>;
++				remote-endpoint = <&imx415_out0>;
++				data-lanes = <1 2 3 4>;
++			};
++		};
++		port@1 {
++			reg = <1>;
++			#address-cells = <1>;
++			#size-cells = <0>;
++
++			csidphy0_out: endpoint@0 {
++				reg = <0>;
++				remote-endpoint = <&mipi2_csi2_input>;
++			};
++		};
++	};
++};
++
++&csi2_dphy0_hw {
++	status = "okay";
++};
++
++&mipi2_csi2 {
++	status = "okay";
++
++	ports {
++		#address-cells = <1>;
++		#size-cells = <0>;
++
++		port@0 {
++			reg = <0>;
++			#address-cells = <1>;
++			#size-cells = <0>;
++
++			mipi2_csi2_input: endpoint@1 {
++				reg = <1>;
++				remote-endpoint = <&csidphy0_out>;
++			};
++		};
++
++		port@1 {
++			reg = <1>;
++			#address-cells = <1>;
++			#size-cells = <0>;
++
++			mipi2_csi2_output: endpoint@0 {
++				reg = <0>;
++				remote-endpoint = <&cif_mipi2_in0>;
++			};
++		};
++	};
++};
++
++&pinctrl {
++	cam {
++	};
++};
++
++&rkcif {
++	status = "okay";
++};
++
++&rkcif_mipi_lvds2 {
++	status = "okay";
++
++	port {
++		cif_mipi2_in0: endpoint {
++			remote-endpoint = <&mipi2_csi2_output>;
++		};
++	};
++};
++
++&rkcif_mipi_lvds2_sditf {
++	status = "okay";
++
++	port {
++		mipi_lvds2_sditf: endpoint {
++			remote-endpoint = <&isp0_vir0>;
++		};
++	};
++};
++
++&rkcif_mmu {
++	status = "okay";
++};
++
++&rkisp0 {
++	status = "okay";
++};
++
++&isp0_mmu {
++	status = "okay";
++};
++
++&rkisp0_vir0 {
++	status = "okay";
++
++	port {
++		#address-cells = <1>;
++		#size-cells = <0>;
++
++		isp0_vir0: endpoint@0 {
++			reg = <0>;
++			remote-endpoint = <&mipi_lvds2_sditf>;
++		};
++	};
++};
++#endif
++/**************************************   END   ********************************************/
+\ No newline at end of file
+diff --git a/arch/arm64/boot/dts/rockchip/rk3588s-atk-lcds.dtsi b/arch/arm64/boot/dts/rockchip/rk3588s-atk-lcds.dtsi
+new file mode 100644
+index 000000000000..f6f4f60499e3
+--- /dev/null
++++ b/arch/arm64/boot/dts/rockchip/rk3588s-atk-lcds.dtsi
+@@ -0,0 +1,1051 @@
++
++/ {
++	backlight1: backlight1 {
++		compatible = "pwm-backlight";
++		pwms = <&pwm6 0 25000 0>;
++		// pwms = <&pwm14 0 25000 0>;
++		brightness-levels = <
++			  0  20  20  21  21  22  22  23
++			 23  24  24  25  25  26  26  27
++			 27  28  28  29  29  30  30  31
++			 31  32  32  33  33  34  34  35
++			 35  36  36  37  37  38  38  39
++			 40  41  42  43  44  45  46  47
++			 48  49  50  51  52  53  54  55
++			 56  57  58  59  60  61  62  63
++			 64  65  66  67  68  69  70  71
++			 72  73  74  75  76  77  78  79
++			 80  81  82  83  84  85  86  87
++			 88  89  90  91  92  93  94  95
++			 96  97  98  99 100 101 102 103
++			104 105 106 107 108 109 110 111
++			112 113 114 115 116 117 118 119
++			120 121 122 123 124 125 126 127
++			128 129 130 131 132 133 134 135
++			136 137 138 139 140 141 142 143
++			144 145 146 147 148 149 150 151
++			152 153 154 155 156 157 158 159
++			160 161 162 163 164 165 166 167
++			168 169 170 171 172 173 174 175
++			176 177 178 179 180 181 182 183
++			184 185 186 187 188 189 190 191
++			192 193 194 195 196 197 198 199
++			200 201 202 203 204 205 206 207
++			208 209 210 211 212 213 214 215
++			216 217 218 219 220 221 222 223
++			224 225 226 227 228 229 230 231
++			232 233 234 235 236 237 238 239
++			240 241 242 243 244 245 246 247
++			248 249 250 251 252 253 254 255
++		>;
++		default-brightness-level = <200>;
++		status = "okay";
++	};
++};
++
++&disp_timings0 {
++	mipi0_5p5_1080x1920_timing: timing0 {
++		/*
++		clock-frequency = <136000000>;
++		hactive = <1080>;
++		vactive = <1920>;
++		hfront-porch = <45>;
++		hsync-len = <45>;
++		hback-porch = <5>;
++		vfront-porch = <9>;
++		vsync-len = <4>;
++		vback-porch = <3>;
++		hsync-active = <0>;
++		vsync-active = <0>;
++		de-active = <0>;
++		pixelclk-active = <0>;
++		*/
++
++		clock-frequency = <119000000>;
++		hactive = <1080>;
++		vactive = <1920>;
++		hfront-porch = <10>;
++		hsync-len = <6>;
++		hback-porch = <32>;
++		vfront-porch = <20>;
++		vsync-len = <6>;
++		vback-porch = <10>;
++		hsync-active = <0>;
++		vsync-active = <0>;
++		de-active = <0>;
++		pixelclk-active = <0>;
++	};
++
++	mipi0_5p5_720x1280_timing: timing1 {
++		clock-frequency = <65000000>;
++		hactive = <720>;
++		vactive = <1280>;
++		hfront-porch = <48>;
++		hsync-len = <8>;
++		hback-porch = <52>;
++		vfront-porch = <16>;
++		vsync-len = <6>;
++		vback-porch = <15>;
++		hsync-active = <0>;
++		vsync-active = <0>;
++		de-active = <0>;
++		pixelclk-active = <0>;
++	};
++
++	mipi0_10p1_800x1280_timing: timing2 {
++		clock-frequency = <67000000>;
++		hactive = <800>;
++		vactive = <1280>;
++		hfront-porch = <12>;
++		hsync-len = <24>;
++		hback-porch = <24>;
++		vfront-porch = <7>;
++		vsync-len = <2>;
++		vback-porch = <9>;
++		hsync-active = <0>;
++		vsync-active = <0>;
++		de-active = <0>;
++		pixelclk-active = <0>;
++	};
++};
++
++&disp_timings1 {
++	mipi1_5p5_1080x1920_timing: timing0 {
++		/*
++		clock-frequency = <136000000>;
++		hactive = <1080>;
++		vactive = <1920>;
++		hfront-porch = <45>;
++		hsync-len = <45>;
++		hback-porch = <5>;
++		vfront-porch = <9>;
++		vsync-len = <4>;
++		vback-porch = <3>;
++		hsync-active = <0>;
++		vsync-active = <0>;
++		de-active = <0>;
++		pixelclk-active = <0>;
++		*/
++
++		clock-frequency = <119000000>;
++		hactive = <1080>;
++		vactive = <1920>;
++		hfront-porch = <10>;
++		hsync-len = <6>;
++		hback-porch = <32>;
++		vfront-porch = <20>;
++		vsync-len = <6>;
++		vback-porch = <10>;
++		hsync-active = <0>;
++		vsync-active = <0>;
++		de-active = <0>;
++		pixelclk-active = <0>;
++	};
++
++	mipi1_5p5_720x1280_timing: timing1 {
++		clock-frequency = <65000000>;
++		hactive = <720>;
++		vactive = <1280>;
++		hfront-porch = <48>;
++		hsync-len = <8>;
++		hback-porch = <52>;
++		vfront-porch = <16>;
++		vsync-len = <6>;
++		vback-porch = <15>;
++		hsync-active = <0>;
++		vsync-active = <0>;
++		de-active = <0>;
++		pixelclk-active = <0>;
++	};
++
++	mipi1_10p1_800x1280_timing: timing2 {
++		clock-frequency = <67000000>;
++		hactive = <800>;
++		vactive = <1280>;
++		hfront-porch = <12>;
++		hsync-len = <24>;
++		hback-porch = <24>;
++		vfront-porch = <7>;
++		vsync-len = <2>;
++		vback-porch = <9>;
++		hsync-active = <0>;
++		vsync-active = <0>;
++		de-active = <0>;
++		pixelclk-active = <0>;
++	};
++};
++
++
++/******************** 背光 ********************/
++&backlight {
++	pwms = <&pwm5 0 25000 0>;
++	default-brightness-level = <255>;
++	status = "disabled";
++};
++/******************** END ********************/
++
++
++/******************** 触摸屏 ********************/
++&i2c4 {
++	dsi0_touch: gt911@14 {
++		compatible = "goodix,gt9xx";
++		reg = <0x14>;
++		pinctrl-names = "default";
++		pinctrl-0 = <&touch0_gpio>;
++		touch-gpio = <&gpio1 RK_PA0 IRQ_TYPE_LEVEL_LOW>;
++		reset-gpio = <&gpio1 RK_PA1 GPIO_ACTIVE_HIGH>;
++		max-x = <1080>;
++		max-y = <1920>;
++		tp-size = <911>;
++		tp-supply = <&vcc5v0_sys>;
++		wakeup-source;
++		goodix-ts-name = "dsi0_ts_gt9xx";
++		status = "disabled";
++	};
++};
++
++&i2c7 {
++	dsi1_touch: gt911@14 {
++		compatible = "goodix,gt9xx";
++		reg = <0x14>;
++		pinctrl-names = "default";
++		pinctrl-0 = <&touch1_gpio>;
++		touch-gpio = <&gpio1 RK_PC0 IRQ_TYPE_LEVEL_LOW>;
++		reset-gpio = <&gpio1 RK_PC1 GPIO_ACTIVE_HIGH>;
++		max-x = <1080>;
++		max-y = <1920>;
++		tp-size = <911>;
++		tp-supply = <&vcc5v0_sys>;
++		wakeup-source;
++		goodix-ts-name = "dsi1_ts_gt9xx";
++		status = "disabled";
++	};
++};
++/******************** END ********************/
++
++
++/******************** MIPI DSI TX0 ********************/
++&dsi0 {
++	status = "disabled";
++};
++
++&dsi0_in_vp2 {
++	status = "disabled";
++};
++
++&dsi0_in_vp3 {
++	status = "disabled";
++};
++
++&route_dsi0 {
++	status = "disabled";
++};
++
++
++
++&dsi0_panel {
++	power-supply = <&vcc5v0_sys>;
++	reset-gpios = <&gpio0 RK_PB2 GPIO_ACTIVE_LOW>;
++	pinctrl-names = "default";
++	pinctrl-0 = <&lcd0_rst_gpio>;
++	reset-delay-ms = <100>;
++	init-delay-ms = <80>;
++
++	panel-exit-sequence = [
++		05 32 01 28
++		05 C8 01 10
++	];
++	status = "disabled";
++};
++
++//触摸屏设备节点
++
++//背光设备节点
++/******************** END ********************/
++
++
++/******************** MIPI DSI TX1 ********************/
++&dsi1 {
++	status = "disabled";
++};
++
++&dsi1_in_vp2 {
++	status = "disabled";
++};
++
++&dsi1_in_vp3 {
++	status = "disabled";
++};
++
++&route_dsi1 {
++	status = "disabled";
++};
++
++
++
++&dsi1_panel {
++	power-supply = <&vcc5v0_sys>;
++	reset-gpios = <&gpio0 RK_PB0 GPIO_ACTIVE_LOW>;
++	backlight = <&backlight1>;
++	pinctrl-names = "default";
++	pinctrl-0 = <&lcd1_rst_gpio>;
++	reset-delay-ms = <100>;
++	init-delay-ms = <80>;
++
++	panel-exit-sequence = [
++		05 32 01 28
++		05 C8 01 10
++	];
++	status = "disabled";
++};
++
++//触摸屏设备节点
++
++//背光设备节点
++/******************** END ********************/
++
++
++/******************** HDMI TX0 ********************/
++//<!- HDMI TX0与EDP TX0不可同时使能 ->
++&hdmi0 {
++	enable-gpios = <&gpio4 RK_PB6 GPIO_ACTIVE_HIGH>;
++	status = "disabled";
++};
++
++&hdmi0_in_vp0 {
++	status = "disabled";
++};
++
++&hdmi0_in_vp1 {
++	status = "disabled";
++};
++
++&hdmi0_in_vp2 {
++	status = "disabled";
++};
++
++&route_hdmi0 {
++	status = "disabled";
++};
++
++&hdptxphy_hdmi0 {
++	status = "disabled";
++};
++
++&hdmi0_sound { //i2s5_8ch
++	status = "disabled";
++};
++/******************** END ********************/
++
++/******************** DP TX0 ********************/
++&dp0 {
++	status = "disabled";
++};
++
++&dp0_in_vp0 {
++	status = "disabled";
++};
++
++&dp0_in_vp1 {
++	status = "disabled";
++};
++
++&dp0_in_vp2 {
++	status = "disabled";
++};
++
++&route_dp0 {
++	status = "disabled";
++};
++
++//RK3588支持两个USB3.0/DP1.4 Combo PHY
++&usbdp_phy0_dp { //usbdp_phy0的子节点
++	status = "disabled";
++};
++
++&dp0_sound { //spdif_tx2
++	status = "disabled";
++};
++/******************** END ********************/
++
++
++
++#if defined(ATK_LCD_TYPE_MIPI_TX0_5P5_720X1280) || defined(ATK_LCD_TYPE_MIPI_TX0_5P5_1080X1920) || defined(ATK_LCD_TYPE_MIPI_TX0_10P1_800X1280)
++&dsi0 {
++	status = "okay";
++};
++
++&dsi0_in_vp2 {
++	status = "okay";
++};
++
++&route_dsi0 {
++	status = "okay";
++	connect = <&vp2_out_dsi0>;
++};
++
++&dsi0_panel {
++	status = "okay";
++};
++
++&dsi0_touch {
++	status = "okay";
++};
++
++&backlight {
++	status = "okay";
++};
++#endif
++
++#if defined(ATK_LCD_TYPE_MIPI_TX0_5P5_720X1280)
++&disp_timings0 {
++	native-mode = <&mipi0_5p5_720x1280_timing>;
++};
++
++&dsi0_panel {
++	panel-init-sequence = [
++		39 00 04 B9 FF 83 94
++		39 00 07 BA 63 03 68 6B B2 C0
++		//15 00 02 36 01(倒向显示)
++		//15 00 02 36 02(正向显示)
++		15 00 02 36 01
++		39 00 0B B1 48 12 72 09 32 54 71 71 57 47
++		39 00 07 B2 00 80 64 0C 0D 2F
++		39 00 16 B4 73 74 73 74 73 74 01 0C 86 75 00 3F 73 74 73 74 73 74 01 0C 86
++		39 00 03 B6 6E 6E
++		39 00 22 D3 00 00 07 07 40 07 0C 00 08 10 08 00 08 54 15 0A 05 0A 02 15 06 05 06 47 44 0A 0A 4B 10 07 07 0C 40
++		39 00 2D D5 1C 1C 1D 1D 00 01 02 03 04 05 06 07 08 09 0A 0B 24 25 18 18 26 27 18 18 18 18 18 18 18 18 18 18 18 18 18 18 18 18 20 21 18 18 18 18
++		39 00 2D D6 1C 1C 1D 1D 07 06 05 04 03 02 01 00 0B 0A 09 08 21 20 18 18 27 26 18 18 18 18 18 18 18 18 18 18 18 18 18 18 18 18 25 24 18 18 18 18
++		39 00 3B E0 00 0A 15 1B 1E 21 24 22 47 56 65 66 6E 82 88 8B 9A 9D 98 A8 B9 5D 5C 61 66 6A 6F 7F 7F 00 0A 15 1B 1E 21 24 22 47 56 65 65 6E 81 87 8B 98 9D 99 A8 BA 5D 5D 62 67 6B 72 7F 7F
++		39 00 03 C0 1F 31
++		15 00 02 CC 03
++		15 00 02 D4 02
++		15 00 02 BD 02
++		39 00 0D D8 FF FF FF FF FF FF FF FF FF FF FF FF
++		15 00 02 BD 00
++		15 00 02 BD 01
++		15 00 02 B1 00
++		15 00 02 BD 00
++		39 00 08 BF 40 81 50 00 1A FC 01
++		15 00 02 C6 ED
++		05 64 01 11
++		05 78 01 29
++	];
++};
++
++#elif defined(ATK_LCD_TYPE_MIPI_TX0_5P5_1080X1920)
++&disp_timings0 {
++	native-mode = <&mipi0_5p5_1080x1920_timing>;
++};
++
++&dsi0_panel {
++	panel-init-sequence = [
++		39 00 04 B9 FF 83 99
++		15 00 02 D2 77
++		//15 00 02 CC 04(倒向显示)
++		//15 00 02 CC 08(正向显示)
++		15 00 02 CC 04
++		39 00 10 B1 02 04 74 94 01 32 33 11 11 AB 4D 56 73 02 02
++		39 00 10 B2 00 80 80 AE 05 07 5A 11 00 00 10 1E 70 03 D4
++		39 00 2D B4 00 FF 02 C0 02 C0 00 00 08 00 04 06 00 32 04 0A 08 21 03 01 00 0F B8 8B 02 C0 02 C0 00 00 08 00 04 06 00 32 04 0A 08 01 00 0F B8 01
++		39 05 22 D3 00 00 00 00 00 00 06 00 00 10 04 00 04 00 00 00 00 00 00 00 00 00 00 01 00 05 05 07 00 00 00 05 40
++		39 05 21 D5 18 18 19 19 18 18 21 20 01 00 07 06 05 04 03 02 18 18 18 18 18 18 2F 2F 30 30 31 31 18 18 18 18
++		39 05 21 D6 18 18 19 19 40 40 20 21 02 03 04 05 06 07 00 01 40 40 40 40 40 40 2F 2F 30 30 31 31 40 40 40 40
++		39 00 11 D8 A2 AA 02 A0 A2 A8 02 A0 B0 00 00 00 B0 00 00 00
++		15 00 02 BD 01
++		39 00 11 D8 B0 00 00 00 B0 00 00 00 E2 AA 03 F0 E2 AA 03 F0
++		15 00 02 BD 02
++		39 00 09 D8 E2 AA 03 F0 E2 AA 03 F0
++		15 00 02 BD 00
++		39 00 03 B6 8D 8D
++		39 05 37 E0 00 0E 19 13 2E 39 48 44 4D 57 5F 66 6C 76 7F 85 8A 95 9A A4 9B AB B0 5C 58 64 77 00 0E 19 13 2E 39 48 44 4D 57 5F 66 6C 76 7F 85 8A 95 9A A4 9B AB B0 5C 58 64 77
++		05 c8 01 11
++		05 ff 01 29
++	];
++};
++
++#elif defined(ATK_LCD_TYPE_MIPI_TX0_10P1_800X1280)
++&disp_timings0 {
++	native-mode = <&mipi0_10p1_800x1280_timing>;
++};
++
++&dsi0_panel {
++	panel-init-sequence = [
++		39 05 04 FF 98 81 03
++		05 05 02 01 00
++		05 05 02 02 00
++		05 05 02 03 53
++		05 05 02 04 D3
++		05 05 02 05 00
++		05 05 02 06 0D
++		05 05 02 07 08
++		05 05 02 08 00
++		05 05 02 09 00
++		05 05 02 0a 00
++		05 05 02 0b 00
++		05 05 02 0c 00
++		05 05 02 0d 00
++		05 05 02 0e 00
++		05 05 02 0f 28
++		05 05 02 10 28
++		05 05 02 11 00
++		05 05 02 12 00
++		05 05 02 13 00
++		05 05 02 14 00
++		05 05 02 15 00
++		05 05 02 16 00
++		05 05 02 17 00
++		05 05 02 18 00
++		05 05 02 19 00
++		05 05 02 1a 00
++		05 05 02 1b 00
++		05 05 02 1c 00
++		05 05 02 1d 00
++		05 05 02 1e 40
++		05 05 02 1f 80
++		05 05 02 20 06
++		05 05 02 21 01
++		05 05 02 22 00
++		05 05 02 23 00
++		05 05 02 24 00
++		05 05 02 25 00
++		05 05 02 26 00
++		05 05 02 27 00
++		05 05 02 28 33
++		05 05 02 29 33
++		05 05 02 2a 00
++		05 05 02 2b 00
++		05 05 02 2c 00
++		05 05 02 2d 00
++		05 05 02 2e 00
++		05 05 02 2f 00
++		05 05 02 30 00
++		05 05 02 31 00
++		05 05 02 32 00
++		05 05 02 33 00
++		05 05 02 34 03
++		05 05 02 35 00
++		05 05 02 36 00
++		05 05 02 37 00
++		05 05 02 38 96
++		05 05 02 39 00
++		05 05 02 3a 00
++		05 05 02 3b 00
++		05 05 02 3c 00
++		05 05 02 3d 00
++		05 05 02 3e 00
++		05 05 02 3f 00
++		05 05 02 40 00
++		05 05 02 41 00
++		05 05 02 42 00
++		05 05 02 43 00
++		05 05 02 44 00
++		05 05 02 50 00
++		05 05 02 51 23
++		05 05 02 52 45
++		05 05 02 53 67
++		05 05 02 54 89
++		05 05 02 55 AB
++		05 05 02 56 01
++		05 05 02 57 23
++		05 05 02 58 45
++		05 05 02 59 67
++		05 05 02 5a 89
++		05 05 02 5b AB
++		05 05 02 5c CD
++		05 05 02 5d EF
++		05 05 02 5e 00
++		05 05 02 5f 08
++		05 05 02 60 08
++		05 05 02 61 06
++		05 05 02 62 06
++		05 05 02 63 01
++		05 05 02 64 01
++		05 05 02 65 00
++		05 05 02 66 00
++		05 05 02 67 02
++		05 05 02 68 15
++		05 05 02 69 15
++		05 05 02 6a 14
++		05 05 02 6b 14
++		05 05 02 6c 0D
++		05 05 02 6d 0D
++		05 05 02 6e 0C
++		05 05 02 6f 0C
++		05 05 02 70 0F
++		05 05 02 71 0F
++		05 05 02 72 0E
++		05 05 02 73 0E
++		05 05 02 74 02
++		05 05 02 75 08
++		05 05 02 76 08
++		05 05 02 77 06
++		05 05 02 78 06
++		05 05 02 79 01
++		05 05 02 7a 01
++		05 05 02 7b 00
++		05 05 02 7c 00
++		05 05 02 7d 02
++		05 05 02 7e 15
++		05 05 02 7f 15
++		05 05 02 80 14
++		05 05 02 81 14
++		05 05 02 82 0D
++		05 05 02 83 0D
++		05 05 02 84 0C
++		05 05 02 85 0C
++		05 05 02 86 0F
++		05 05 02 87 0F
++		05 05 02 88 0E
++		05 05 02 89 0E
++		05 05 02 8A 02
++		39 05 04 FF 98 81 04
++		05 05 02 6E 2B
++		05 05 02 6F 37
++		05 05 02 3A 24
++		05 05 02 8D 1A
++		05 05 02 87 BA
++		05 05 02 B2 D1
++		05 05 02 88 0B
++		05 05 02 38 01
++		05 05 02 39 00
++		05 05 02 B5 02
++		05 05 02 31 25
++		05 05 02 3B 98
++		39 05 04 FF 98 81 01
++		05 05 02 22 0A
++		05 05 02 31 00
++		05 05 02 53 3D
++		05 05 02 55 3D
++		05 05 02 50 B5
++		05 05 02 51 AD
++		05 05 02 60 06
++		05 05 02 62 20
++		05 05 02 A0 00
++		05 05 02 A1 21
++		05 05 02 A2 35
++		05 05 02 A3 19
++		05 05 02 A4 1E
++		05 05 02 A5 33
++		05 05 02 A6 27
++		05 05 02 A7 26
++		05 05 02 A8 AF
++		05 05 02 A9 1B
++		05 05 02 AA 27
++		05 05 02 AB 8D
++		05 05 02 AC 1A
++		05 05 02 AD 1B
++		05 05 02 AE 50
++		05 05 02 AF 26
++		05 05 02 B0 2B
++		05 05 02 B1 54
++		05 05 02 B2 5E
++		05 05 02 B3 23
++		05 05 02 C0 00
++		05 05 02 C1 21
++		05 05 02 C2 35
++		05 05 02 C3 19
++		05 05 02 C4 1E
++		05 05 02 C5 33
++		05 05 02 C6 27
++		05 05 02 C7 26
++		05 05 02 C8 AF
++		05 05 02 C9 1B
++		05 05 02 CA 27
++		05 05 02 CB 8D
++		05 05 02 CC 1A
++		05 05 02 CD 1B
++		05 05 02 CE 50
++		05 05 02 CF 26
++		05 05 02 D0 2B
++		05 05 02 D1 54
++		05 05 02 D2 5E
++		05 05 02 D3 23
++		39 05 04 FF 98 81 00
++		05 05 02 11 00
++		05 78 02 29 00
++		05 78 02 35 00
++	];
++};
++#endif
++
++#if defined(ATK_LCD_TYPE_MIPI_TX1_5P5_720X1280) || defined(ATK_LCD_TYPE_MIPI_TX1_5P5_1080X1920) || defined(ATK_LCD_TYPE_MIPI_TX1_10P1_800X1280)
++&dsi1 {
++	status = "okay";
++};
++
++&dsi1_in_vp3 {
++	status = "okay";
++};
++
++&route_dsi1 {
++	status = "okay";
++	connect = <&vp3_out_dsi1>;
++};
++
++&dsi1_panel {
++	status = "okay";
++};
++
++&dsi1_touch {
++	status = "okay";
++};
++
++&backlight1 {
++	status = "okay";
++};
++#endif
++
++#if defined(ATK_LCD_TYPE_MIPI_TX1_5P5_720X1280)
++&disp_timings1 {
++	native-mode = <&mipi1_5p5_720x1280_timing>;
++};
++
++&dsi1_panel {
++	panel-init-sequence = [
++		39 00 04 B9 FF 83 94
++		39 00 07 BA 63 03 68 6B B2 C0
++		//15 00 02 36 01(倒向显示)
++		//15 00 02 36 02(正向显示)
++		15 00 02 36 01
++		39 00 0B B1 48 12 72 09 32 54 71 71 57 47
++		39 00 07 B2 00 80 64 0C 0D 2F
++		39 00 16 B4 73 74 73 74 73 74 01 0C 86 75 00 3F 73 74 73 74 73 74 01 0C 86
++		39 00 03 B6 6E 6E
++		39 00 22 D3 00 00 07 07 40 07 0C 00 08 10 08 00 08 54 15 0A 05 0A 02 15 06 05 06 47 44 0A 0A 4B 10 07 07 0C 40
++		39 00 2D D5 1C 1C 1D 1D 00 01 02 03 04 05 06 07 08 09 0A 0B 24 25 18 18 26 27 18 18 18 18 18 18 18 18 18 18 18 18 18 18 18 18 20 21 18 18 18 18
++		39 00 2D D6 1C 1C 1D 1D 07 06 05 04 03 02 01 00 0B 0A 09 08 21 20 18 18 27 26 18 18 18 18 18 18 18 18 18 18 18 18 18 18 18 18 25 24 18 18 18 18
++		39 00 3B E0 00 0A 15 1B 1E 21 24 22 47 56 65 66 6E 82 88 8B 9A 9D 98 A8 B9 5D 5C 61 66 6A 6F 7F 7F 00 0A 15 1B 1E 21 24 22 47 56 65 65 6E 81 87 8B 98 9D 99 A8 BA 5D 5D 62 67 6B 72 7F 7F
++		39 00 03 C0 1F 31
++		15 00 02 CC 03
++		15 00 02 D4 02
++		15 00 02 BD 02
++		39 00 0D D8 FF FF FF FF FF FF FF FF FF FF FF FF
++		15 00 02 BD 00
++		15 00 02 BD 01
++		15 00 02 B1 00
++		15 00 02 BD 00
++		39 00 08 BF 40 81 50 00 1A FC 01
++		15 00 02 C6 ED
++		05 64 01 11
++		05 78 01 29
++	];
++};
++
++#elif defined(ATK_LCD_TYPE_MIPI_TX1_5P5_1080X1920)
++&disp_timings1 {
++	native-mode = <&mipi1_5p5_1080x1920_timing>;
++};
++
++&dsi1_panel {
++	panel-init-sequence = [
++		39 00 04 B9 FF 83 99
++		15 00 02 D2 77
++		//15 00 02 CC 04(倒向显示)
++		//15 00 02 CC 08(正向显示)
++		15 00 02 CC 04
++		39 00 10 B1 02 04 74 94 01 32 33 11 11 AB 4D 56 73 02 02
++		39 00 10 B2 00 80 80 AE 05 07 5A 11 00 00 10 1E 70 03 D4
++		39 00 2D B4 00 FF 02 C0 02 C0 00 00 08 00 04 06 00 32 04 0A 08 21 03 01 00 0F B8 8B 02 C0 02 C0 00 00 08 00 04 06 00 32 04 0A 08 01 00 0F B8 01
++		39 05 22 D3 00 00 00 00 00 00 06 00 00 10 04 00 04 00 00 00 00 00 00 00 00 00 00 01 00 05 05 07 00 00 00 05 40
++		39 05 21 D5 18 18 19 19 18 18 21 20 01 00 07 06 05 04 03 02 18 18 18 18 18 18 2F 2F 30 30 31 31 18 18 18 18
++		39 05 21 D6 18 18 19 19 40 40 20 21 02 03 04 05 06 07 00 01 40 40 40 40 40 40 2F 2F 30 30 31 31 40 40 40 40
++		39 00 11 D8 A2 AA 02 A0 A2 A8 02 A0 B0 00 00 00 B0 00 00 00
++		15 00 02 BD 01
++		39 00 11 D8 B0 00 00 00 B0 00 00 00 E2 AA 03 F0 E2 AA 03 F0
++		15 00 02 BD 02
++		39 00 09 D8 E2 AA 03 F0 E2 AA 03 F0
++		15 00 02 BD 00
++		39 00 03 B6 8D 8D
++		39 05 37 E0 00 0E 19 13 2E 39 48 44 4D 57 5F 66 6C 76 7F 85 8A 95 9A A4 9B AB B0 5C 58 64 77 00 0E 19 13 2E 39 48 44 4D 57 5F 66 6C 76 7F 85 8A 95 9A A4 9B AB B0 5C 58 64 77
++		05 c8 01 11
++		05 ff 01 29
++	];
++};
++
++#elif defined(ATK_LCD_TYPE_MIPI_TX1_10P1_800X1280)
++&disp_timings1 {
++	native-mode = <&mipi1_10p1_800x1280_timing>;
++};
++
++&dsi1_panel {
++	panel-init-sequence = [
++		39 05 04 FF 98 81 03
++		05 05 02 01 00
++		05 05 02 02 00
++		05 05 02 03 53
++		05 05 02 04 D3
++		05 05 02 05 00
++		05 05 02 06 0D
++		05 05 02 07 08
++		05 05 02 08 00
++		05 05 02 09 00
++		05 05 02 0a 00
++		05 05 02 0b 00
++		05 05 02 0c 00
++		05 05 02 0d 00
++		05 05 02 0e 00
++		05 05 02 0f 28
++		05 05 02 10 28
++		05 05 02 11 00
++		05 05 02 12 00
++		05 05 02 13 00
++		05 05 02 14 00
++		05 05 02 15 00
++		05 05 02 16 00
++		05 05 02 17 00
++		05 05 02 18 00
++		05 05 02 19 00
++		05 05 02 1a 00
++		05 05 02 1b 00
++		05 05 02 1c 00
++		05 05 02 1d 00
++		05 05 02 1e 40
++		05 05 02 1f 80
++		05 05 02 20 06
++		05 05 02 21 01
++		05 05 02 22 00
++		05 05 02 23 00
++		05 05 02 24 00
++		05 05 02 25 00
++		05 05 02 26 00
++		05 05 02 27 00
++		05 05 02 28 33
++		05 05 02 29 33
++		05 05 02 2a 00
++		05 05 02 2b 00
++		05 05 02 2c 00
++		05 05 02 2d 00
++		05 05 02 2e 00
++		05 05 02 2f 00
++		05 05 02 30 00
++		05 05 02 31 00
++		05 05 02 32 00
++		05 05 02 33 00
++		05 05 02 34 03
++		05 05 02 35 00
++		05 05 02 36 00
++		05 05 02 37 00
++		05 05 02 38 96
++		05 05 02 39 00
++		05 05 02 3a 00
++		05 05 02 3b 00
++		05 05 02 3c 00
++		05 05 02 3d 00
++		05 05 02 3e 00
++		05 05 02 3f 00
++		05 05 02 40 00
++		05 05 02 41 00
++		05 05 02 42 00
++		05 05 02 43 00
++		05 05 02 44 00
++		05 05 02 50 00
++		05 05 02 51 23
++		05 05 02 52 45
++		05 05 02 53 67
++		05 05 02 54 89
++		05 05 02 55 AB
++		05 05 02 56 01
++		05 05 02 57 23
++		05 05 02 58 45
++		05 05 02 59 67
++		05 05 02 5a 89
++		05 05 02 5b AB
++		05 05 02 5c CD
++		05 05 02 5d EF
++		05 05 02 5e 00
++		05 05 02 5f 08
++		05 05 02 60 08
++		05 05 02 61 06
++		05 05 02 62 06
++		05 05 02 63 01
++		05 05 02 64 01
++		05 05 02 65 00
++		05 05 02 66 00
++		05 05 02 67 02
++		05 05 02 68 15
++		05 05 02 69 15
++		05 05 02 6a 14
++		05 05 02 6b 14
++		05 05 02 6c 0D
++		05 05 02 6d 0D
++		05 05 02 6e 0C
++		05 05 02 6f 0C
++		05 05 02 70 0F
++		05 05 02 71 0F
++		05 05 02 72 0E
++		05 05 02 73 0E
++		05 05 02 74 02
++		05 05 02 75 08
++		05 05 02 76 08
++		05 05 02 77 06
++		05 05 02 78 06
++		05 05 02 79 01
++		05 05 02 7a 01
++		05 05 02 7b 00
++		05 05 02 7c 00
++		05 05 02 7d 02
++		05 05 02 7e 15
++		05 05 02 7f 15
++		05 05 02 80 14
++		05 05 02 81 14
++		05 05 02 82 0D
++		05 05 02 83 0D
++		05 05 02 84 0C
++		05 05 02 85 0C
++		05 05 02 86 0F
++		05 05 02 87 0F
++		05 05 02 88 0E
++		05 05 02 89 0E
++		05 05 02 8A 02
++		39 05 04 FF 98 81 04
++		05 05 02 6E 2B
++		05 05 02 6F 37
++		05 05 02 3A 24
++		05 05 02 8D 1A
++		05 05 02 87 BA
++		05 05 02 B2 D1
++		05 05 02 88 0B
++		05 05 02 38 01
++		05 05 02 39 00
++		05 05 02 B5 02
++		05 05 02 31 25
++		05 05 02 3B 98
++		39 05 04 FF 98 81 01
++		05 05 02 22 0A
++		05 05 02 31 00
++		05 05 02 53 3D
++		05 05 02 55 3D
++		05 05 02 50 B5
++		05 05 02 51 AD
++		05 05 02 60 06
++		05 05 02 62 20
++		05 05 02 A0 00
++		05 05 02 A1 21
++		05 05 02 A2 35
++		05 05 02 A3 19
++		05 05 02 A4 1E
++		05 05 02 A5 33
++		05 05 02 A6 27
++		05 05 02 A7 26
++		05 05 02 A8 AF
++		05 05 02 A9 1B
++		05 05 02 AA 27
++		05 05 02 AB 8D
++		05 05 02 AC 1A
++		05 05 02 AD 1B
++		05 05 02 AE 50
++		05 05 02 AF 26
++		05 05 02 B0 2B
++		05 05 02 B1 54
++		05 05 02 B2 5E
++		05 05 02 B3 23
++		05 05 02 C0 00
++		05 05 02 C1 21
++		05 05 02 C2 35
++		05 05 02 C3 19
++		05 05 02 C4 1E
++		05 05 02 C5 33
++		05 05 02 C6 27
++		05 05 02 C7 26
++		05 05 02 C8 AF
++		05 05 02 C9 1B
++		05 05 02 CA 27
++		05 05 02 CB 8D
++		05 05 02 CC 1A
++		05 05 02 CD 1B
++		05 05 02 CE 50
++		05 05 02 CF 26
++		05 05 02 D0 2B
++		05 05 02 D1 54
++		05 05 02 D2 5E
++		05 05 02 D3 23
++		39 05 04 FF 98 81 00
++		05 05 02 11 00
++		05 78 02 29 00
++		05 78 02 35 00
++	];
++};
++#endif
++
++#if defined(ATK_LCD_TYPE_HDMI_TX0)
++&hdmi0 {
++	status = "okay";
++};
++
++&hdmi0_in_vp0 {
++	status = "okay";
++};
++
++&route_hdmi0 {
++	status = "okay";
++	connect = <&vp0_out_hdmi0>;
++};
++
++&hdptxphy_hdmi0 {
++	status = "okay";
++};
++
++&hdmi0_sound {
++	status = "okay";
++};
++#endif
++
++
++#if defined(ATK_LCD_TYPE_DP_TX0)
++&dp0 {
++	status = "okay";
++};
++
++&dp0_in_vp0 {
++	status = "okay";
++};
++
++&dp0_in_vp1 {
++	status = "disabled";
++};
++
++&dp0_in_vp2 {
++	status = "disabled";
++};
++
++&route_dp0 {
++	status = "okay";
++	connect = <&vp0_out_dp0>;
++};
++
++&usbdp_phy0_dp {
++	status = "okay";
++};
++
++&dp0_sound {
++	status = "okay";
++};
++#endif
++
++
++&pinctrl {
++	lcd {
++		lcd0_rst_gpio: lcd0-rst-gpio {
++			rockchip,pins = <0 RK_PB2 RK_FUNC_GPIO &pcfg_pull_none>;
++		};
++
++		lcd1_rst_gpio: lcd1-rst-gpio {
++			rockchip,pins = <0 RK_PB0 RK_FUNC_GPIO &pcfg_pull_none>;
++		};
++	};
++
++	touch {
++		touch0_gpio: touch0-gpio {
++			rockchip,pins =
++				<1 RK_PA0 RK_FUNC_GPIO &pcfg_pull_down>,
++				<1 RK_PA1 RK_FUNC_GPIO &pcfg_pull_up>;
++		};
++
++		touch1_gpio: touch1-gpio {
++			rockchip,pins =
++				<1 RK_PC0 RK_FUNC_GPIO &pcfg_pull_down>,
++				<1 RK_PC1 RK_FUNC_GPIO &pcfg_pull_up>;
++		};
++	};
++};
+diff --git a/arch/arm64/boot/dts/rockchip/rk3588s-atk-quarkpi-ca2-mipi-10p1_800x1280.dts b/arch/arm64/boot/dts/rockchip/rk3588s-atk-quarkpi-ca2-mipi-10p1_800x1280.dts
+new file mode 100644
+index 000000000000..f24e6bf2af4b
+--- /dev/null
++++ b/arch/arm64/boot/dts/rockchip/rk3588s-atk-quarkpi-ca2-mipi-10p1_800x1280.dts
+@@ -0,0 +1,125 @@
++// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
++/*
++ * Copyright (c) 2021 Rockchip Electronics Co., Ltd.
++ *
++ */
++
++/dts-v1/;
++
++
++#define ATK_LCD_TYPE_MIPI_TX0_10P1_800X1280
++#define ATK_LCD_TYPE_MIPI_TX1_10P1_800X1280
++// #define DSI_CONNECTOR_MIRROR_MODE
++// #define DSI_CONNECTOR_SPLIE_MODE
++// #define ATK_LCD_TYPE_HDMI_TX0
++// #define ATK_LCD_TYPE_DP_TX0
++
++#include "rk3588s-atk-quarkpi-ca2.dtsi"
++#include "rk3588s-atk-camera.dtsi"
++#include "rk3588s-atk-lcds.dtsi"
++#include "rk3588-android.dtsi"
++
++/ {
++	model = "Rockchip RK3588 EVB7 LP4 V10 Board";
++	compatible = "rockchip,rk3588-evb7-lp4-v10", "rockchip,rk3588";
++
++#if defined(DSI_CONNECTOR_SPLIE_MODE)
++	vcc3v3_lcd_dsi1: vcc3v3-lcd-dsi1 {
++		compatible = "regulator-fixed";
++		regulator-name = "vcc3v3_lcd_dsi1";
++		gpio = <&gpio0 RK_PC7 GPIO_ACTIVE_HIGH>;
++		regulator-always-on;
++		enable-active-high;
++		regulator-boot-on;
++		vin-supply = <&vcc_3v3_s3>;
++	};
++#endif
++};
++
++
++#if defined(ATK_LCD_TYPE_DP_TX0)
++&vop {
++	assigned-clocks = <&cru ACLK_VOP>;
++	assigned-clock-rates = <800000000>;
++};
++#endif
++
++
++
++#if defined(DSI_CONNECTOR_MIRROR_MODE)
++&route_dsi0 {
++	status = "okay";
++	connect = <&vp2_out_dsi0>;
++};
++
++&route_dsi1 {
++	status = "okay";
++	connect = <&vp2_out_dsi1>;
++};
++&dsi0_in_vp2 {
++	status = "okay";
++};
++
++&dsi1_in_vp2 {
++	status = "okay";
++};
++
++&dsi0_in_vp3 {
++	status = "disabled";
++};
++
++&dsi1_in_vp3 {
++	status = "disabled";
++};
++#endif
++
++#if defined(DSI_CONNECTOR_SPLIE_MODE)
++&dsi0 {
++	rockchip,dual-channel = <&dsi1>;
++};
++
++
++&dsi0_panel {
++	dsi,lanes = <8>;
++	enable-gpios = <&gpio0 RK_PB0 GPIO_ACTIVE_HIGH>;
++};
++
++
++&route_dsi0 {
++	connect = <&vp2_out_dsi0>;
++};
++
++&dsi0_in_vp2 {
++	status = "okay";
++};
++
++&dsi0_in_vp3 {
++	status = "disabled";
++};
++
++&mipi0_10p1_800x1280_timing {
++	clock-frequency = <134000000>;
++	hactive = <1600>;
++	vactive = <1280>;
++	hfront-porch = <24>;
++	hsync-len = <48>;
++	hback-porch = <48>;
++};
++
++&route_dsi1 {
++	status = "disabled";
++};
++
++&dsi1_in_vp2 {
++	status = "disabled";
++};
++
++&dsi1_in_vp3 {
++	status = "disabled";
++};
++
++&dsi1_panel {
++	status = "disabled";
++};
++
++#endif
+\ No newline at end of file
+diff --git a/arch/arm64/boot/dts/rockchip/rk3588s-atk-quarkpi-ca2-mipi-5p5_1080x1920.dts b/arch/arm64/boot/dts/rockchip/rk3588s-atk-quarkpi-ca2-mipi-5p5_1080x1920.dts
+new file mode 100644
+index 000000000000..f2b7508a7171
+--- /dev/null
++++ b/arch/arm64/boot/dts/rockchip/rk3588s-atk-quarkpi-ca2-mipi-5p5_1080x1920.dts
+@@ -0,0 +1,124 @@
++// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
++/*
++ * Copyright (c) 2021 Rockchip Electronics Co., Ltd.
++ *
++ */
++
++/dts-v1/;
++
++#define ATK_LCD_TYPE_MIPI_TX0_5P5_1080X1920
++#define ATK_LCD_TYPE_MIPI_TX1_5P5_1080X1920
++// #define ATK_LCD_TYPE_DP_TX0
++// #define DSI_CONNECTOR_MIRROR_MODE
++// #define DSI_CONNECTOR_SPLIE_MODE
++// #define ATK_LCD_TYPE_HDMI_TX0
++
++
++#include "rk3588s-atk-quarkpi-ca2.dtsi"
++#include "rk3588s-atk-camera.dtsi"
++#include "rk3588s-atk-lcds.dtsi"
++#include "rk3588-android.dtsi"
++
++/ {
++	model = "Rockchip RK3588S EVB8 LP4X V10 Board";
++	compatible = "rockchip,rk3588s-evb8-lp4x-v10", "rockchip,rk3588";
++
++#if defined(DSI_CONNECTOR_SPLIE_MODE)
++	vcc3v3_lcd_dsi1: vcc3v3-lcd-dsi1 {
++		compatible = "regulator-fixed";
++		regulator-name = "vcc3v3_lcd_dsi1";
++		gpio = <&gpio0 RK_PC7 GPIO_ACTIVE_HIGH>;
++		regulator-always-on;
++		enable-active-high;
++		regulator-boot-on;
++		vin-supply = <&vcc_3v3_s3>;
++	};
++#endif
++};
++
++#if defined(ATK_LCD_TYPE_DP_TX0)
++&vop {
++	assigned-clocks = <&cru ACLK_VOP>;
++	assigned-clock-rates = <800000000>;
++};
++#endif
++
++
++
++#if defined(DSI_CONNECTOR_MIRROR_MODE)
++&route_dsi0 {
++	status = "okay";
++	connect = <&vp2_out_dsi0>;
++};
++
++&route_dsi1 {
++	status = "okay";
++	connect = <&vp2_out_dsi1>;
++};
++&dsi0_in_vp2 {
++	status = "okay";
++};
++
++&dsi1_in_vp2 {
++	status = "okay";
++};
++
++&dsi0_in_vp3 {
++	status = "disabled";
++};
++
++&dsi1_in_vp3 {
++	status = "disabled";
++};
++#endif
++
++#if defined(DSI_CONNECTOR_SPLIE_MODE)
++&dsi0 {
++	rockchip,dual-channel = <&dsi1>;
++};
++
++
++&dsi0_panel {
++	dsi,lanes = <8>;
++	enable-gpios = <&gpio0 RK_PB0 GPIO_ACTIVE_HIGH>;
++};
++
++
++&route_dsi0 {
++	connect = <&vp2_out_dsi0>;
++};
++
++&dsi0_in_vp2 {
++	status = "okay";
++};
++
++&dsi0_in_vp3 {
++	status = "disabled";
++};
++
++&mipi0_5p5_1080x1920_timing {
++	clock-frequency = <238000000>;
++	hactive = <2160>;
++	vactive = <1920>;
++	hfront-porch = <20>;
++	hsync-len = <12>;
++	hback-porch = <64>;
++};
++
++&route_dsi1 {
++	status = "disabled";
++};
++
++&dsi1_in_vp2 {
++	status = "disabled";
++};
++
++&dsi1_in_vp3 {
++	status = "disabled";
++};
++
++&dsi1_panel {
++	status = "disabled";
++};
++
++#endif
+\ No newline at end of file
+diff --git a/arch/arm64/boot/dts/rockchip/rk3588s-atk-quarkpi-ca2-mipi-5p5_720x1280.dts b/arch/arm64/boot/dts/rockchip/rk3588s-atk-quarkpi-ca2-mipi-5p5_720x1280.dts
+new file mode 100644
+index 000000000000..8c6938131413
+--- /dev/null
++++ b/arch/arm64/boot/dts/rockchip/rk3588s-atk-quarkpi-ca2-mipi-5p5_720x1280.dts
+@@ -0,0 +1,125 @@
++// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
++/*
++ * Copyright (c) 2021 Rockchip Electronics Co., Ltd.
++ *
++ */
++
++/dts-v1/;
++
++#define ATK_LCD_TYPE_MIPI_TX0_5P5_720X1280
++#define ATK_LCD_TYPE_MIPI_TX1_5P5_720X1280
++// #define DSI_CONNECTOR_MIRROR_MODE
++// #define DSI_CONNECTOR_SPLIE_MODE
++// #define ATK_LCD_TYPE_HDMI_TX0
++// #define ATK_LCD_TYPE_DP_TX0
++
++
++#include "rk3588s-atk-quarkpi-ca2.dtsi"
++#include "rk3588s-atk-camera.dtsi"
++#include "rk3588s-atk-lcds.dtsi"
++#include "rk3588-android.dtsi"
++
++/ {
++	model = "Rockchip RK3588S EVB8 LP4X V10 Board";
++	compatible = "rockchip,rk3588s-evb8-lp4x-v10", "rockchip,rk3588";
++
++#if defined(DSI_CONNECTOR_SPLIE_MODE)
++	vcc3v3_lcd_dsi1: vcc3v3-lcd-dsi1 {
++		compatible = "regulator-fixed";
++		regulator-name = "vcc3v3_lcd_dsi1";
++		gpio = <&gpio0 RK_PC7 GPIO_ACTIVE_HIGH>;
++		regulator-always-on;
++		enable-active-high;
++		regulator-boot-on;
++		vin-supply = <&vcc_3v3_s3>;
++	};
++#endif
++};
++
++
++#if defined(ATK_LCD_TYPE_DP_TX0)
++&vop {
++	assigned-clocks = <&cru ACLK_VOP>;
++	assigned-clock-rates = <800000000>;
++};
++#endif
++
++
++
++#if defined(DSI_CONNECTOR_MIRROR_MODE)
++&route_dsi0 {
++	status = "okay";
++	connect = <&vp2_out_dsi0>;
++};
++
++&route_dsi1 {
++	status = "okay";
++	connect = <&vp2_out_dsi1>;
++};
++&dsi0_in_vp2 {
++	status = "okay";
++};
++
++&dsi1_in_vp2 {
++	status = "okay";
++};
++
++&dsi0_in_vp3 {
++	status = "disabled";
++};
++
++&dsi1_in_vp3 {
++	status = "disabled";
++};
++#endif
++
++#if defined(DSI_CONNECTOR_SPLIE_MODE)
++&dsi0 {
++	rockchip,dual-channel = <&dsi1>;
++};
++
++
++&dsi0_panel {
++	dsi,lanes = <8>;
++	enable-gpios = <&gpio0 RK_PB0 GPIO_ACTIVE_HIGH>;
++};
++
++
++&route_dsi0 {
++	connect = <&vp2_out_dsi0>;
++};
++
++&dsi0_in_vp2 {
++	status = "okay";
++};
++
++&dsi0_in_vp3 {
++	status = "disabled";
++};
++
++&mipi0_5p5_720x1280_timing {
++	clock-frequency = <130000000>;
++	hactive = <1440>;
++	vactive = <1280>;
++	hfront-porch = <96>;
++	hsync-len = <16>;
++	hback-porch = <104>;
++};
++
++&route_dsi1 {
++	status = "disabled";
++};
++
++&dsi1_in_vp2 {
++	status = "disabled";
++};
++
++&dsi1_in_vp3 {
++	status = "disabled";
++};
++
++&dsi1_panel {
++	status = "disabled";
++};
++
++#endif
+\ No newline at end of file
+diff --git a/arch/arm64/boot/dts/rockchip/rk3588s-atk-quarkpi-ca2-non-mipi.dts b/arch/arm64/boot/dts/rockchip/rk3588s-atk-quarkpi-ca2-non-mipi.dts
+new file mode 100644
+index 000000000000..549551426b2d
+--- /dev/null
++++ b/arch/arm64/boot/dts/rockchip/rk3588s-atk-quarkpi-ca2-non-mipi.dts
+@@ -0,0 +1,29 @@
++// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
++/*
++ * Copyright (c) 2021 Rockchip Electronics Co., Ltd.
++ *
++ */
++
++/dts-v1/;
++
++#define ATK_LCD_TYPE_HDMI_TX0
++#define ATK_LCD_TYPE_DP_TX0
++// #define DP_CONNECTOR_MIRROR_MODE
++// #define ATK_LCD_TYPE_MIPI_TX1_5P5_720X1280
++// #define ATK_LCD_TYPE_MIPI_TX1_5P5_1080X1920
++// #define ATK_LCD_TYPE_MIPI_TX1_10P1_800X1280
++
++#include "rk3588s-atk-quarkpi-ca2.dtsi"
++#include "rk3588s-atk-camera.dtsi"
++#include "rk3588s-atk-lcds.dtsi"
++#include "rk3588-android.dtsi"
++
++/ {
++	model = "Rockchip RK3588S EVB8 LP4X V10 Board";
++	compatible = "rockchip,rk3588s-evb8-lp4x-v10", "rockchip,rk3588";
++};
++
++&vop {
++	assigned-clocks = <&cru ACLK_VOP>;
++	assigned-clock-rates = <800000000>;
++};
+diff --git a/arch/arm64/boot/dts/rockchip/rk3588s-atk-quarkpi-ca2.dts b/arch/arm64/boot/dts/rockchip/rk3588s-atk-quarkpi-ca2.dts
+new file mode 100644
+index 000000000000..299344ae9204
+--- /dev/null
++++ b/arch/arm64/boot/dts/rockchip/rk3588s-atk-quarkpi-ca2.dts
+@@ -0,0 +1,19 @@
++// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
++/*
++ * Copyright (c) 2021 Rockchip Electronics Co., Ltd.
++ *
++ */
++
++/dts-v1/;
++
++#include "rk3588s-atk-quarkpi-ca2.dtsi"
++#include "rk3588s-atk-camera.dtsi"
++#include "rk3588s-atk-screen_choose.dtsi"
++#include "rk3588s-atk-lcds.dtsi"
++#include "rk3588-android.dtsi"
++
++/ {
++	model = "Rockchip RK3588S EVB8 LP4X V10 Board";
++	compatible = "rockchip,rk3588s-evb8-lp4x-v10", "rockchip,rk3588";
++};
++
+diff --git a/arch/arm64/boot/dts/rockchip/rk3588s-atk-quarkpi-ca2.dtsi b/arch/arm64/boot/dts/rockchip/rk3588s-atk-quarkpi-ca2.dtsi
+new file mode 100644
+index 000000000000..eddc83a39ede
+--- /dev/null
++++ b/arch/arm64/boot/dts/rockchip/rk3588s-atk-quarkpi-ca2.dtsi
+@@ -0,0 +1,655 @@
++// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
++/*
++ * Copyright (c) 2021 Rockchip Electronics Co., Ltd.
++ *
++ */
++
++#include "dt-bindings/usb/pd.h"
++#include "rk3588s.dtsi"
++#include "rk3588s-evb.dtsi"
++#include "rk3588-rk806-single.dtsi"
++
++
++/ {
++
++	leds: leds {
++		compatible = "gpio-leds";
++		work_led: work {
++			linux,default-trigger = "heartbeat";
++		};
++	};
++
++	combophy_avdd0v85: combophy-avdd0v85 {
++		compatible = "regulator-fixed";
++		regulator-name = "combophy_avdd0v85";
++		regulator-boot-on;
++		regulator-always-on;
++		regulator-min-microvolt = <850000>;
++		regulator-max-microvolt = <850000>;
++		vin-supply = <&vdd_0v85_s0>;
++	};
++
++	combophy_avdd1v8: combophy-avdd1v8 {
++		compatible = "regulator-fixed";
++		regulator-name = "combophy_avdd1v8";
++		regulator-boot-on;
++		regulator-always-on;
++		regulator-min-microvolt = <1800000>;
++		regulator-max-microvolt = <1800000>;
++		vin-supply = <&avcc_1v8_s0>;
++	};
++
++	fan: pwm-fan {
++		compatible = "pwm-fan";
++		#cooling-cells = <2>;
++		pwms = <&pwm7 0 50000 0>;
++		cooling-levels = <0 50 100 150 200 255>;
++		rockchip,temp-trips = <
++			50000	1
++			55000	2
++			60000	3
++			65000	4
++			70000	5
++		>;
++	};
++
++	es8388_sound: es8388-sound {
++		status = "okay";
++		compatible = "rockchip,multicodecs-card";
++		rockchip,card-name = "rockchip-es8388";
++		hp-det-gpio = <&gpio1 RK_PC4 GPIO_ACTIVE_HIGH>;
++		// hp-det-gpio = <&gpio1 RK_PC4 GPIO_ACTIVE_LOW>;
++		io-channels = <&saradc 3>;
++		io-channel-names = "adc-detect";
++		keyup-threshold-microvolt = <1800000>;
++		poll-interval = <100>;
++		// spk-con-gpio = <&gpio4 RK_PB0 GPIO_ACTIVE_HIGH>;
++		hp-con-gpio = <&gpio1 RK_PC6 GPIO_ACTIVE_HIGH>;
++		rockchip,format = "i2s";
++		rockchip,mclk-fs = <256>;
++		rockchip,cpu = <&i2s0_8ch>;
++		rockchip,codec = <&es8388>;
++		rockchip,audio-routing =
++			"Headphone", "LOUT1",
++			"Headphone", "ROUT1",
++			"Speaker", "LOUT2",
++			"Speaker", "ROUT2",
++			"Headphone", "Headphone Power",
++			"Headphone", "Headphone Power",
++			"Speaker", "Speaker Power",
++			"Speaker", "Speaker Power",
++			"LINPUT1", "Main Mic",
++			"LINPUT2", "Main Mic",
++			"RINPUT1", "Headset Mic",
++			"RINPUT2", "Headset Mic";
++		pinctrl-names = "default";
++		pinctrl-0 = <&hp_det>;
++		play-pause-key {
++			label = "playpause";
++			linux,code = <KEY_PLAYPAUSE>;
++			press-threshold-microvolt = <2000>;
++		};
++	};
++
++	vbus5v0_typec: vbus5v0-typec {
++		compatible = "regulator-fixed";
++		regulator-name = "vbus5v0_typec";
++		regulator-min-microvolt = <5000000>;
++		regulator-max-microvolt = <5000000>;
++		// 新物料
++		//enable-active-low;
++		// 旧物料
++		enable-active-high;
++		// 旧物料
++		gpio = <&gpio1 RK_PD5 GPIO_ACTIVE_HIGH>;
++		// 新物料
++		// gpio = <&gpio1 RK_PA4 GPIO_ACTIVE_LOW>;
++		vin-supply = <&vcc5v0_usb>;
++		pinctrl-names = "default";
++		pinctrl-0 = <&typec5v_pwren>;
++	};
++
++	vcc_1v1_nldo_s3: vcc-1v1-nldo-s3 {
++		compatible = "regulator-fixed";
++		regulator-name = "vcc_1v1_nldo_s3";
++		regulator-always-on;
++		regulator-boot-on;
++		regulator-min-microvolt = <1100000>;
++		regulator-max-microvolt = <1100000>;
++		vin-supply = <&vcc5v0_sys>;
++	};
++
++	vcc3v3_lcd_edp: vcc3v3-lcd-edp {
++		compatible = "regulator-fixed";
++		regulator-name = "vcc3v3_lcd_edp";
++		gpio = <&gpio1 RK_PA5 GPIO_ACTIVE_HIGH>;
++		enable-active-high;
++		regulator-boot-on;
++		vin-supply = <&vcc_3v3_s3>;
++	};
++
++	// vcc3v3_pcie20: vcc3v3-pcie20 {
++	// 	compatible = "regulator-fixed";
++	// 	regulator-name = "vcc3v3_pcie20";
++	// 	regulator-min-microvolt = <3300000>;
++	// 	regulator-max-microvolt = <3300000>;
++	// 	enable-active-high;
++	// 	gpios = <&gpio4 RK_PB1 GPIO_ACTIVE_HIGH>;
++	// 	startup-delay-us = <5000>;
++	// 	vin-supply = <&vcc12v_dcin>;
++	// };
++
++	vcc_3v3_sd_s0: vcc-3v3-sd-s0-regulator {
++		compatible = "regulator-fixed";
++		gpio = <&gpio0 RK_PA0 GPIO_ACTIVE_HIGH>;
++		pinctrl-names = "default";
++		pinctrl-0 = <&sd_s0_pwr>;
++		regulator-name = "vcc_3v3_sd_s0";
++		enable-active-high;
++	};
++
++	wireless_bluetooth: wireless-bluetooth {
++		compatible = "bluetooth-platdata";
++		status = "okay";
++	};
++
++	// wireless_wlan: wireless-wlan {
++	// 	compatible = "wlan-platdata";
++	// 	wifi_chip_type = "rtl8733bu";
++	// 	status = "okay";
++	// 	pinctrl-names = "default";
++	// 	pinctrl-0 = <&pcie_wifi_gpio>;
++	// };
++
++	// vcc5v0_host: vcc5v0-host {
++	// 	compatible = "regulator-fixed";
++	// 	regulator-name = "vcc5v0_host";
++	// 	regulator-boot-on;
++	// 	regulator-always-on;
++	// 	regulator-min-microvolt = <5000000>;
++	// 	regulator-max-microvolt = <5000000>;
++	// 	enable-active-high;
++	// 	gpio = <&gpio1 RK_PB1 GPIO_ACTIVE_HIGH>;
++	// 	vin-supply = <&vcc5v0_usb>;
++	// 	pinctrl-names = "default";
++	// 	pinctrl-0 = <&vcc5v0_host_en>;
++	// };
++};
++
++
++&combphy0_ps {
++	status = "okay";
++};
++
++&combphy2_psu {
++	status = "okay";
++};
++
++
++&pwm1 {
++	status = "disabled";
++};
++
++
++&pwm5 {
++	status = "okay";
++	pinctrl-0 = <&pwm5m1_pins>;
++};
++
++&pwm6 {
++	pinctrl-names = "active";
++	pinctrl-0 = <&pwm6m0_pins>;
++	// pinctrl-0 = <&pwm6m0_pins_down>;
++	status = "okay";
++};
++
++&pwm14 {
++	pinctrl-0 = <&pwm14m1_pins>;
++	status = "okay";
++};
++
++&hdptxphy0 {
++	/* Single Vdiff Training Table for power reduction (optional) */
++	training-table = /bits/ 8 <
++		/* voltage swing 0, pre-emphasis 0->3 */
++		0x0d 0x00 0x00 0x00 0x00 0x00
++		0x0d 0x00 0x00 0x00 0x00 0x00
++		0x0d 0x00 0x00 0x00 0x00 0x00
++		0x0d 0x00 0x00 0x00 0x00 0x00
++		/* voltage swing 1, pre-emphasis 0->2 */
++		0x0d 0x00 0x00 0x00 0x00 0x00
++		0x0d 0x00 0x00 0x00 0x00 0x00
++		0x0d 0x00 0x00 0x00 0x00 0x00
++		/* voltage swing 2, pre-emphasis 0->1 */
++		0x0d 0x00 0x00 0x00 0x00 0x00
++		0x0d 0x00 0x00 0x00 0x00 0x00
++		/* voltage swing 3, pre-emphasis 0 */
++		0x0d 0x00 0x00 0x00 0x00 0x00
++	>;
++	status = "disabled";
++};
++
++&gmac1 {
++	/* Use rgmii-rxid mode to disable rx delay inside Soc */
++	phy-mode = "rgmii-rxid";
++	clock_in_out = "output";
++
++	snps,reset-gpio = <&gpio0 RK_PD5 GPIO_ACTIVE_LOW>;
++	snps,reset-active-low;
++	/* Reset time is 20ms, 100ms for rtl8211f */
++	snps,reset-delays-us = <0 20000 100000>;
++
++	pinctrl-names = "default";
++	pinctrl-0 = <&gmac1_miim
++		     &gmac1_tx_bus2
++		     &gmac1_rx_bus2
++		     &gmac1_rgmii_clk
++		     &gmac1_rgmii_bus>;
++
++	tx_delay = <0x43>;
++	/* rx_delay = <0x3f>; */
++
++	phy-handle = <&rgmii_phy1>;
++	status = "okay";
++};
++
++&mdio1 {
++	rgmii_phy1: phy@1 {
++		compatible = "ethernet-phy-ieee802.3-c22";
++		reg = <0x1>;
++	};
++};
++
++&i2s5_8ch {
++	status = "okay";
++};
++
++&i2c0 {
++	status = "okay";
++	pinctrl-names = "default";
++	pinctrl-0 = <&i2c0m2_xfer>;
++
++	vdd_cpu_big0_s0: vdd_cpu_big0_mem_s0: rk8602@42 {
++		compatible = "rockchip,rk8602";
++		reg = <0x42>;
++		vin-supply = <&vcc5v0_sys>;
++		regulator-compatible = "rk860x-reg";
++		regulator-name = "vdd_cpu_big0_s0";
++		regulator-min-microvolt = <550000>;
++		regulator-max-microvolt = <1050000>;
++		regulator-ramp-delay = <2300>;
++		rockchip,suspend-voltage-selector = <1>;
++		regulator-boot-on;
++		regulator-always-on;
++		regulator-state-mem {
++			regulator-off-in-suspend;
++		};
++	};
++
++	vdd_cpu_big1_s0: vdd_cpu_big1_mem_s0: rk8603@43 {
++		compatible = "rockchip,rk8603";
++		reg = <0x43>;
++		vin-supply = <&vcc5v0_sys>;
++		regulator-compatible = "rk860x-reg";
++		regulator-name = "vdd_cpu_big1_s0";
++		regulator-min-microvolt = <550000>;
++		regulator-max-microvolt = <1050000>;
++		regulator-ramp-delay = <2300>;
++		rockchip,suspend-voltage-selector = <1>;
++		regulator-boot-on;
++		regulator-always-on;
++		regulator-state-mem {
++			regulator-off-in-suspend;
++		};
++	};
++};
++
++&i2c1 {
++	status = "okay";
++	pinctrl-names = "default";
++	pinctrl-0 = <&i2c1m4_xfer>;
++
++	es8388: es8388@11 {
++		status = "okay";
++		#sound-dai-cells = <0>;
++		compatible = "everest,es8388", "everest,es8323";
++		reg = <0x11>;
++		clocks = <&mclkout_i2s0>;
++		clock-names = "mclk";
++		assigned-clocks = <&mclkout_i2s0>;
++		assigned-clock-rates = <12288000>;
++		pinctrl-names = "default";
++		pinctrl-0 = <&i2s0_mclk>;
++	};
++
++
++};
++
++&i2c2 {
++	status = "okay";
++	pinctrl-0 = <&i2c2m0_xfer>;
++	
++	vdd_npu_s0: vdd_npu_mem_s0: rk8602@42 {
++		compatible = "rockchip,rk8602";
++		reg = <0x42>;
++		vin-supply = <&vcc5v0_sys>;
++		regulator-compatible = "rk860x-reg";
++		regulator-name = "vdd_npu_s0";
++		regulator-min-microvolt = <550000>;
++		regulator-max-microvolt = <950000>;
++		regulator-ramp-delay = <2300>;
++		rockchip,suspend-voltage-selector = <1>;
++		regulator-boot-on;
++		regulator-always-on;
++		regulator-state-mem {
++			regulator-off-in-suspend;
++		};
++	};
++
++	usbc0: husb311@4e {
++		compatible = "hynetek,husb311";
++		reg = <0x4e>;
++		interrupt-parent = <&gpio1>;
++		interrupts = <RK_PA4 IRQ_TYPE_LEVEL_LOW>;
++		pinctrl-names = "default";
++		pinctrl-0 = <&usbc0_int>;
++		vbus-supply = <&vbus5v0_typec>;
++		status = "okay";
++
++		ports {
++			#address-cells = <1>;
++			#size-cells = <0>;
++
++			port@0 {
++				reg = <0>;
++				usbc0_role_sw: endpoint@0 {
++					remote-endpoint = <&dwc3_0_role_switch>;
++				};
++			};
++		};
++
++		usb_con: connector {
++			compatible = "usb-c-connector";
++			label = "USB-C";
++			data-role = "dual";
++			power-role = "dual";
++			try-power-role = "sink";
++			op-sink-microwatt = <1000000>;
++			sink-pdos =
++				<PDO_FIXED(5000, 1000, PDO_FIXED_USB_COMM)>;
++			source-pdos =
++				<PDO_FIXED(5000, 3000, PDO_FIXED_USB_COMM)>;
++
++			altmodes {
++				#address-cells = <1>;
++				#size-cells = <0>;
++
++				altmode@0 {
++					reg = <0>;
++					svid = <0xff01>;
++					vdo = <0xffffffff>;
++				};
++			};
++
++			ports {
++				#address-cells = <1>;
++				#size-cells = <0>;
++
++				port@0 {
++					reg = <0>;
++					usbc0_orien_sw: endpoint {
++						remote-endpoint = <&usbdp_phy0_orientation_switch>;
++					};
++				};
++
++				port@1 {
++					reg = <1>;
++					dp_altmode_mux: endpoint {
++						remote-endpoint = <&usbdp_phy0_dp_altmode_mux>;
++					};
++				};
++			};
++		};
++	};
++};
++
++&i2c3 {
++	pinctrl-0 = <&i2c3m1_xfer>;
++	status = "okay";
++};
++
++&i2c4 {
++	status = "okay";
++	pinctrl-0 = <&i2c4m3_xfer>;
++};
++
++
++&i2c5 {
++	status = "okay";
++	pinctrl-0 = <&i2c5m0_xfer>;
++};
++
++&i2c6 {
++	status = "disabled";
++
++
++};
++
++&usbdp_phy0_u3 {
++	status = "okay";
++};
++
++&u2phy0_otg {
++	rockchip,typec-vbus-det;
++};
++
++&u2phy2_host {
++	phy-supply = <&vcc5v0_usb>;
++};
++
++&u2phy3_host {
++	phy-supply = <&vcc5v0_usb>;
++};
++
++&usbdp_phy0 {
++	orientation-switch;
++	svid = <0xff01>;
++	sbu1-dc-gpios = <&gpio1 RK_PA6 GPIO_ACTIVE_HIGH>;
++	sbu2-dc-gpios = <&gpio1 RK_PA7 GPIO_ACTIVE_HIGH>;
++
++	port {
++		#address-cells = <1>;
++		#size-cells = <0>;
++		usbdp_phy0_orientation_switch: endpoint@0 {
++			reg = <0>;
++			remote-endpoint = <&usbc0_orien_sw>;
++		};
++
++		usbdp_phy0_dp_altmode_mux: endpoint@1 {
++			reg = <1>;
++			remote-endpoint = <&dp_altmode_mux>;
++		};
++	};
++};
++
++&usbdrd_dwc3_0 {
++	dr_mode = "otg";
++	usb-role-switch;
++	port {
++		#address-cells = <1>;
++		#size-cells = <0>;
++		dwc3_0_role_switch: endpoint@0 {
++			reg = <0>;
++			remote-endpoint = <&usbc0_role_sw>;
++		};
++	};
++};
++
++&i2c7 {
++	status = "okay";
++	pinctrl-0 = <&i2c7m0_xfer>;
++
++};
++
++
++&sata0 {
++	status = "disabled"; /* sata0与pcie2x1l2复用了combphy0_ps, 需确保禁用 */
++};
++
++&pcie2x1l2 {
++	reset-gpios = <&gpio3 RK_PB2 GPIO_ACTIVE_HIGH>;
++	// vpcie3v3-supply = <&vcc3v3_pcie20>;
++	status = "okay";
++};
++
++
++&pinctrl {
++	headphone {
++		hp_det: hp-det {
++			rockchip,pins = <1 RK_PC4 RK_FUNC_GPIO &pcfg_pull_none>,
++							<1 RK_PC6 RK_FUNC_GPIO &pcfg_pull_down>;
++		};
++	};
++
++	sdmmc {
++		sd_s0_pwr: sd-s0-pwr {
++			rockchip,pins = <0 RK_PA0 RK_FUNC_GPIO &pcfg_pull_up>;
++		};
++	};
++
++	usb-typec {
++		usbc0_int: usbc0-int {
++			rockchip,pins = <1 RK_PA4 RK_FUNC_GPIO &pcfg_pull_up>;
++		};
++
++		typec5v_pwren: typec5v-pwren {
++			// 新物料
++			// rockchip,pins = <1 RK_PA4 RK_FUNC_GPIO &pcfg_pull_up>;
++			// 旧物料
++			rockchip,pins = <1 RK_PD5 RK_FUNC_GPIO &pcfg_pull_none>;
++		};
++	};
++
++	leds {
++		work_leds_gpio: work-leds-gpio {
++			rockchip,pins = <1 RK_PD7 RK_FUNC_GPIO &pcfg_pull_down>;
++		};
++	};
++
++	pwm6_down {
++		pwm6m0_pins_down: pwm6m0_pins_down {
++			rockchip,pins = <0 RK_PC7 11 &pcfg_pull_down>;
++		};
++	};
++};
++
++&pwm3 {
++	pinctrl-names = "default";
++	pinctrl-0 = <&pwm3m0_pins>;
++	compatible = "rockchip,remotectl-pwm";
++	remote_pwm_id = <3>;
++	handle_cpu_id = <1>;
++	remote_support_psci = <0>;
++	status = "okay";
++
++
++	ir_key1 {
++		/* 正点原子红外遥控器按键定义: 一共 20 个按键 */
++		rockchip,usercode = <0xFF00>;
++		rockchip,key_table =
++			<0xba KEY_POWER>,
++			<0xb9 KEY_UP>,
++			<0xb8 KEY_HOME>,
++			<0xbb KEY_REWIND>,
++			<0xbf KEY_PLAYPAUSE>,
++			<0xbc KEY_FASTFORWARD>,
++			<0xf8 KEY_VOLUMEDOWN>,
++			<0xea KEY_DOWN>,
++			<0xf6 KEY_VOLUMEUP>,
++			<0xe9 KEY_1>,
++			<0xe6 KEY_2>,
++			<0xf2 KEY_3>,
++			<0xf3 KEY_4>,
++			<0xe7 KEY_5>,
++			<0xa1 KEY_6>,
++			<0xf7 KEY_7>,
++			<0xe3 KEY_8>,
++			<0xa5 KEY_9>,
++			<0xbd KEY_0>,
++			<0xb5 KEY_BACKSPACE>;
++	};
++};
++
++&pwm7 {
++	status = "okay";
++};
++
++&pwm11 {
++	pinctrl-0 = <&pwm11m1_pins>;
++	status = "disbaled";
++};
++
++&pwm12 {
++	pinctrl-0 = <&pwm12m1_pins>;
++	status = "okay";
++};
++
++
++&sdmmc {
++	status = "okay";
++	vmmc-supply = <&vcc_3v3_sd_s0>;
++};
++
++&spdif_tx1 {
++	status = "disabled";
++	pinctrl-names = "default";
++	pinctrl-0 = <&spdif1m1_tx>;
++};
++
++&spdif_tx1_dc {
++	status = "okay";
++};
++
++&spdif_tx1_sound {
++	status = "okay";
++};
++
++&spdif_tx2 {
++	status = "okay";
++};
++
++
++
++
++&work_led {
++	gpios = <&gpio1 RK_PD7 GPIO_ACTIVE_LOW>;
++	pinctrl-names = "default";
++	pinctrl-0 = <&work_leds_gpio>;
++};
++
++
++//此为MIPI DCPHY(MIPI D/C Combo PHY)
++//RK3588支持两个MIPI DCPHY, 每个DCPHY硬件上支持RX/TX同时使用
++//MIPI CSI摄像头使用RX, MIPI DSI显示屏使用TX
++//
++&mipi_dcphy0 {
++	status = "okay";
++};
++
++
++&mipi_dcphy1 {
++	status = "okay";
++};
++
++
++&vp2 {
++	assigned-clocks = <&cru DCLK_VOP2_SRC>;
++	assigned-clock-parents = <&cru PLL_GPLL>;
++};
++
++&vp3 {
++	assigned-clocks = <&cru DCLK_VOP3>;
++	assigned-clock-parents = <&cru PLL_V0PLL>;
++};
++
++
+diff --git a/arch/arm64/boot/dts/rockchip/rk3588s-atk-screen_choose.dtsi b/arch/arm64/boot/dts/rockchip/rk3588s-atk-screen_choose.dtsi
+new file mode 100644
+index 000000000000..51d39aa076a6
+--- /dev/null
++++ b/arch/arm64/boot/dts/rockchip/rk3588s-atk-screen_choose.dtsi
+@@ -0,0 +1,37 @@
++/*
++ * RK3588平台支持4路独立的Video Port，可实现4路独立的显示输出
++ * 显示通路默认配置情况如下：
++ * -----------------------------------------
++ * |  VP0 -----------------> HDMI_TX0      |
++ * |  VP1 -----------------> DP_TX0        |
++ * |  VP2 -----------------> DSI_TX0       |
++ * |  VP3 -----------------> DSI_TX1       |
++ * -----------------------------------------
++ * 如需修改显示通路，配置本文件即可！
++ *
++ *
++ * 通过宏定义使能相应的显示接口：
++ * ATK_LCD_TYPE_MIPI_TX0_5P5_720X1280：使能DSI_TX0、支持正点原子5.5寸720x1280 MIPI屏
++ * ATK_LCD_TYPE_MIPI_TX0_5P5_1080X1920：使能DSI_TX0、支持正点原子5.5寸1080x1920 MIPI屏
++ * ATK_LCD_TYPE_MIPI_TX0_10P1_800X1280：使能DSI_TX0、支持正点原子10.1寸800x1280 MIPI屏
++ * ATK_LCD_TYPE_HDMI_TX0：使能HDMI_TX0
++ * ATK_LCD_TYPE_DP_TX0：使能DP_TX0
++ *
++ * DSI_CONNECTOR_MIRROR_MODE：使能DSI_TX0的前提下，定义该宏将使能DSI_TX1、并与DSI_TX0来自于同一路VP(VP3)，
++ *                            VP3同时驱动DSI_TX0和DSI_TX1，输出相同的时序并显示相同的内容，也就是镜像模式
++ *                            所以DSI_TX0和DSI_TX1接口需要连接时序参数相同的MIPI屏。
++ * DP_CONNECTOR_MIRROR_MODE：使能DP_TX0的前提下，定义该宏将使能DP_TX1、并与DP_TX0来自于同一路VP(VP2)，
++ *                           VP2同时驱动DP_TX0和DP_TX1，输出相同的时序并显示相同的内容(镜像模式)。
++ */
++
++// #define ATK_LCD_TYPE_MIPI_TX0_5P5_720X1280
++// #define ATK_LCD_TYPE_MIPI_TX1_5P5_720x1280
++#define ATK_LCD_TYPE_MIPI_TX0_5P5_1080X1920
++#define ATK_LCD_TYPE_MIPI_TX1_5P5_1080X1920
++// #define ATK_LCD_TYPE_MIPI_TX0_10P1_800X1280
++// #define ATK_LCD_TYPE_MIPI_TX1_10P1_800x1280
++#define ATK_LCD_TYPE_HDMI_TX0
++#define ATK_LCD_TYPE_DP_TX0
++// #define DSI_CONNECTOR_MIRROR_MODE
++// #define DP_CONNECTOR_MIRROR_MODE
++
+-- 
+2.53.0
+
