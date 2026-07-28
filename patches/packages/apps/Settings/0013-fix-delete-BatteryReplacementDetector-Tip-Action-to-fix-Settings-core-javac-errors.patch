@@ -1,0 +1,200 @@
+From 80f3326d8d4e69051aae8dd10ccc8d31e25afc52 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Tue, 21 Jul 2026 22:14:50 +0800
+Subject: [PATCH] fix: delete BatteryReplacementDetector/Tip/Action to fix
+ Settings-core javac errors
+
+Change-Id: Ie48517addfa7fd72c67f55f022986ce80f69bd5b
+---
+ .../actions/BatteryReplacementAction.java     | 50 -------------
+ .../detectors/BatteryReplacementDetector.java | 38 ----------
+ .../tips/BatteryReplacementTip.java           | 75 -------------------
+ 3 files changed, 163 deletions(-)
+ delete mode 100644 src/com/android/settings/fuelgauge/batterytip/actions/BatteryReplacementAction.java
+ delete mode 100644 src/com/android/settings/fuelgauge/batterytip/detectors/BatteryReplacementDetector.java
+ delete mode 100644 src/com/android/settings/fuelgauge/batterytip/tips/BatteryReplacementTip.java
+
+diff --git a/src/com/android/settings/fuelgauge/batterytip/actions/BatteryReplacementAction.java b/src/com/android/settings/fuelgauge/batterytip/actions/BatteryReplacementAction.java
+deleted file mode 100644
+index 36aa79b17e..0000000000
+--- a/src/com/android/settings/fuelgauge/batterytip/actions/BatteryReplacementAction.java
++++ /dev/null
+@@ -1,50 +0,0 @@
+-/*
+- * Copyright (C) 2018 The Android Open Source Project
+- *
+- * Licensed under the Apache License, Version 2.0 (the "License");
+- * you may not use this file except in compliance with the License.
+- * You may obtain a copy of the License at
+- *
+- *      http://www.apache.org/licenses/LICENSE-2.0
+- *
+- * Unless required by applicable law or agreed to in writing, software
+- * distributed under the License is distributed on an "AS IS" BASIS,
+- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+- * See the License for the specific language governing permissions and
+- * limitations under the License.
+- */
+-
+-package com.android.settings.fuelgauge.batterytip.actions;
+-
+-import android.content.Context;
+-import android.content.Intent;
+-import android.util.Log;
+-
+-import com.android.settings.R;
+-import com.android.settingslib.HelpUtils;
+-
+-/**
+- * Action to know details about battery replacement tip.
+- */
+-public class BatteryReplacementAction extends BatteryTipAction {
+-    private static final String TAG = "BatteryReplacementAction";
+-
+-    public BatteryReplacementAction(Context context) {
+-        super(context);
+-    }
+-
+-    @Override
+-    public void handlePositiveAction(int metricsKey) {
+-        final Intent helpIntent = HelpUtils.getHelpIntent(mContext,
+-                mContext.getString(R.string.help_url_battery_replacement), /* backupContext */ "");
+-        if (helpIntent == null) {
+-            return;
+-        }
+-
+-        try {
+-            mContext.startActivity(helpIntent);
+-        } catch (Exception e) {
+-            Log.w(TAG, "can't start action: " + helpIntent, e);
+-        }
+-    }
+-}
+diff --git a/src/com/android/settings/fuelgauge/batterytip/detectors/BatteryReplacementDetector.java b/src/com/android/settings/fuelgauge/batterytip/detectors/BatteryReplacementDetector.java
+deleted file mode 100644
+index d9c20e9b1c..0000000000
+--- a/src/com/android/settings/fuelgauge/batterytip/detectors/BatteryReplacementDetector.java
++++ /dev/null
+@@ -1,38 +0,0 @@
+-/*
+- * Copyright (C) 2020 The Android Open Source Project
+- *
+- * Licensed under the Apache License, Version 2.0 (the "License");
+- * you may not use this file except in compliance with the License.
+- * You may obtain a copy of the License at
+- *
+- *      http://www.apache.org/licenses/LICENSE-2.0
+- *
+- * Unless required by applicable law or agreed to in writing, software
+- * distributed under the License is distributed on an "AS IS" BASIS,
+- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+- * See the License for the specific language governing permissions and
+- * limitations under the License.
+- */
+-
+-package com.android.settings.fuelgauge.batterytip.detectors;
+-
+-import com.android.settings.fuelgauge.BatteryInfo;
+-import com.android.settings.fuelgauge.batterytip.tips.BatteryReplacementTip;
+-import com.android.settings.fuelgauge.batterytip.tips.BatteryTip;
+-
+-/**
+- * Detect whether the battery need to be replaced.
+- */
+-public class BatteryReplacementDetector implements BatteryTipDetector {
+-    private final BatteryInfo mBatteryInfo;
+-
+-    public BatteryReplacementDetector(BatteryInfo batteryInfo) {
+-        this.mBatteryInfo = batteryInfo;
+-    }
+-
+-    @Override
+-    public BatteryTip detect() {
+-        return new BatteryReplacementTip(
+-                mBatteryInfo.isDead ? BatteryTip.StateType.NEW : BatteryTip.StateType.INVISIBLE);
+-    }
+-}
+diff --git a/src/com/android/settings/fuelgauge/batterytip/tips/BatteryReplacementTip.java b/src/com/android/settings/fuelgauge/batterytip/tips/BatteryReplacementTip.java
+deleted file mode 100644
+index e2e5ed6610..0000000000
+--- a/src/com/android/settings/fuelgauge/batterytip/tips/BatteryReplacementTip.java
++++ /dev/null
+@@ -1,75 +0,0 @@
+-/*
+- * Copyright (C) 2020 The Android Open Source Project
+- *
+- * Licensed under the Apache License, Version 2.0 (the "License");
+- * you may not use this file except in compliance with the License.
+- * You may obtain a copy of the License at
+- *
+- *      http://www.apache.org/licenses/LICENSE-2.0
+- *
+- * Unless required by applicable law or agreed to in writing, software
+- * distributed under the License is distributed on an "AS IS" BASIS,
+- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+- * See the License for the specific language governing permissions and
+- * limitations under the License.
+- */
+-
+-package com.android.settings.fuelgauge.batterytip.tips;
+-
+-import android.content.Context;
+-import android.os.Parcel;
+-import android.text.Html;
+-
+-import com.android.settings.R;
+-import com.android.settingslib.core.instrumentation.MetricsFeatureProvider;
+-
+-/**
+- * Tip to show battery replacement information.
+- */
+-public class BatteryReplacementTip extends BatteryTip {
+-    public BatteryReplacementTip(int state) {
+-        super(TipType.BATTERY_REPLACEMENT, state, false /* showDialog */);
+-    }
+-
+-    BatteryReplacementTip(Parcel in) {
+-        super(in);
+-    }
+-
+-    @Override
+-    public CharSequence getTitle(Context context) {
+-        return context.getString(R.string.battery_tip_replacement_title);
+-    }
+-
+-    @Override
+-    public CharSequence getSummary(Context context) {
+-        return Html.fromHtml(context.getString(R.string.battery_tip_replacement_summary),
+-                Html.FROM_HTML_MODE_LEGACY);
+-    }
+-
+-    @Override
+-    public int getIconId() {
+-        return R.drawable.ic_battery_alert_24dp;
+-    }
+-
+-    @Override
+-    public void updateState(BatteryTip tip) {
+-        mState = tip.mState;
+-    }
+-
+-    @Override
+-    public void log(Context context, MetricsFeatureProvider metricsFeatureProvider) {
+-    }
+-
+-    public static final Creator CREATOR = new Creator() {
+-
+-        @Override
+-        public BatteryTip createFromParcel(Parcel source) {
+-            return new BatteryReplacementTip(source);
+-        }
+-
+-        @Override
+-        public BatteryTip[] newArray(int size) {
+-            return new BatteryReplacementTip[size];
+-        }
+-    };
+-}
+-- 
+2.53.0
+

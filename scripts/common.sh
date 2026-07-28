@@ -128,7 +128,7 @@ remove_with_guard() {
 # apply_patches <patch_dir> <repo_dir> [label]
 # 将 <patch_dir> 下所有 .patch 按文件名排序后应用到 <repo_dir>
 # - <repo_dir>/.git 不存在则跳过
-# - 幂等：git apply --check --reverse 通过说明已应用，跳过
+# - 幂等：git apply --check（正向）失败说明已应用 → 跳过
 apply_patches() {
     local patch_dir="$1"
     local repo_dir="$2"
@@ -153,11 +153,11 @@ apply_patches() {
     for patch in $(ls "$patch_dir/"*.patch | sort); do
         local patch_name
         patch_name=$(basename "$patch")
-        if (cd "$repo_dir" && git apply --check --reverse "$patch" 2>/dev/null); then
-            log_warn "    [${label}] PATCH: $(printf "%-${_patch_max}s" "$patch_name") 已应用，跳过"
-        else
+        if (cd "$repo_dir" && git apply --check "$patch" 2>/dev/null); then
             (cd "$repo_dir" && git apply --ignore-space-change --whitespace=nowarn "$patch")
             log_ok "    [${label}] PATCH: $(printf "%-${_patch_max}s" "$patch_name") 已应用"
+        else
+            log_warn "    [${label}] PATCH: $(printf "%-${_patch_max}s" "$patch_name") 已应用，跳过"
         fi
     done
 }
@@ -238,7 +238,7 @@ extract_tarball() {
 #   --copy    检查 src 是否存在（-e），不存在则 warn 并跳过该条目。
 #             存在则委托 copy_with_guard（幂等，目标已存在时跳过）。
 #   --patch   检查 patch_dir 是否存在（-d），不存在则 warn 跳过。
-#             存在则委托 apply_patches（幂等，git apply --check --reverse）。
+#             存在则委托 apply_patches（幂等：git apply --check 正向检查）。
 #             source_repo（可选第 4 参数）：
 #               若 repo_dir 是通过 copy_with_guard 从子模块 cp 得到的副本
 #               （其 .git 已被删除），传入原始子模块路径作为 source_repo，
@@ -483,6 +483,7 @@ check_build_deps() {
     _check_cmd "cpio"                       "cpio"
     _check_cmd "perl"                       "perl"
     _check_cmd "lz4"                        "lz4"
+    _check_cmd "zip"                        "zip"
 
     # ---- openjdk-11-jdk（版本必须为 11）----
     if command -v java &>/dev/null; then
@@ -592,4 +593,69 @@ check_build_deps() {
     fi
 
     log_banner "环境检查完成"
+}
+
+# ---------- fake .git/HEAD 创建 ----------
+# _ensure_git_head <dir> <label>
+# 为指定目录创建 fake .git/HEAD，满足 Soong genrule 的"module source path"文件存在检查。
+# 适用场景：RK 源码目录从 tar 解压后无 .git，但 Android.bp 中的 gen_xxx_version genrule
+# 引用了 .git/HEAD 作为输入源文件。
+# 幂等：.git/HEAD 已存在时跳过；遇到悬空 .git symlink 先移除再建实际目录。
+_ensure_git_head() {
+    local dir="$1"
+    local label="$2"
+    if [[ ! -d "$dir" ]]; then
+        log_info "    [${label}] 目录不存在，跳过"
+        return
+    fi
+    # repo sync 留下的 .git symlink 指向 .repo/projects/... 但该路径不存在 → 悬空 symlink
+    # mkdir -p 遇到 symlink 会报 "File exists"，需先删掉再建真正的目录
+    if [[ -L "$dir/.git" && ! -e "$dir/.git" ]]; then
+        log_info "    [${label}]: 检测到悬空 .git symlink，移除..."
+        rm "$dir/.git"
+    fi
+    if [[ -f "$dir/.git/HEAD" ]]; then
+        log_info "    [${label}]: .git/HEAD 已存在，跳过"
+        return
+    fi
+    log_info "    [${label}]: 创建 fake .git/HEAD（满足 genrule 文件依赖）..."
+    mkdir -p "$dir/.git/refs/heads"
+    echo "ref: refs/heads/main" > "$dir/.git/HEAD"
+    log_ok "    [${label}]: .git/HEAD 创建完成（版本字段将显示 build-time，无功能影响）"
+}
+
+# ---------- fake git 仓库创建 ----------
+# _ensure_git_repo <dir> <label>
+# 为指定目录创建完整的 fake git 仓库（含初始 commit），
+# 满足 Android.mk 中 $(shell git rev-parse --short HEAD) 等构建期 git 命令的需求。
+# 适用场景：hardware/rockchip/ 等从 tarball 解压后无 .git，但 Android.mk 引用了 git 命令。
+# 幂等：.git/HEAD 存在且可被 git rev-parse 解析时跳过；
+#       遇到悬空 .git symlink 先移除再建实际目录。
+_ensure_git_repo() {
+    local dir="$1"
+    local label="${2:-$(basename "$dir")}"
+
+    if [[ ! -d "$dir" ]]; then
+        log_info "    [${label}] 目录不存在，跳过"
+        return
+    fi
+
+    # 移除悬空 .git symlink
+    if [[ -L "$dir/.git" && ! -e "$dir/.git" ]]; then
+        log_info "    [${label}]: 检测到悬空 .git symlink，移除..."
+        rm "$dir/.git"
+    fi
+
+    # 幂等检查：已有有效的 git HEAD
+    if git -C "$dir" rev-parse --short HEAD &>/dev/null; then
+        log_info "    [${label}]: git 仓库已就绪 ($(git -C "$dir" rev-parse --short HEAD))，跳过"
+        return
+    fi
+
+    log_info "    [${label}]: 创建 fake git 仓库（满足 Android.mk 中 git 命令依赖）..."
+    git -C "$dir" init -q
+    GIT_AUTHOR_NAME="build" GIT_AUTHOR_EMAIL="build@local" \
+    GIT_COMMITTER_NAME="build" GIT_COMMITTER_EMAIL="build@local" \
+    git -C "$dir" commit --allow-empty -q -m "fake repo for AOSP build"
+    log_ok "    [${label}]: git 仓库创建完成 ($(git -C "$dir" rev-parse --short HEAD))"
 }

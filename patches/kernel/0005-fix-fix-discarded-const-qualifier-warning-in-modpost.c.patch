@@ -1,0 +1,25 @@
+From 3eb910a498548d6f78a905fdef636a05d9776b42 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 10 Jul 2026 10:08:16 +0800
+Subject: [PATCH] fix: fix discarded const qualifier warning in modpost.c
+
+---
+ scripts/mod/modpost.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/scripts/mod/modpost.c b/scripts/mod/modpost.c
+index 8b4a1db0d9d4..38558dfe3609 100644
+--- a/scripts/mod/modpost.c
++++ b/scripts/mod/modpost.c
+@@ -850,7 +850,7 @@ static int match(const char *sym, const char * const pat[])
+ 		/* "*foo*" */
+ 		if (*p == '*' && *endp == '*') {
+ 			char *bare = NOFAIL(strndup(p + 1, strlen(p) - 2));
+-			char *here = strstr(sym, bare);
++			const char *here = strstr(sym, bare);
+ 
+ 			free(bare);
+ 			if (here != NULL)
+-- 
+2.53.0
+
