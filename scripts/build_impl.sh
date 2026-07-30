@@ -367,14 +367,15 @@ do_mkimage() {
         fi
     fi
 
-    # ---- misc.img（来自 rkst/Image/，由 apply-patches.sh 从 patches/misc.img 部署）----
-    # TODO: 后续改为编译生成（dd if=/dev/zero bs=1K count=<size>），与 parameter.txt misc 分区大小对齐
-    # misc 分区控制 U-Boot 启动流向（正常 / recovery / fastboot），RK 预编译 blob。
-    if [[ -f "rkst/Image/misc.img" ]]; then
-        cp -a "rkst/Image/misc.img" "$IMAGE_DIR/misc.img"
+    # ---- misc.img（用 gen-misc-img.py 动态生成）----
+    # misc 分区存储 Android bootloader_message 结构体（48KB），控制 U-Boot 启动流向
+    # （正常 / recovery / fastboot）。由 gen-misc-img.py --wipe-all 生成，
+    if [[ -f "$SCRIPT_DIR/gen-misc-img.py" ]]; then
+        run_cmd "生成 misc.img" \
+            python3 "$SCRIPT_DIR/gen-misc-img.py" --wipe-all -o "$IMAGE_DIR/misc.img"
         log_ok "misc.img"
     else
-        log_error "misc.img 未找到: rkst/Image/misc.img（请重新运行 apply-patches.sh）"
+        log_error "gen-misc-img.py 未找到: $SCRIPT_DIR/gen-misc-img.py（请重新运行 apply-patches.sh）"
         exit 1
     fi
 

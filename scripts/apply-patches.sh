@@ -34,7 +34,7 @@ if [[ ! -d "$TARGET_ROOT" ]]; then
     exit 1
 fi
 
-init_steps 16
+init_steps 15
 
 # ============================================================
 # 补丁合入步骤
@@ -53,15 +53,18 @@ BUILD_IMPL_SRC="$PATCHES_ROOT/scripts/build_impl.sh"
 BUILD_IMPL_DST="$TARGET_ROOT/rk_build_impl.sh"
 FILTER_SRC="$PATCHES_ROOT/scripts/filter-build-log.py"
 FILTER_DST="$TARGET_ROOT/filter-build-log.py"
+GEN_MISC_SRC="$PATCHES_ROOT/scripts/gen-misc-img.py"
+GEN_MISC_DST="$TARGET_ROOT/gen-misc-img.py"
 
 mkdir -p "$(dirname "$FILTER_DST")"
 
-apply_resources                                                   \
-    --copy                                                        \
-        "$BUILD_SRC"       "$BUILD_DST"      "build.sh"           \
-        "$COMMON_SRC"      "$COMMON_DST"     "rk_build_common.sh" \
-        "$BUILD_IMPL_SRC"  "$BUILD_IMPL_DST" "rk_build_impl.sh"   \
-        "$FILTER_SRC"      "$FILTER_DST"     "filter-build-log.py"
+apply_resources                                                    \
+    --copy                                                         \
+        "$BUILD_SRC"       "$BUILD_DST"      "build.sh"            \
+        "$COMMON_SRC"      "$COMMON_DST"     "rk_build_common.sh"  \
+        "$BUILD_IMPL_SRC"  "$BUILD_IMPL_DST" "rk_build_impl.sh"    \
+        "$FILTER_SRC"      "$FILTER_DST"     "filter-build-log.py" \
+        "$GEN_MISC_SRC"    "$GEN_MISC_DST"   "gen-misc-img.py"
 
 # ---------- 补丁 2：u-boot ----------
 step "u-boot — 复制 + 打补丁"
@@ -327,15 +330,6 @@ apply_resources \
 
 # Fake .git/HEAD 修复 Soong gen_xxx_version genrule 的"module source path does not exist"
 _ensure_git_head "$TARGET_ROOT/vendor/rockchip/hardware/interfaces/codec2" "codec2"
-
-# ---------- 补丁 16：misc.img（U-Boot ↔ Android recovery 通信分区）----------
-# TODO: 后续改为编译生成（dd if=/dev/zero bs=1K count=<size>），与 parameter.txt misc 分区大小对齐
-step "misc.img — 复制"
-
-mkdir -p "$TARGET_ROOT/rkst/Image"
-
-apply_resources \
-    --copy "$PATCHES_ROOT/patches/misc.img" "$TARGET_ROOT/rkst/Image/misc.img" "misc.img"
 
 echo ""
 log_banner "所有补丁已处理完成"

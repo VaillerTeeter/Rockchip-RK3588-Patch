@@ -36,7 +36,7 @@ if [[ ! -d "$TARGET_ROOT" ]]; then
     exit 1
 fi
 
-init_steps 16
+init_steps 15
 
 # ============================================================
 # 清理步骤
@@ -51,13 +51,15 @@ BUILD_DST="$TARGET_ROOT/build.sh"
 COMMON_DST="$TARGET_ROOT/rk_build_common.sh"
 BUILD_IMPL_DST="$TARGET_ROOT/rk_build_impl.sh"
 FILTER_DST="$TARGET_ROOT/filter-build-log.py"
+GEN_MISC_DST="$TARGET_ROOT/gen-misc-img.py"
 
-clean_resources                                \
-    --remove                                   \
-        "$BUILD_DST"      "build.sh"           \
-        "$COMMON_DST"     "rk_build_common.sh" \
-        "$BUILD_IMPL_DST" "rk_build_impl.sh"   \
-        "$FILTER_DST"     "filter-build-log.py"
+clean_resources                                 \
+    --remove                                    \
+        "$BUILD_DST"      "build.sh"            \
+        "$COMMON_DST"     "rk_build_common.sh"  \
+        "$BUILD_IMPL_DST" "rk_build_impl.sh"    \
+        "$FILTER_DST"     "filter-build-log.py" \
+        "$GEN_MISC_DST"   "gen-misc-img.py"
 
 # ---------- 补丁 2：u-boot ----------
 step "u-boot — 删除"
@@ -332,11 +334,6 @@ step "vendor — 删除"
 clean_resources \
     --remove "$TARGET_ROOT/vendor" "vendor"
 
-# ---------- 补丁 16：misc.img ----------
-step "misc.img — 删除"
-
-clean_resources \
-    --remove "$TARGET_ROOT/rkst/Image/misc.img" "misc.img"
 
 echo ""
 log_banner "清理完成"
