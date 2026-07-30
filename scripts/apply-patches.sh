@@ -171,6 +171,17 @@ EXT_PATCH_DIR="$PATCHES_ROOT/patches/external"
 EXT_DST="$TARGET_ROOT/external"
 EXT_RK_TAR="$EXT_PATCH_DIR/rk3588-external-rk-dirs.tar.gz"
 
+# 清理上次 _ensure_git_head 创建的 .git 目录，避免二次 tar 解压时
+# tarball 中的 .git 文件与磁盘上的 .git 目录冲突（File exists）
+for _d in                     \
+    "$EXT_DST/can-utils/.git" \
+    "$EXT_DST/ntfs-3g/.git"; do
+    if [[ -e "$_d" ]]; then
+        rm -rf "$_d"
+        log_info "    清理 $(basename "$(dirname "$_d")")/.git（避免重复解压冲突）"
+    fi
+done
+
 apply_resources                                                                                   \
     --patch                                                                                       \
         "$EXT_PATCH_DIR/e2fsprogs"        "$EXT_DST/e2fsprogs"        "external/e2fsprogs"        \
@@ -182,6 +193,19 @@ apply_resources                                                                 
         "$EXT_PATCH_DIR/wpa_supplicant_8" "$EXT_DST/wpa_supplicant_8" "external/wpa_supplicant_8" \
     --extract                                                                                     \
         "$EXT_RK_TAR"                     "$TARGET_ROOT"              "external RK 专有目录"
+
+# 删除原有旧的仓库
+remove_with_guard "$EXT_DST/can-utils"         "can-utils"
+remove_with_guard "$EXT_DST/ntfs-3g"           "ntfs-3g"
+# 替换为 github 上的最新的仓库
+copy_with_guard   "$PATCHES_ROOT/rk-can-utils" "$EXT_DST/can-utils" "rk-can-utils"
+copy_with_guard   "$PATCHES_ROOT/rk-ntfs-3g"   "$EXT_DST/ntfs-3g"   "rk-ntfs-3g"
+# 完整的 fake git 仓库，消除 Android.mk 中 $(shell git ...) 的 "fatal: not a git repository"
+_ensure_git_repo  "$EXT_DST/can-utils"         "external/can-utils"
+_ensure_git_repo  "$EXT_DST/ntfs-3g"           "external/ntfs-3g"
+# 对 xxxx 打补丁（_ensure_git_repo 刚创建了 git 仓库）
+apply_patches     "$EXT_PATCH_DIR/can-utils"   "$EXT_DST/can-utils" "external/can-utils"
+apply_patches     "$EXT_PATCH_DIR/ntfs-3g"     "$EXT_DST/ntfs-3g"   "external/ntfs-3g"
 
 # ---------- 补丁 10：device/rockchip ----------
 step "device/rockchip — 解压"

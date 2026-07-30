@@ -1,0 +1,95 @@
+From 1b19282b89499363a79c083e0c25a85a12f3f0ba Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Thu, 30 Jul 2026 14:26:12 +0800
+Subject: [PATCH] feat: add Android.bp prebuilt integration, enable J1939 and
+ ISOBUSFS for Android
+
+    - Android.bp: add 35 cc_prebuilt_binary targets (candump, cansend,
+      cangen, j1939acd, slcand, etc.) and 1 cc_prebuilt_library_shared
+      (libisobusfs), all installed to vendor/bin/ and vendor/lib/
+    - CMakeLists.txt: enable ENABLE_J1939 and ENABLE_ISOBUSFS for
+      Android builds (changed from hard-coded OFF to ON), aligning
+      with the non-Android build configuration
+---
+ Android.bp     | 53 ++++++++++++++++++++++++++++++++++++++++++++++++++
+ CMakeLists.txt |  4 ++--
+ 2 files changed, 55 insertions(+), 2 deletions(-)
+ create mode 100644 Android.bp
+
+diff --git a/Android.bp b/Android.bp
+new file mode 100644
+index 0000000..c218f8e
+--- /dev/null
++++ b/Android.bp
+@@ -0,0 +1,53 @@
++// Auto-generated Android.bp for can-utils prebuilt binaries.
++//
++// Build: cmake -DCMAKE_TOOLCHAIN_FILE=$NDK_TOOLCHAIN_FILE
++//              -DANDROID_PLATFORM=android-33
++//              -DANDROID_ABI=arm64-v8a
++//              -DENABLE_J1939=ON
++//              -DENABLE_ISOBUSFS=ON
++//              ..
++// All binaries are installed to vendor/bin/ (LOCAL_VENDOR_MODULE equivalent).
++
++cc_prebuilt_library_shared {
++    name: "libisobusfs",
++    srcs: ["build-android/libisobusfs.so"],
++    vendor: true,
++    relative_install_path: "lib",
++}
++
++cc_prebuilt_binary { name: "asc2log",             srcs: ["build-android/asc2log"],             vendor: true, relative_install_path: "bin" }
++cc_prebuilt_binary { name: "bcmserver",           srcs: ["build-android/bcmserver"],           vendor: true, relative_install_path: "bin" }
++cc_prebuilt_binary { name: "can-calc-bit-timing", srcs: ["build-android/can-calc-bit-timing"], vendor: true, relative_install_path: "bin" }
++cc_prebuilt_binary { name: "canbusload",          srcs: ["build-android/canbusload"],          vendor: true, relative_install_path: "bin" }
++cc_prebuilt_binary { name: "candump",             srcs: ["build-android/candump"],             vendor: true, relative_install_path: "bin" }
++cc_prebuilt_binary { name: "canerrsim",           srcs: ["build-android/canerrsim"],           vendor: true, relative_install_path: "bin" }
++cc_prebuilt_binary { name: "canfdtest",           srcs: ["build-android/canfdtest"],           vendor: true, relative_install_path: "bin" }
++cc_prebuilt_binary { name: "cangen",              srcs: ["build-android/cangen"],              vendor: true, relative_install_path: "bin" }
++cc_prebuilt_binary { name: "cangw",               srcs: ["build-android/cangw"],               vendor: true, relative_install_path: "bin" }
++cc_prebuilt_binary { name: "canlogserver",        srcs: ["build-android/canlogserver"],        vendor: true, relative_install_path: "bin" }
++cc_prebuilt_binary { name: "canplayer",           srcs: ["build-android/canplayer"],           vendor: true, relative_install_path: "bin" }
++cc_prebuilt_binary { name: "cansend",             srcs: ["build-android/cansend"],             vendor: true, relative_install_path: "bin" }
++cc_prebuilt_binary { name: "cansequence",         srcs: ["build-android/cansequence"],         vendor: true, relative_install_path: "bin" }
++cc_prebuilt_binary { name: "cansniffer",          srcs: ["build-android/cansniffer"],          vendor: true, relative_install_path: "bin" }
++cc_prebuilt_binary { name: "isobusfs-cli",        srcs: ["build-android/isobusfs-cli"],        vendor: true, relative_install_path: "bin" }
++cc_prebuilt_binary { name: "isobusfs-srv",        srcs: ["build-android/isobusfs-srv"],        vendor: true, relative_install_path: "bin" }
++cc_prebuilt_binary { name: "isotpdump",           srcs: ["build-android/isotpdump"],           vendor: true, relative_install_path: "bin" }
++cc_prebuilt_binary { name: "isotpperf",           srcs: ["build-android/isotpperf"],           vendor: true, relative_install_path: "bin" }
++cc_prebuilt_binary { name: "isotprecv",           srcs: ["build-android/isotprecv"],           vendor: true, relative_install_path: "bin" }
++cc_prebuilt_binary { name: "isotpsend",           srcs: ["build-android/isotpsend"],           vendor: true, relative_install_path: "bin" }
++cc_prebuilt_binary { name: "isotpserver",         srcs: ["build-android/isotpserver"],         vendor: true, relative_install_path: "bin" }
++cc_prebuilt_binary { name: "isotpsniffer",        srcs: ["build-android/isotpsniffer"],        vendor: true, relative_install_path: "bin" }
++cc_prebuilt_binary { name: "isotptun",            srcs: ["build-android/isotptun"],            vendor: true, relative_install_path: "bin" }
++cc_prebuilt_binary { name: "j1939-timedate-cli",  srcs: ["build-android/j1939-timedate-cli"],  vendor: true, relative_install_path: "bin" }
++cc_prebuilt_binary { name: "j1939-timedate-srv",  srcs: ["build-android/j1939-timedate-srv"],  vendor: true, relative_install_path: "bin" }
++cc_prebuilt_binary { name: "j1939acd",            srcs: ["build-android/j1939acd"],            vendor: true, relative_install_path: "bin" }
++cc_prebuilt_binary { name: "j1939cat",            srcs: ["build-android/j1939cat"],            vendor: true, relative_install_path: "bin" }
++cc_prebuilt_binary { name: "j1939spy",            srcs: ["build-android/j1939spy"],            vendor: true, relative_install_path: "bin" }
++cc_prebuilt_binary { name: "j1939sr",             srcs: ["build-android/j1939sr"],             vendor: true, relative_install_path: "bin" }
++cc_prebuilt_binary { name: "log2asc",             srcs: ["build-android/log2asc"],             vendor: true, relative_install_path: "bin" }
++cc_prebuilt_binary { name: "log2long",            srcs: ["build-android/log2long"],            vendor: true, relative_install_path: "bin" }
++cc_prebuilt_binary { name: "mcp251xfd-dump",      srcs: ["build-android/mcp251xfd-dump"],      vendor: true, relative_install_path: "bin" }
++cc_prebuilt_binary { name: "slcan_attach",        srcs: ["build-android/slcan_attach"],        vendor: true, relative_install_path: "bin" }
++cc_prebuilt_binary { name: "slcand",              srcs: ["build-android/slcand"],              vendor: true, relative_install_path: "bin" }
++cc_prebuilt_binary { name: "slcanpty",            srcs: ["build-android/slcanpty"],            vendor: true, relative_install_path: "bin" }
++cc_prebuilt_binary { name: "testj1939",           srcs: ["build-android/testj1939"],           vendor: true, relative_install_path: "bin" }
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index f42bd55..a1aeceb 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -33,8 +33,8 @@ option(ENABLE_MCP251XFD   "Build MCP251XFD tools" ON)
+ 
+ # cmake_dependent_option is only available in CMake 3.22 and later.
+ if(ANDROID)
+-  set(ENABLE_J1939    OFF)
+-  set(ENABLE_ISOBUSFS OFF)
++  option(ENABLE_J1939    "Build J1939 tools"  ON)
++  option(ENABLE_ISOBUSFS "Build ISOBUS tools" ON)
+ else()
+   option(ENABLE_J1939    "Build J1939 tools"  ON)
+   option(ENABLE_ISOBUSFS "Build ISOBUS tools" ON)
+-- 
+2.53.0
+

@@ -153,6 +153,68 @@ do_build_kernel() {
     fi
 }
 
+# ---------- 编译 can-utils ----------
+# 使用 NDK CMake toolchain 交叉编译 rk-can-utils，
+# 产物放在 external/can-utils/build-android/，供 Android.bp cc_prebuilt_binary 打包。
+do_build_can_utils() {
+    log_banner "编译 can-utils (NDK CMake)"
+
+    local CAN_SRC="$ANDROID_ROOT/external/can-utils"
+    local CAN_BUILD="$CAN_SRC/build-android"
+
+    if [[ -z "${NDK_TOOLCHAIN_FILE:-}" ]]; then
+        log_error "NDK_TOOLCHAIN_FILE 未设置，请先执行 ./scripts/build.sh 完成环境检查"
+        exit 1
+    fi
+
+    # -C 模式下清理旧产物
+    if [[ $BUILD_CLEAN -eq 1 && -d "$CAN_BUILD" ]]; then
+        log_info "清理旧 can-utils 编译产物..."
+        rm -rf "$CAN_BUILD"
+    fi
+
+    mkdir -p "$CAN_BUILD"
+    cd "$CAN_BUILD"
+
+    run_cmd "cmake configure (can-utils)" \
+        cmake -DCMAKE_TOOLCHAIN_FILE="$NDK_TOOLCHAIN_FILE" \
+              -DANDROID_PLATFORM=android-33 \
+              -DANDROID_ABI=arm64-v8a \
+              ..
+
+    run_cmd "cmake build (can-utils)" \
+        make -j"${CPU_CORES}"
+}
+
+# ---------- 预编译 ntfs-3g（生成 config.h） ----------
+# 在 AOSP 源码树 external/ntfs-3g 中运行 autoreconf + configure，
+# 生成 config.h 供后续 Android.mk 编译使用。
+# 原补丁中的 config.h 已移除，由本函数动态生成。
+do_build_ntfs_3g() {
+    log_banner "预编译 ntfs-3g（生成 config.h）"
+
+    local NTFS_SRC="$ANDROID_ROOT/external/ntfs-3g"
+
+    if [[ ! -d "$NTFS_SRC" ]]; then
+        log_error "未找到 external/ntfs-3g 目录: $NTFS_SRC"
+        exit 1
+    fi
+
+    cd "$NTFS_SRC"
+
+    run_cmd "autoreconf -i (ntfs-3g)" autoreconf -i
+    run_cmd "./configure (ntfs-3g)" \
+        ./configure --host=aarch64-linux-gnu --with-fuse=internal
+
+    # bionic libc 没有 libintl.h（gettext/NLS），但 configure 用宿主机 glibc 交叉工具链
+    # 探测时会误判为存在（假阳性），导致 AOSP clang 编译时 #include <libintl.h> 找不到文件。
+    # ntfsprogs/utils.c 仅 include 了该头文件但从未调用任何 gettext 符号，禁用无功能影响。
+    sed -i 's/#define HAVE_LIBINTL_H 1/\/* #undef HAVE_LIBINTL_H *\//' "$NTFS_SRC/config.h"
+    log_ok "config.h 已修正: HAVE_LIBINTL_H 已禁用（bionic 不提供 libintl）"
+
+    log_ok "config.h 已生成: $NTFS_SRC/config.h"
+}
+
 # ---------- 整编 Android ----------
 do_build_android() {
     log_banner "整编 Android"
@@ -170,6 +232,12 @@ do_build_android() {
 
     # 确保内核已编译且 Image 就位（do_build_kernel 内含 clean/增量判断 + cp Image）
     do_build_kernel
+
+    # 确保 can-utils 预编译产物就位（供 Android.bp cc_prebuilt_binary 打包）
+    do_build_can_utils
+
+    # 确保 ntfs-3g config.h 就位（供 Android.mk 编译）
+    do_build_ntfs_3g
 
     cd "$ANDROID_ROOT"
     run_cmd "make -j${BUILD_JOBS}" make -j"${BUILD_JOBS}"

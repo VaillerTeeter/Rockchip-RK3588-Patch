@@ -7,3 +7,9 @@
 [submodule "rk-kernel-5.10"]
 	path = rk-kernel-5.10
 	url = https://github.com/VaillerTeeter/Rockchip-RK3588-kernel-5.10.git
+[submodule "rk-can-utils"]
+	path = rk-can-utils
+	url = https://github.com/VaillerTeeter/rk-can-utils.git
+[submodule "rk-ntfs-3g"]
+	path = rk-ntfs-3g
+	url = https://github.com/VaillerTeeter/rk-ntfs-3g.git

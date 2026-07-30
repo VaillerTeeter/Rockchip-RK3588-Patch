@@ -632,7 +632,9 @@
 |-----------|------|
 | `u-boot/` | AOSP 中由 apply-patches.sh 从仓库子模块复制 + 打补丁。版本对齐见 [U-Boot 版本对齐](#u-boot-版本对齐) |
 | `rkbin/` | AOSP 中由 apply-patches.sh 从仓库子模块复制 |
-| `kernel-5.10/`（正点原子基线） → `rk-kernel-5.10/`（AOSP） | 正点原子基线内核源码树，AOSP 中改名 `rk-kernel-5.10/`。详细差异见 [Kernel 移植分析](#kernel-移植分析) |
+| `kernel-5.10/`（正点原子基线） → `kernel-5.10/`（AOSP） | 详细差异见 [Kernel 移植分析](#kernel-移植分析) |
+| `can-utils/`（正点原子基线） → `rk-can-utils/`（本项目） | 仓库: `https://github.com/VaillerTeeter/rk-can-utils.git`。正点原子基线快照为 commit `3615bac17e539a06835dcb90855eae844ee18053` (2021-06-24, linux-can/can-utils upstream)。本项目已更新至 upstream 最新版 |
+| `ntfs-3g/`（正点原子基线） → `external/ntfs-3g`（AOSP） | 基于 ntfs-3g upstream `2017.3.23`（commit `adb2cd24a85d394bdc2e57dec41b0c2110792640`），ATK 新增 10 个文件 + 修改 6 个文件。详细分析见 [ntfs-3g 移植分析](#ntfs-3g-移植分析) |
 
 ### 正点原子独有
 
@@ -669,3 +671,108 @@
 | **`prebuilts/`**（2 文件） | |
 | `prebuilts/module_sdk/Bluetooth/.prebuilt_info/prebuilt_info_current_current_zip.asciipb` | `build_id` 不同（`10202400` vs `10027665`），git_branch 不同（`tm-qpr3-c-release` vs `tm-qpr-dev`），纯版本元数据差异 |
 | `prebuilts/module_sdk/Bluetooth/current/snapshot-creation-build-number.txt` | 快照构建号不同（`10202400` vs `10027665`） |
+
+## ntfs-3g 移植分析
+
+> **对比版本**:
+> - **ntfs-3g 上游基线**: `2017.3.23`，commit `adb2cd24a85d394bdc2e57dec41b0c2110792640`
+> - **ATK 正点原子修改版**: `~/DDDD/external/ntfs-3g`（AOSP `external/ntfs-3g`）
+>
+> **总体结论**: ATK 基于 ntfs-3g upstream `2017.3.23`，新增 10 个文件 + 修改 6 个文件。
+> 改动分为 Android 平台适配（CANONICAL_PATH / 设备命名 / logcat）和 Android 构建体系（Android.mk）
+> 两大类。autotools 产物（configure、Makefile.in 等 20 个文件）为 `autoreconf -i` 自动生成，
+> 不纳入补丁。
+>
+> **处理原则**: 以 ntfs-3g upstream `2017.3.23` 为基线，将 10 个新增文件 + 6 个差异文件的改动
+> 打成补丁，应用到上游源码上。
+
+### 新增文件（10 项）
+
+> 均为 ATK 手写，rk-ntfs-3g 上游不存在。
+
+#### Android.mk — AOSP 构建入口（5 项）
+
+| 序号 | 文件 | 说明 |
+|------|------|------|
+| 1 | `Android.mk` | 顶层构建入口 |
+| 2 | `libfuse-lite/Android.mk` | 编译 libfuse-lite 静态库 |
+| 3 | `libntfs-3g/Android.mk` | 编译 libntfs-3g 静态库 |
+| 4 | `ntfsprogs/Android.mk` | 编译 ntfsprogs 工具 |
+| 5 | `src/Android.mk` | 编译 ntfs-3g 主程序 |
+
+#### secaudit / usermap — Android 平台扩展（5 项）
+
+| 序号 | 文件 | 说明 |
+|------|------|------|
+| 1 | `src/secaudit.c` | ntfs-3g 安全审计模块（Android 安全增强） |
+| 2 | `src/secaudit.h` | secaudit 头文件 |
+| 3 | `src/usermap.c` | ntfs-3g 用户映射模块（Android 多用户支持） |
+| 4 | `src/ntfs-3g.secaudit.8.in` | secaudit man 手册模板 |
+| 5 | `src/ntfs-3g.usermap.8.in` | usermap man 手册模板 |
+
+### 差异文件（6 项）
+
+> 上游存在但内容不同，ATK 做了 Android 平台适配。
+
+#### Android FUSE CANONICAL_PATH 支持（3 项）
+
+> Android inotify / MediaProvider 依赖此操作检测 NTFS 卷上的文件变化。
+> 在 FUSE 协议中新增操作码 `FUSE_CANONICAL_PATH = 2016`，用于内核查询 inode 的真实路径。
+
+| 序号 | 文件 | 改动说明 |
+|------|------|----------|
+| 1 | `include/fuse-lite/fuse_kernel.h` | 枚举新增 `FUSE_CANONICAL_PATH = 2016` |
+| 2 | `include/fuse-lite/fuse_lowlevel.h` | ops 结构体新增 `canonical_path` 回调；新增 `fuse_reply_canonical_path()` 声明 |
+| 3 | `libfuse-lite/fuse_lowlevel.c` | 实现 `fuse_reply_canonical_path()` 和 `do_canonical_path()` 分发函数；在 handler 表中注册该操作 |
+
+#### Android SD 卡设备命名适配（2 项）
+
+> Android vold 以 `/dev/block/vold/public:179,65@MYSD` 格式挂载设备，
+> 但 FUSE 的 `fsname=` 选项用逗号分隔。两个文件配合完成 `@` ↔ `,` 双向转换。
+
+| 序号 | 文件 | 改动说明 |
+|------|------|----------|
+| 1 | `libfuse-lite/fusermount.c` | 挂载前将设备名中第一个 `@` 替换为 `,` |
+| 2 | `src/ntfs-3g_common.c` | 组装 fsname 参数前将 `,` 替换回 `@`，保持原始设备名传给 FUSE |
+
+#### Android logcat 日志集成（1 项）
+
+| 序号 | 文件 | 改动说明 |
+|------|------|----------|
+| 1 | `libntfs-3g/logging.c` | `__ANDROID_API__` 宏控制下，将日志输出重定向到 Android logcat（TAG: `NTFS-3G`） |
+
+### 无需移植
+
+> 以下文件 ATK 存在但 rk-ntfs-3g 上游不存在，全部为 autotools 自动生成产物，不纳入补丁。
+
+| 序号 | 文件 | 来源 |
+|------|------|------|
+| 1 | `configure` | `autoconf` 从 `configure.ac` 生成 |
+| 2 | `config.h.in` | `autoheader` 生成 |
+| 3 | `config.h` | `./configure` 运行后生成 |
+| 4 | `aclocal.m4` | `aclocal` 汇集宏 |
+| 5 | `Makefile.in` (7 个：顶层 + include/ + include/fuse-lite/ + include/ntfs-3g/ + libfuse-lite/ + libntfs-3g/ + ntfsprogs/ + src/) | `automake` 从 `Makefile.am` 生成 |
+| 6 | `INSTALL` | `automake` 通用安装说明 |
+| 7 | `compile` | `automake` 辅助脚本 |
+| 8 | `config.guess` | GNU config 包 |
+| 9 | `config.sub` | GNU config 包 |
+| 10 | `depcomp` | `automake` 依赖追踪 |
+| 11 | `install-sh` | `automake` 安装脚本 |
+| 12 | `ltmain.sh` | `libtool` 核心脚本 |
+| 13 | `missing` | `automake` 缺失工具替身 |
+
+> 可在 rk-ntfs-3g 目录执行 `autoreconf -i` 重新生成以上全部文件。
+> 前提：安装 `autoconf automake libtool libgcrypt-dev`。
+
+### 补丁生成
+
+```bash
+# 以 upstream 2017.3.23 为基线，生成 ATK 修改补丁
+diff -ruN ntfs-3g-2017.3.23/ external/ntfs-3g/ \
+    --exclude=configure --exclude=config.h --exclude=config.h.in \
+    --exclude=aclocal.m4 --exclude=Makefile.in --exclude=INSTALL \
+    --exclude=compile --exclude=config.guess --exclude=config.sub \
+    --exclude=depcomp --exclude=install-sh --exclude=ltmain.sh \
+    --exclude=missing --exclude=.git \
+    > patches/ntfs-3g-atk.patch
+```

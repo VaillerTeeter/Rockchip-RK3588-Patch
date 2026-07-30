@@ -484,6 +484,10 @@ check_build_deps() {
     _check_cmd "perl"                       "perl"
     _check_cmd "lz4"                        "lz4"
     _check_cmd "zip"                        "zip"
+    _check_cmd "git-lfs"                    "git-lfs"
+    _check_cmd "gh"                         "gh"
+    _check_cmd "gitk"                       "gitk"
+    _check_cmd "cmake"                      "cmake"
 
     # ---- openjdk-11-jdk（版本必须为 11）----
     if command -v java &>/dev/null; then
@@ -557,6 +561,31 @@ check_build_deps() {
         else
             log_warn "操作系统: ${os_id} ${os_ver}，Android 13 推荐在 Ubuntu 20.04 上构建"
         fi
+    fi
+
+
+    # ---- NDK Toolchain 检测 ----
+    # 优先级：环境变量 NDK_TOOLCHAIN > ~/Android/Sdk/ndk 下的常见版本
+    local ndk_toolchain=""
+    local ndk_search_paths=(
+        "${NDK_TOOLCHAIN:-}"
+        "$HOME/Android/Sdk/ndk"/*/build/cmake/android.toolchain.cmake
+    )
+
+    for candidate in "${ndk_search_paths[@]}"; do
+        if [[ -f "$candidate" ]]; then
+            ndk_toolchain="$candidate"
+            break
+        fi
+    done
+
+    if [[ -n "$ndk_toolchain" ]]; then
+        NDK_TOOLCHAIN_FILE="$ndk_toolchain"
+        export NDK_TOOLCHAIN_FILE
+        log_ok "NDK toolchain: $ndk_toolchain"
+    else
+        log_warn "NDK toolchain 未找到（android.toolchain.cmake）"
+        missing_other+=("NDK: 下载 https://github.com/android/ndk/releases (r26b 或 r29), 解压到 ~/Android/Sdk/ndk/<version>/")
     fi
 
     # ---- 汇总缺失 ----
