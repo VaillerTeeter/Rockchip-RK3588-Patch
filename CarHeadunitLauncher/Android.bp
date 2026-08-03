@@ -1,0 +1,20 @@
+//
+// Copyright 2024 The Android Open-Source Project
+//
+// Car Headunit Launcher for RK3588
+//
+
+android_app {
+    name: "CarHeadunitLauncher",
+
+    srcs: ["src/**/*.java"],
+
+    resource_dirs: ["res"],
+
+    platform_apis: true,
+
+    privileged: true,
+    system_ext_specific: true,
+
+    overrides: ["Launcher3QuickStep"],
+}
