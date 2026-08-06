@@ -1,0 +1,25 @@
+From a54d32d5675f909bf2d65a5c1c4cddc11239b1e7 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Mon, 3 Aug 2026 14:00:09 +0800
+Subject: [PATCH] feat(ATK_DLRK3588): register CarHeadunitLauncher in product
+ packages
+
+---
+ rk3588/ATK_DLRK3588/ATK_DLRK3588.mk | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/rk3588/ATK_DLRK3588/ATK_DLRK3588.mk b/rk3588/ATK_DLRK3588/ATK_DLRK3588.mk
+index 58e5875..9acaf03 100644
+--- a/rk3588/ATK_DLRK3588/ATK_DLRK3588.mk
++++ b/rk3588/ATK_DLRK3588/ATK_DLRK3588.mk
+@@ -38,6 +38,7 @@ PRODUCT_BRAND := Alientek
+ PRODUCT_MODEL := ATK-DLRK3588
+ PRODUCT_MANUFACTURER := Alientek
+ PRODUCT_AAPT_PREF_CONFIG := xhdpi
++PRODUCT_PACKAGES += CarHeadunitLauncher
+ #
+ ## add Rockchip properties
+ #
+-- 
+2.53.0
+

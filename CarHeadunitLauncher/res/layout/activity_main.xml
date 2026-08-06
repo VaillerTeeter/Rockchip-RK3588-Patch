@@ -5,14 +5,50 @@
     android:orientation="vertical"
     android:background="#1a1a2e">
 
-    <!-- 地图占位区域，占满剩余高度 -->
-    <FrameLayout
-        android:id="@+id/map_container"
+    <!-- 地图 + 侧边栏区域，占满剩余高度 -->
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:background="#2d2d44">
-    </FrameLayout>
+        android:orientation="horizontal">
+
+        <!-- 左侧地图占位 -->
+        <FrameLayout
+            android:id="@+id/map_container"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="2"
+            android:background="#2d2d44">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="top|start"
+                android:text="地图区域"
+                android:textColor="#FFFFFF"
+                android:textSize="20sp"
+                android:padding="8dp" />
+        </FrameLayout>
+
+        <!-- 右侧 app 侧边栏 (320dp, 接近手机竖屏宽) -->
+        <FrameLayout
+            android:id="@+id/panel_sidebar"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="#1e1e30">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="top|start"
+                android:text="App侧边栏"
+                android:textColor="#FFFFFF"
+                android:textSize="20sp"
+                android:padding="8dp" />
+        </FrameLayout>
+
+    </LinearLayout>
 
     <!-- 快捷入口卡片，一行横向 -->
     <LinearLayout
@@ -20,74 +56,42 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:padding="12dp"
+        android:padding="24dp"
         android:gravity="center">
 
         <FrameLayout
-            android:id="@+id/card_music"
+            android:id="@+id/card_0"
             android:layout_width="0dp"
-            android:layout_height="80dp"
+            android:layout_height="140dp"
             android:layout_weight="1"
             android:layout_marginEnd="8dp"
-            android:background="@drawable/card_music_bg" />
+            android:background="@drawable/card_0_bg" />
 
         <FrameLayout
-            android:id="@+id/card_navigation"
+            android:id="@+id/card_1"
             android:layout_width="0dp"
-            android:layout_height="80dp"
+            android:layout_height="140dp"
             android:layout_weight="1"
-            android:layout_marginHorizontal="4dp"
-            android:background="@drawable/card_navigation_bg" />
+            android:layout_marginHorizontal="8dp"
+            android:background="@drawable/card_1_bg" />
 
         <FrameLayout
-            android:id="@+id/card_settings"
+            android:id="@+id/card_2"
             android:layout_width="0dp"
-            android:layout_height="80dp"
+            android:layout_height="140dp"
+            android:layout_weight="1"
+            android:layout_marginHorizontal="8dp"
+            android:background="@drawable/card_2_bg" />
+
+        <FrameLayout
+            android:id="@+id/card_3"
+            android:layout_width="0dp"
+            android:layout_height="140dp"
             android:layout_weight="1"
             android:layout_marginStart="8dp"
-            android:background="@drawable/card_settings_bg" />
+            android:background="@drawable/card_3_bg" />
 
     </LinearLayout>
 
-    <!-- 底部导航栏 -->
-    <LinearLayout
-        android:id="@+id/bottom_nav"
-        android:layout_width="match_parent"
-        android:layout_height="56dp"
-        android:orientation="horizontal"
-        android:background="#16213e"
-        android:gravity="center">
-
-        <TextView
-            android:id="@+id/nav_home"
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:gravity="center"
-            android:text="首页"
-            android:textColor="#e0e0e0"
-            android:textSize="14sp" />
-
-        <TextView
-            android:id="@+id/nav_apps"
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:gravity="center"
-            android:text="应用"
-            android:textColor="#e0e0e0"
-            android:textSize="14sp" />
-
-        <TextView
-            android:id="@+id/nav_settings"
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:gravity="center"
-            android:text="设置"
-            android:textColor="#e0e0e0"
-            android:textSize="14sp" />
-
-    </LinearLayout>
 
 </LinearLayout>

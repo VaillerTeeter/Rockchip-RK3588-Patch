@@ -34,7 +34,7 @@ if [[ ! -d "$TARGET_ROOT" ]]; then
     exit 1
 fi
 
-init_steps 15
+init_steps 16
 
 # ============================================================
 # 补丁合入步骤
@@ -210,13 +210,27 @@ _ensure_git_repo  "$EXT_DST/ntfs-3g"           "external/ntfs-3g"
 apply_patches     "$EXT_PATCH_DIR/can-utils"   "$EXT_DST/can-utils" "external/can-utils"
 apply_patches     "$EXT_PATCH_DIR/ntfs-3g"     "$EXT_DST/ntfs-3g"   "external/ntfs-3g"
 
-# ---------- 补丁 10：device/rockchip ----------
-step "device/rockchip — 解压"
+# ---------- 补丁 10：device ----------
+step "device/rockchip — 解压 + 打补丁"
 
 DEV_RK_TAR="$PATCHES_ROOT/patches/device/rk3588-device-rk-dirs.tar.gz"
+DEV_DST="$TARGET_ROOT/device"
+DEV_PATCH_DIR="$PATCHES_ROOT/patches/device"
+
+# 清理上次 _ensure_git_head 创建的 .git 目录，避免二次 tar 解压时
+# tarball 中的 .git 文件与磁盘上的 .git 目录冲突（File exists）
+if [[ -e "$DEV_DST/rockchip/.git" ]]; then
+    rm -rf "$DEV_DST/rockchip/.git"
+    log_info "    清理 device/rockchip/.git（避免重复解压冲突）"
+fi
 
 apply_resources \
     --extract "$DEV_RK_TAR" "$TARGET_ROOT" "device/rockchip"
+
+# 完整的 fake git 仓库，消除 Android.mk 中 $(shell git ...) 的 "fatal: not a git repository"
+_ensure_git_repo "$DEV_DST/rockchip"       "device/rockchip"
+# 对 xxxx 打补丁（_ensure_git_repo 刚创建了 git 仓库）
+apply_patches    "$DEV_PATCH_DIR/rockchip" "$DEV_DST/rockchip" "device/rockchip"
 
 # ---------- 补丁 11：frameworks ----------
 step "frameworks — 打补丁 + 解压"
@@ -330,6 +344,13 @@ apply_resources \
 
 # Fake .git/HEAD 修复 Soong gen_xxx_version genrule 的"module source path does not exist"
 _ensure_git_head "$TARGET_ROOT/vendor/rockchip/hardware/interfaces/codec2" "codec2"
+
+# ---------- 补丁 16：Launcher ----------
+LAUNCHER_SRC_DIR="$PATCHES_ROOT/CarHeadunitLauncher"
+LAUNCHER_DST_DIR="$TARGET_ROOT/packages/apps/CarHeadunitLauncher"
+
+apply_resources \
+    --copy "$LAUNCHER_SRC_DIR" "$LAUNCHER_DST_DIR" "CarHeadunitLaunchert"
 
 echo ""
 log_banner "所有补丁已处理完成"

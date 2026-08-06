@@ -36,7 +36,7 @@ if [[ ! -d "$TARGET_ROOT" ]]; then
     exit 1
 fi
 
-init_steps 15
+init_steps 16
 
 # ============================================================
 # 清理步骤
@@ -334,6 +334,11 @@ step "vendor — 删除"
 clean_resources \
     --remove "$TARGET_ROOT/vendor" "vendor"
 
+# ---------- 补丁 16：Launcher ----------
+LAUNCHER_DST_DIR="$TARGET_ROOT/packages/apps/CarHeadunitLauncher"
+
+clean_resources \
+    --remove "$LAUNCHER_DST_DIR" "CarHeadunitLaunchert"
 
 echo ""
 log_banner "清理完成"

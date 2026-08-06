@@ -2,9 +2,5 @@
 <resources>
     <style name="Theme.CarLauncher" parent="android:Theme.DeviceDefault.NoActionBar">
         <item name="android:windowBackground">@color/background_dark</item>
-        <item name="android:statusBarColor">@android:color/transparent</item>
-        <item name="android:navigationBarColor">@android:color/transparent</item>
-        <item name="android:windowTranslucentStatus">true</item>
-        <item name="android:windowTranslucentNavigation">true</item>
     </style>
 </resources>
