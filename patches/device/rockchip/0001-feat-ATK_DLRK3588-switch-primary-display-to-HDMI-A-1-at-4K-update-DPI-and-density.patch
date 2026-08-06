@@ -1,0 +1,50 @@
+From e0b5fa58d86e0fb4818ebd5c21e56e952d8a387a Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Thu, 30 Jul 2026 14:42:16 +0800
+Subject: [PATCH] feat(ATK_DLRK3588): switch primary display to HDMI-A-1 at 4K,
+ update DPI and density
+
+    - ATK_DLRK3588.mk: change primary display from DSI to HDMI-A-1,
+      remove extend display (HDMI-A, DP); update AAPT config from
+      mdpi to xxhdpi and lcd_density from 320 to 480
+    - BoardConfig.mk: set kernel cmdline video=HDMI-A-1:3840x2400@60
+      for 4K output on HDMI0; add baseparameter image reference
+---
+ rk3588/ATK_DLRK3588/ATK_DLRK3588.mk | 7 +++----
+ rk3588/ATK_DLRK3588/BoardConfig.mk  | 2 ++
+ 2 files changed, 5 insertions(+), 4 deletions(-)
+
+diff --git a/rk3588/ATK_DLRK3588/ATK_DLRK3588.mk b/rk3588/ATK_DLRK3588/ATK_DLRK3588.mk
+index 976c00c..bbbbcb2 100644
+--- a/rk3588/ATK_DLRK3588/ATK_DLRK3588.mk
++++ b/rk3588/ATK_DLRK3588/ATK_DLRK3588.mk
+@@ -35,13 +35,12 @@ PRODUCT_DEVICE := ATK_DLRK3588
+ PRODUCT_BRAND := Alientek
+ PRODUCT_MODEL := ATK-DLRK3588
+ PRODUCT_MANUFACTURER := Alientek
+-PRODUCT_AAPT_PREF_CONFIG := mdpi
++PRODUCT_AAPT_PREF_CONFIG := xhdpi
+ #
+ ## add Rockchip properties
+ #
+-PRODUCT_PROPERTY_OVERRIDES += ro.sf.lcd_density=320
++PRODUCT_PROPERTY_OVERRIDES += ro.sf.lcd_density=320 
+ PRODUCT_PROPERTY_OVERRIDES += ro.wifi.sleep.power.down=true
+ PRODUCT_PROPERTY_OVERRIDES += persist.wifi.sleep.delay.ms=0
+ PRODUCT_PROPERTY_OVERRIDES += persist.bt.power.down=true
+-PRODUCT_PROPERTY_OVERRIDES += vendor.hwc.device.primary=DSI
+-PRODUCT_PROPERTY_OVERRIDES += vendor.hwc.device.extend=HDMI-A,DP
++PRODUCT_PROPERTY_OVERRIDES += vendor.hwc.device.primary=HDMI-A-1
+diff --git a/rk3588/ATK_DLRK3588/BoardConfig.mk b/rk3588/ATK_DLRK3588/BoardConfig.mk
+index 486bb36..d6e1a0e 100644
+--- a/rk3588/ATK_DLRK3588/BoardConfig.mk
++++ b/rk3588/ATK_DLRK3588/BoardConfig.mk
+@@ -39,3 +39,5 @@ BOARD_HAS_RK_4G_MODEM := true
+ BOARD_HDMI_IN_SUPPORT := true
+ BOARD_HAS_QUECTEL_5G_MODEM := true
+ # BOARD_HAS_FIBOCOM_5G_MODEM := true
++BOARD_KERNEL_CMDLINE += video=HDMI-A-1:3840x2400@60
++# TARGET_BASE_PARAMETER_IMAGE := device/rockchip/rk3588/ATK_DLRK3588/etc/baseparameter_auto.img
+-- 
+2.53.0
+

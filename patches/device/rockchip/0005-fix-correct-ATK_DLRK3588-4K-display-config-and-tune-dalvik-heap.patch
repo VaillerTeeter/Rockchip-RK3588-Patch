@@ -1,0 +1,101 @@
+From 231d131c794eeb09f988d7a4525e9fb491faf975 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Tue, 4 Aug 2026 11:35:51 +0800
+Subject: [PATCH] fix: correct ATK_DLRK3588 4K display config and tune dalvik
+ heap
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+    - Remove BOARD_KERNEL_CMDLINE video=HDMI-A-1:3840x2400@60 (16:10
+      mode, not 4K); HDMI resolution now managed by vendor properties
+    - Add dual-port HDMI 4K@60 output via persist.vendor props
+    - Set 2x HiDPI scaling: density=320, AAPT xhdpi, logical 1920x1080dp
+      for 13.4" 3840x2160 panel (~329 PPI)
+    - Replace AOSP tablet-10in-xhdpi-2048 dalvik-heap template with
+      custom heap: heapgrowthlimit 192→256m, heapminfree 512k→2m,
+      heapmaxfree 8m→16m
+    - Reorganize display and dalvik sections with structured comments
+---
+ rk3588/ATK_DLRK3588/ATK_DLRK3588.mk | 43 +++++++++++++++++++++++++----
+ rk3588/ATK_DLRK3588/BoardConfig.mk  |  2 --
+ 2 files changed, 38 insertions(+), 7 deletions(-)
+
+diff --git a/rk3588/ATK_DLRK3588/ATK_DLRK3588.mk b/rk3588/ATK_DLRK3588/ATK_DLRK3588.mk
+index 9acaf03..b759112 100644
+--- a/rk3588/ATK_DLRK3588/ATK_DLRK3588.mk
++++ b/rk3588/ATK_DLRK3588/ATK_DLRK3588.mk
+@@ -25,8 +25,6 @@ include device/rockchip/rk3588/ATK_DLRK3588/preinstall/preinstall.mk
+ 
+ $(call inherit-product, device/rockchip/rk3588/device.mk)
+ $(call inherit-product, device/rockchip/common/device.mk)
+-$(call inherit-product, frameworks/native/build/tablet-10in-xhdpi-2048-dalvik-heap.mk)
+-
+ DEVICE_PACKAGE_OVERLAYS += $(LOCAL_PATH)/../overlay
+ DEVICE_PACKAGE_OVERLAYS += $(LOCAL_PATH)/overlay
+ 
+@@ -37,13 +35,48 @@ PRODUCT_DEVICE := ATK_DLRK3588
+ PRODUCT_BRAND := Alientek
+ PRODUCT_MODEL := ATK-DLRK3588
+ PRODUCT_MANUFACTURER := Alientek
+-PRODUCT_AAPT_PREF_CONFIG := xhdpi
+-PRODUCT_PACKAGES += CarHeadunitLauncher
++
+ #
+ ## add Rockchip properties
+ #
+-PRODUCT_PROPERTY_OVERRIDES += ro.sf.lcd_density=320 
+ PRODUCT_PROPERTY_OVERRIDES += ro.wifi.sleep.power.down=true
+ PRODUCT_PROPERTY_OVERRIDES += persist.wifi.sleep.delay.ms=0
+ PRODUCT_PROPERTY_OVERRIDES += persist.bt.power.down=true
+ PRODUCT_PROPERTY_OVERRIDES += vendor.hwc.device.primary=HDMI-A-1
++
++# =============================================================================
++# Prebuilt packages
++# =============================================================================
++PRODUCT_PACKAGES += CarHeadunitLauncher
++
++# =============================================================================
++# Display: 2x HiDPI scaling
++#   13.4" panel @ 3840x2160 (329 PPI)
++#   density=320 → logical 1920x1080dp, physical px:dp = 2:1
++# =============================================================================
++PRODUCT_AAPT_PREF_CONFIG := xhdpi
++PRODUCT_PROPERTY_OVERRIDES += ro.sf.lcd_density=320
++
++# =============================================================================
++# HDMI output: dual-port 4K @ 60Hz
++# =============================================================================
++PRODUCT_PROPERTY_OVERRIDES += persist.vendor.resolution.HDMI-A-0=3840x2160p60
++PRODUCT_PROPERTY_OVERRIDES += persist.vendor.framebuffer.HDMI-A-0=3840x2160@60
++PRODUCT_PROPERTY_OVERRIDES += persist.vendor.resolution.HDMI-A-1=3840x2160p60
++PRODUCT_PROPERTY_OVERRIDES += persist.vendor.framebuffer.HDMI-A-1=3840x2160@60
++
++# =============================================================================
++# Dalvik VM heap
++#   heapstartsize=16m       - initial heap per process
++#   heapgrowthlimit=256m    - soft cap before GC pressure (↑ from 192m)
++#   heapsize=512m           - hard cap for largeHeap apps
++#   heapminfree=2m          - min free after GC (↑ from 512k, reduce GC freq)
++#   heapmaxfree=16m         - max free after GC (↑ from 8m)
++# =============================================================================
++PRODUCT_VENDOR_PROPERTIES += \
++    dalvik.vm.heapstartsize?=16m \
++    dalvik.vm.heapgrowthlimit?=256m \
++    dalvik.vm.heapsize?=512m \
++    dalvik.vm.heaptargetutilization?=0.75 \
++    dalvik.vm.heapminfree?=2m \
++    dalvik.vm.heapmaxfree?=16m
+diff --git a/rk3588/ATK_DLRK3588/BoardConfig.mk b/rk3588/ATK_DLRK3588/BoardConfig.mk
+index d6e1a0e..486bb36 100644
+--- a/rk3588/ATK_DLRK3588/BoardConfig.mk
++++ b/rk3588/ATK_DLRK3588/BoardConfig.mk
+@@ -39,5 +39,3 @@ BOARD_HAS_RK_4G_MODEM := true
+ BOARD_HDMI_IN_SUPPORT := true
+ BOARD_HAS_QUECTEL_5G_MODEM := true
+ # BOARD_HAS_FIBOCOM_5G_MODEM := true
+-BOARD_KERNEL_CMDLINE += video=HDMI-A-1:3840x2400@60
+-# TARGET_BASE_PARAMETER_IMAGE := device/rockchip/rk3588/ATK_DLRK3588/etc/baseparameter_auto.img
+-- 
+2.53.0
+

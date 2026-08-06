@@ -1,0 +1,187 @@
+From d46e89a4a6665412e6a9ff1e65eda159b8af1dc4 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Thu, 30 Jul 2026 14:07:41 +0800
+Subject: [PATCH] feat: atk-evb7: disable camera and USB-DP altmode, fix USB
+ roles to peripheral/host, enable HDMI0 only
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+    - DTS (v10): comment out rk3588-atk-cameras.dtsi include to disable
+      camera subsystem for headunit deployment
+    - DTS (lp4): disable USB-DP altmode by removing svid = 0xff01 and
+      dp_altmode_mux endpoints on usbdp_phy0 and usbdp_phy1
+    - DTS (lp4): fix USB roles – dwc3_0 from otg to peripheral,
+      dwc3_1 from otg to host; disable usb-role-switch on both
+    - DTS (screen_choose): enable only ATK_LCD_TYPE_HDMI_TX0 (vp0);
+      disable MIPI_1080×1920, HDMI_TX1, DP_TX0, DP_TX1
+    - Board: alientek-rk3588-evb7-lp4-v10, display output limited to
+      single HDMI0 port for headunit use case
+---
+ .../dts/rockchip/rk3588-atk-evb7-lp4-v10.dts  |  2 +-
+ .../dts/rockchip/rk3588-atk-evb7-lp4.dtsi     | 28 +++++++++++--------
+ .../rockchip/rk3588-atk-screen_choose.dtsi    |  8 +++---
+ 3 files changed, 21 insertions(+), 17 deletions(-)
+
+diff --git a/arch/arm64/boot/dts/rockchip/rk3588-atk-evb7-lp4-v10.dts b/arch/arm64/boot/dts/rockchip/rk3588-atk-evb7-lp4-v10.dts
+index 94efb155d..2a8b6790f 100644
+--- a/arch/arm64/boot/dts/rockchip/rk3588-atk-evb7-lp4-v10.dts
++++ b/arch/arm64/boot/dts/rockchip/rk3588-atk-evb7-lp4-v10.dts
+@@ -7,7 +7,7 @@
+ /dts-v1/;
+ 
+ #include "rk3588-atk-evb7-lp4.dtsi"
+-#include "rk3588-atk-cameras.dtsi"
++// #include "rk3588-atk-cameras.dtsi"
+ #include "rk3588-atk-screen_choose.dtsi"
+ #include "rk3588-atk-lcds.dtsi"
+ #include "rk3588-android.dtsi"
+diff --git a/arch/arm64/boot/dts/rockchip/rk3588-atk-evb7-lp4.dtsi b/arch/arm64/boot/dts/rockchip/rk3588-atk-evb7-lp4.dtsi
+index 53768bdb1..84355d277 100644
+--- a/arch/arm64/boot/dts/rockchip/rk3588-atk-evb7-lp4.dtsi
++++ b/arch/arm64/boot/dts/rockchip/rk3588-atk-evb7-lp4.dtsi
+@@ -438,7 +438,7 @@ altmodes {
+ 
+ 				altmode@0 {
+ 					reg = <0>;
+-					svid = <0xff01>;
++					// svid = <0xff01>;
+ 					vdo = <0xffffffff>;
+ 				};
+ 			};
+@@ -453,13 +453,14 @@ usbc1_orien_sw: endpoint {
+ 						remote-endpoint = <&usbdp_phy1_orientation_switch>;
+ 					};
+ 				};
+-
++				/*
+ 				port@1 {
+ 					reg = <1>;
+ 					dp1_altmode_mux: endpoint {
+ 						remote-endpoint = <&usbdp_phy1_dp_altmode_mux>;
+ 					};
+ 				};
++				*/
+ 			};
+ 		};
+ 	};
+@@ -508,7 +509,7 @@ altmodes {
+ 
+ 				altmode@0 {
+ 					reg = <0>;
+-					svid = <0xff01>;
++					// svid = <0xff01>;
+ 					vdo = <0xffffffff>;
+ 				};
+ 			};
+@@ -523,13 +524,14 @@ usbc0_orien_sw: endpoint {
+ 						remote-endpoint = <&usbdp_phy0_orientation_switch>;
+ 					};
+ 				};
+-
++				/*
+ 				port@1 {
+ 					reg = <1>;
+ 					dp_altmode_mux: endpoint {
+ 						remote-endpoint = <&usbdp_phy0_dp_altmode_mux>;
+ 					};
+ 				};
++				*/
+ 			};
+ 		};
+ 	};
+@@ -773,7 +775,7 @@ &u2phy3_host {
+ 
+ &usbdp_phy0 {
+ 	orientation-switch;
+-	svid = <0xff01>;
++	// svid = <0xff01>;
+ 	sbu1-dc-gpios = <&gpio4 RK_PA0 GPIO_ACTIVE_HIGH>;
+ 	sbu2-dc-gpios = <&gpio4 RK_PA1 GPIO_ACTIVE_HIGH>;
+ 
+@@ -784,11 +786,12 @@ usbdp_phy0_orientation_switch: endpoint@0 {
+ 			reg = <0>;
+ 			remote-endpoint = <&usbc0_orien_sw>;
+ 		};
+-
++		/*
+ 		usbdp_phy0_dp_altmode_mux: endpoint@1 {
+ 			reg = <1>;
+ 			remote-endpoint = <&dp_altmode_mux>;
+ 		};
++		*/
+ 	};
+ };
+ 
+@@ -798,7 +801,7 @@ &usbdp_phy0_u3 {
+ 
+ &usbdp_phy1 {
+ 	orientation-switch;
+-	svid = <0xff01>;
++	// svid = <0xff01>;
+ 	sbu1-dc-gpios = <&gpio4 RK_PA2 GPIO_ACTIVE_HIGH>;
+ 	sbu2-dc-gpios = <&gpio4 RK_PA7 GPIO_ACTIVE_HIGH>;
+ 
+@@ -809,11 +812,12 @@ usbdp_phy1_orientation_switch: endpoint@0 {
+ 			reg = <0>;
+ 			remote-endpoint = <&usbc1_orien_sw>;
+ 		};
+-
++		/*
+ 		usbdp_phy1_dp_altmode_mux: endpoint@1 {
+ 			reg = <1>;
+ 			remote-endpoint = <&dp1_altmode_mux>;
+ 		};
++		*/
+ 	};
+ };
+ 
+@@ -822,8 +826,8 @@ &usbdp_phy1_u3 {
+ };
+ 
+ &usbdrd_dwc3_0 {
+-	dr_mode = "otg";
+-	usb-role-switch;
++	dr_mode = "peripheral";
++	// usb-role-switch;
+ 	port {
+ 		#address-cells = <1>;
+ 		#size-cells = <0>;
+@@ -835,8 +839,8 @@ dwc3_0_role_switch: endpoint@0 {
+ };
+ 
+ &usbdrd_dwc3_1 {
+-	dr_mode = "otg";
+-	usb-role-switch;
++	dr_mode = "host";
++	// usb-role-switch;
+ 	port {
+ 		#address-cells = <1>;
+ 		#size-cells = <0>;
+diff --git a/arch/arm64/boot/dts/rockchip/rk3588-atk-screen_choose.dtsi b/arch/arm64/boot/dts/rockchip/rk3588-atk-screen_choose.dtsi
+index 91a47e26c..789c44152 100644
+--- a/arch/arm64/boot/dts/rockchip/rk3588-atk-screen_choose.dtsi
++++ b/arch/arm64/boot/dts/rockchip/rk3588-atk-screen_choose.dtsi
+@@ -25,7 +25,7 @@
+  */
+ 
+ // #define ATK_LCD_TYPE_MIPI_TX0_5P5_720X1280	// from vp3
+-#define ATK_LCD_TYPE_MIPI_TX0_5P5_1080X1920	// from vp3
++// #define ATK_LCD_TYPE_MIPI_TX0_5P5_1080X1920	// from vp3
+ // #define ATK_LCD_TYPE_MIPI_TX0_10P1_800X1280	// from vp3
+ 
+ // #define ATK_LCD_TYPE_MIPI_TX1_5P5_720X1280	// from vp3
+@@ -33,7 +33,7 @@
+ // #define ATK_LCD_TYPE_MIPI_TX1_10P1_800X1280	// from vp3
+ 
+ #define ATK_LCD_TYPE_HDMI_TX0		// from vp0
+-#define ATK_LCD_TYPE_HDMI_TX1		// from vp1
+-#define ATK_LCD_TYPE_DP_TX0		// from vp2
+-#define ATK_LCD_TYPE_DP_TX1		// from vp2
++// #define ATK_LCD_TYPE_HDMI_TX1		// from vp1
++// #define ATK_LCD_TYPE_DP_TX0		// from vp2
++// #define ATK_LCD_TYPE_DP_TX1		// from vp2
+ 
+-- 
+2.53.0
+
