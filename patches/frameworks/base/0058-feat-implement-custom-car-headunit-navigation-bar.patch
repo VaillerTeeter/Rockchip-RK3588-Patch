@@ -1,0 +1,807 @@
+From 25e5f1f016cb8412abecfb95fcd504e93735d988 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 7 Aug 2026 01:28:58 +0800
+Subject: [PATCH] feat: implement custom car headunit navigation bar
+
+    - Lock navbar height at 72dp across all configurations
+    - Force pure black background (#FF000000) and white icons (#FFFFFFFF)
+    - Replace back/home icons with Heroicons stroke variants
+    - Add apps, settings, volume up/down/mute buttons to navbar layout
+    - Add AppListActivity for app grid launched from navbar apps button
+    - Control all customizations via persist.sys.headunit_navbar=1
+
+Change-Id: I4010aea4d8eb90ff3b222431a11a30009cd47065
+---
+ core/res/res/values-sw900dp/dimens.xml        |   4 +-
+ core/res/res/values/dimens.xml                |  12 +-
+ packages/SystemUI/AndroidManifest.xml         |   6 +
+ .../SystemUI/res/drawable/ic_nav_apps.xml     |  15 +++
+ .../SystemUI/res/drawable/ic_nav_settings.xml |  15 +++
+ .../res/drawable/ic_nav_volume_down.xml       |  15 +++
+ .../res/drawable/ic_nav_volume_mute.xml       |  15 +++
+ .../res/drawable/ic_nav_volume_up.xml         |  15 +++
+ .../SystemUI/res/drawable/ic_sysbar_back.xml  |  34 ++----
+ .../SystemUI/res/drawable/ic_sysbar_home.xml  |  33 ++----
+ .../SystemUI/res/layout/activity_app_list.xml |  48 ++++++++
+ packages/SystemUI/res/layout/item_app.xml     |  27 +++++
+ packages/SystemUI/res/layout/nav_apps.xml     |  17 +++
+ packages/SystemUI/res/layout/nav_settings.xml |  14 +++
+ .../SystemUI/res/layout/nav_volume_down.xml   |  15 +++
+ .../SystemUI/res/layout/nav_volume_mute.xml   |  15 +++
+ .../SystemUI/res/layout/nav_volume_up.xml     |  15 +++
+ .../SystemUI/res/layout/navigation_layout.xml |   1 +
+ packages/SystemUI/res/values/colors.xml       |   2 +-
+ .../systemui/applist/AppListActivity.java     | 109 ++++++++++++++++++
+ .../NavigationBarController.java              |   6 +
+ .../NavigationBarInflaterView.java            |  34 ++++++
+ .../NavigationBarTransitions.java             |   5 +
+ .../navigationbar/buttons/KeyButtonView.java  |  16 +--
+ .../statusbar/phone/LightBarController.java   |   4 +
+ 25 files changed, 431 insertions(+), 61 deletions(-)
+ create mode 100644 packages/SystemUI/res/drawable/ic_nav_apps.xml
+ create mode 100644 packages/SystemUI/res/drawable/ic_nav_settings.xml
+ create mode 100644 packages/SystemUI/res/drawable/ic_nav_volume_down.xml
+ create mode 100644 packages/SystemUI/res/drawable/ic_nav_volume_mute.xml
+ create mode 100644 packages/SystemUI/res/drawable/ic_nav_volume_up.xml
+ create mode 100644 packages/SystemUI/res/layout/activity_app_list.xml
+ create mode 100644 packages/SystemUI/res/layout/item_app.xml
+ create mode 100644 packages/SystemUI/res/layout/nav_apps.xml
+ create mode 100644 packages/SystemUI/res/layout/nav_settings.xml
+ create mode 100644 packages/SystemUI/res/layout/nav_volume_down.xml
+ create mode 100644 packages/SystemUI/res/layout/nav_volume_mute.xml
+ create mode 100644 packages/SystemUI/res/layout/nav_volume_up.xml
+ create mode 100644 packages/SystemUI/src/com/android/systemui/applist/AppListActivity.java
+
+diff --git a/core/res/res/values-sw900dp/dimens.xml b/core/res/res/values-sw900dp/dimens.xml
+index 9ec420453f6b..ecdea2a6b578 100644
+--- a/core/res/res/values-sw900dp/dimens.xml
++++ b/core/res/res/values-sw900dp/dimens.xml
+@@ -18,11 +18,11 @@
+ <resources>
+ 
+     <!-- Height of the bottom navigation / system bar. -->
+-    <dimen name="navigation_bar_height">56dp</dimen>
++    <dimen name="navigation_bar_height">72dp</dimen>
+ 
+     <!-- Height of the bottom navigation bar in landscape; often
+          the same as @dimen/navigation_bar_height -->
+-    <dimen name="navigation_bar_height_landscape">56dp</dimen>
++    <dimen name="navigation_bar_height_landscape">72dp</dimen>
+ 
+     <!-- Copied from SysUI's @dimen/navigation_key_width for the embedded nav bar in the IME. -->
+     <dimen name="input_method_navigation_key_width">80dp</dimen>
+diff --git a/core/res/res/values/dimens.xml b/core/res/res/values/dimens.xml
+index 2542268a153a..6810988649c4 100644
+--- a/core/res/res/values/dimens.xml
++++ b/core/res/res/values/dimens.xml
+@@ -59,11 +59,11 @@
+          -->
+     <dimen name="quick_qs_offset_height">48dp</dimen>
+     <!-- Height of the bottom navigation / system bar. -->
+-    <dimen name="navigation_bar_height">48dp</dimen>
++    <dimen name="navigation_bar_height">72dp</dimen>
+     <!-- Height of the bottom navigation bar in portrait; often the same as @dimen/navigation_bar_height -->
+-    <dimen name="navigation_bar_height_landscape">48dp</dimen>
++    <dimen name="navigation_bar_height_landscape">72dp</dimen>
+     <!-- Width of the navigation bar when it is placed vertically on the screen -->
+-    <dimen name="navigation_bar_width">48dp</dimen>
++    <dimen name="navigation_bar_width">72dp</dimen>
+     <!-- Height of the bottom taskbar not including decorations like rounded corners. -->
+     <dimen name="taskbar_frame_height">60dp</dimen>
+     <!-- How much we expand the touchable region of the status bar below the notch to catch touches
+@@ -89,12 +89,12 @@
+     <dimen name="navigation_bar_gesture_larger_height">80dp</dimen>
+ 
+     <!-- Height of the bottom navigation / system bar in car mode. -->
+-    <dimen name="navigation_bar_height_car_mode">96dp</dimen>
++    <dimen name="navigation_bar_height_car_mode">72dp</dimen>
+     <!-- Height of the bottom navigation bar in portrait; often the same as
+          @dimen/navigation_bar_height_car_mode -->
+-    <dimen name="navigation_bar_height_landscape_car_mode">96dp</dimen>
++    <dimen name="navigation_bar_height_landscape_car_mode">72dp</dimen>
+     <!-- Width of the navigation bar when it is placed vertically on the screen in car mode -->
+-    <dimen name="navigation_bar_width_car_mode">96dp</dimen>
++    <dimen name="navigation_bar_width_car_mode">72dp</dimen>
+     <!-- Height of notification icons in the status bar -->
+     <dimen name="status_bar_icon_size">22dip</dimen>
+     <!-- Desired size of system icons in status bar. -->
+diff --git a/packages/SystemUI/AndroidManifest.xml b/packages/SystemUI/AndroidManifest.xml
+index 59be7a895157..d17f19c955c0 100644
+--- a/packages/SystemUI/AndroidManifest.xml
++++ b/packages/SystemUI/AndroidManifest.xml
+@@ -1022,5 +1022,11 @@
+             <meta-data android:name="androidx.emoji2.text.EmojiCompatInitializer"
+                 tools:node="remove" />
+         </provider>
++
++        <!-- ATK_DLRK3588: App list activity launched from navigation bar -->
++        <activity
++            android:name="com.android.systemui.applist.AppListActivity"
++            android:exported="false"
++            android:screenOrientation="landscape" />
+     </application>
+ </manifest>
+diff --git a/packages/SystemUI/res/drawable/ic_nav_apps.xml b/packages/SystemUI/res/drawable/ic_nav_apps.xml
+new file mode 100644
+index 000000000000..64fc11c17d75
+--- /dev/null
++++ b/packages/SystemUI/res/drawable/ic_nav_apps.xml
+@@ -0,0 +1,15 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- Apps grid icon for navigation bar (Heroicons) -->
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++    android:width="48dp"
++    android:height="48dp"
++    android:viewportWidth="24"
++    android:viewportHeight="24"
++    android:tint="#FFFFFF">
++    <path
++        android:strokeColor="#FFFFFF"
++        android:strokeWidth="1.5"
++        android:strokeLineCap="round"
++        android:strokeLineJoin="round"
++        android:pathData="m20.25,7.5l-0.625,10.632a2.25,2.25 0,0 1,-2.247 2.118H6.622a2.25,2.25 0,0 1,-2.247 -2.118L3.75,7.5M10,11.25h4M3.375,7.5h17.25c0.621,0 1.125,-0.504 1.125,-1.125v-1.5c0,-0.621 -0.504,-1.125 -1.125,-1.125H3.375c-0.621,0 -1.125,0.504 -1.125,1.125v1.5c0,0.621 0.504,1.125 1.125,1.125Z" />
++</vector>
+\ No newline at end of file
+diff --git a/packages/SystemUI/res/drawable/ic_nav_settings.xml b/packages/SystemUI/res/drawable/ic_nav_settings.xml
+new file mode 100644
+index 000000000000..fe6aee4d6ad6
+--- /dev/null
++++ b/packages/SystemUI/res/drawable/ic_nav_settings.xml
+@@ -0,0 +1,15 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- Settings gear icon for navigation bar (Heroicons) -->
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++    android:width="48dp"
++    android:height="48dp"
++    android:viewportWidth="24"
++    android:viewportHeight="24"
++    android:tint="#FFFFFF">
++    <path
++        android:strokeColor="#FFFFFF"
++        android:strokeWidth="1.5"
++        android:strokeLineCap="round"
++        android:strokeLineJoin="round"
++        android:pathData="M4.5,12a7.5,7.5 0,0 0,15 0m-15,0a7.5,7.5 0,1 1,15 0m-15,0H3m16.5,0H21m-1.5,0H12m-8.457,3.077l1.41,-0.513m14.095,-5.13l1.41,-0.513M5.106,17.785l1.15,-0.964m11.49,-9.642l1.149,-0.964M7.501,19.795l0.75,-1.3m7.5,-12.99l0.75,-1.3m-6.063,16.658l0.26,-1.477m2.605,-14.772l0.26,-1.477m0,17.726l-0.26,-1.477M10.698,4.614l-0.26,-1.477M16.5,19.794l-0.75,-1.299M7.5,4.205L12,12m6.894,5.785l-1.149,-0.964M6.256,7.178l-1.15,-0.964m15.352,8.864l-1.41,-0.513M4.954,9.435l-1.41,-0.514M12.002,12l-3.75,6.495" />
++</vector>
+\ No newline at end of file
+diff --git a/packages/SystemUI/res/drawable/ic_nav_volume_down.xml b/packages/SystemUI/res/drawable/ic_nav_volume_down.xml
+new file mode 100644
+index 000000000000..826bf2c88fc9
+--- /dev/null
++++ b/packages/SystemUI/res/drawable/ic_nav_volume_down.xml
+@@ -0,0 +1,15 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- Volume down icon for navigation bar (Heroicons speaker-wave, 1 arc) -->
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++    android:width="48dp"
++    android:height="48dp"
++    android:viewportWidth="24"
++    android:viewportHeight="24"
++    android:tint="#FFFFFF">
++    <path
++        android:strokeColor="#FFFFFF"
++        android:strokeWidth="1.5"
++        android:strokeLineCap="round"
++        android:strokeLineJoin="round"
++        android:pathData="M16.463,8.288a5.25,5.25 0,0 1,0 7.424M6.75,8.25l4.72,-4.72a0.75,0.75 0,0 1,1.28 0.53v15.88a0.75,0.75 0,0 1,-1.28 0.53l-4.72,-4.72H4.51c-0.88,0 -1.704,-0.507 -1.938,-1.354A9.009,9.009 0,0 1,2.25 12c0,-0.83 0.112,-1.633 0.322,-2.396C2.806,8.756 3.63,8.25 4.51,8.25H6.75Z" />
++</vector>
+\ No newline at end of file
+diff --git a/packages/SystemUI/res/drawable/ic_nav_volume_mute.xml b/packages/SystemUI/res/drawable/ic_nav_volume_mute.xml
+new file mode 100644
+index 000000000000..ce8f9da63ef8
+--- /dev/null
++++ b/packages/SystemUI/res/drawable/ic_nav_volume_mute.xml
+@@ -0,0 +1,15 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- Mute icon for navigation bar (Heroicons speaker-x-mark) -->
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++    android:width="48dp"
++    android:height="48dp"
++    android:viewportWidth="24"
++    android:viewportHeight="24"
++    android:tint="#FFFFFF">
++    <path
++        android:strokeColor="#FFFFFF"
++        android:strokeWidth="1.5"
++        android:strokeLineCap="round"
++        android:strokeLineJoin="round"
++        android:pathData="M17.25,9.75L19.875,12m0,0l2.625,2.25M19.875,12l2.625,-2.25M19.875,12l-2.625,2.25m-10.5,-6l4.72,-4.72a0.75,0.75 0,0 1,1.28 0.53v15.88a0.75,0.75 0,0 1,-1.28 0.53l-4.72,-4.72H4.51c-0.88,0 -1.704,-0.507 -1.938,-1.354A9.009,9.009 0,0 1,2.25 12c0,-0.83 0.112,-1.633 0.322,-2.396C2.806,8.756 3.63,8.25 4.51,8.25H6.75Z" />
++</vector>
+\ No newline at end of file
+diff --git a/packages/SystemUI/res/drawable/ic_nav_volume_up.xml b/packages/SystemUI/res/drawable/ic_nav_volume_up.xml
+new file mode 100644
+index 000000000000..c01c086015b6
+--- /dev/null
++++ b/packages/SystemUI/res/drawable/ic_nav_volume_up.xml
+@@ -0,0 +1,15 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- Volume up icon for navigation bar (Heroicons speaker-wave, 3 arcs) -->
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++    android:width="48dp"
++    android:height="48dp"
++    android:viewportWidth="24"
++    android:viewportHeight="24"
++    android:tint="#FFFFFF">
++    <path
++        android:strokeColor="#FFFFFF"
++        android:strokeWidth="1.5"
++        android:strokeLineCap="round"
++        android:strokeLineJoin="round"
++        android:pathData="M19.114,5.636a9,9 0,0 1,0 12.728M16.463,8.288a5.25,5.25 0,0 1,0 7.424M13.5,10.5a2,2 0,0 1,0 3M6.75,8.25l4.72,-4.72a0.75,0.75 0,0 1,1.28 0.53v15.88a0.75,0.75 0,0 1,-1.28 0.53l-4.72,-4.72H4.51c-0.88,0 -1.704,-0.507 -1.938,-1.354A9.009,9.009 0,0 1,2.25 12c0,-0.83 0.112,-1.633 0.322,-2.396C2.806,8.756 3.63,8.25 4.51,8.25H6.75Z" />
++</vector>
+\ No newline at end of file
+diff --git a/packages/SystemUI/res/drawable/ic_sysbar_back.xml b/packages/SystemUI/res/drawable/ic_sysbar_back.xml
+index 6c34655733ed..8230a278c0c5 100644
+--- a/packages/SystemUI/res/drawable/ic_sysbar_back.xml
++++ b/packages/SystemUI/res/drawable/ic_sysbar_back.xml
+@@ -1,27 +1,15 @@
+ <?xml version="1.0" encoding="utf-8"?>
+-<!--
+-     Copyright (C) 2018 The Android Open Source Project
+-
+-     Licensed under the Apache License, Version 2.0 (the "License");
+-     you may not use this file except in compliance with the License.
+-     You may obtain a copy of the License at
+-
+-          http://www.apache.org/licenses/LICENSE-2.0
+-
+-     Unless required by applicable law or agreed to in writing, software
+-     distributed under the License is distributed on an "AS IS" BASIS,
+-     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+-     See the License for the specific language governing permissions and
+-     limitations under the License.
+--->
++<!-- Back icon for navigation bar (Heroicons) -->
+ <vector xmlns:android="http://schemas.android.com/apk/res/android"
+-    android:width="20dp"
+-    android:height="20dp"
+-    android:autoMirrored="true"
+-    android:viewportWidth="20"
+-    android:viewportHeight="20">
+-
++    android:width="48dp"
++    android:height="48dp"
++    android:viewportWidth="24"
++    android:viewportHeight="24"
++    android:tint="#FFFFFF">
+     <path
+-        android:fillColor="?attr/singleToneColor"
+-        android:pathData="M15.5417 1.66669C15.1833 1.66669 14.8417 1.76669 14.5333 1.94169L3.21667 8.74169C2.775 9.00002 2.5 9.48335 2.5 10C2.5 10.5167 2.775 11 3.21667 11.2584L14.5333 18.05C14.8417 18.2334 15.1833 18.325 15.5417 18.325C16.625 18.325 17.5 17.45 17.5 16.3667V3.62502C17.5 2.54169 16.625 1.66669 15.5417 1.66669Z" />
++        android:strokeColor="#FFFFFF"
++        android:strokeWidth="1.5"
++        android:strokeLineCap="round"
++        android:strokeLineJoin="round"
++        android:pathData="M12,9.75L14.25,12m0,0l2.25,2.25M14.25,12l2.25,-2.25M14.25,12L12,14.25m-2.58,4.92l-6.374,-6.375a1.125,1.125 0,0 1,0 -1.59L9.42,4.83c0.21,-0.211 0.497,-0.33 0.795,-0.33H19.5a2.25,2.25 0,0 1,2.25 2.25v10.5a2.25,2.25 0,0 1,-2.25 2.25h-9.284c-0.298,0 -0.585,-0.119 -0.795,-0.33Z" />
+ </vector>
+\ No newline at end of file
+diff --git a/packages/SystemUI/res/drawable/ic_sysbar_home.xml b/packages/SystemUI/res/drawable/ic_sysbar_home.xml
+index 8b2a58a50224..8ece0266c0e7 100644
+--- a/packages/SystemUI/res/drawable/ic_sysbar_home.xml
++++ b/packages/SystemUI/res/drawable/ic_sysbar_home.xml
+@@ -1,26 +1,15 @@
+ <?xml version="1.0" encoding="utf-8"?>
+-<!--
+-     Copyright (C) 2018 The Android Open Source Project
+-
+-     Licensed under the Apache License, Version 2.0 (the "License");
+-     you may not use this file except in compliance with the License.
+-     You may obtain a copy of the License at
+-
+-          http://www.apache.org/licenses/LICENSE-2.0
+-
+-     Unless required by applicable law or agreed to in writing, software
+-     distributed under the License is distributed on an "AS IS" BASIS,
+-     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+-     See the License for the specific language governing permissions and
+-     limitations under the License.
+--->
++<!-- Home icon for navigation bar (Heroicons) -->
+ <vector xmlns:android="http://schemas.android.com/apk/res/android"
+-    android:width="20dp"
+-    android:height="20dp"
+-    android:viewportWidth="20"
+-    android:viewportHeight="20">
+-
++    android:width="48dp"
++    android:height="48dp"
++    android:viewportWidth="24"
++    android:viewportHeight="24"
++    android:tint="#FFFFFF">
+     <path
+-        android:fillColor="?attr/singleToneColor"
+-        android:pathData="M10.0001 18.3334C5.40008 18.3334 1.66675 14.6 1.66675 10C1.66675 5.40002 5.40008 1.66669 10.0001 1.66669C14.6001 1.66669 18.3334 5.40002 18.3334 10C18.3334 14.6 14.6001 18.3334 10.0001 18.3334Z" />
++        android:strokeColor="#FFFFFF"
++        android:strokeWidth="1.5"
++        android:strokeLineCap="round"
++        android:strokeLineJoin="round"
++        android:pathData="m2.25,12l8.954,-8.955c0.44,-0.439 1.152,-0.439 1.591,0L21.75,12M4.5,9.75v10.125c0,0.621 0.504,1.125 1.125,1.125H9.75v-4.875c0,-0.621 0.504,-1.125 1.125,-1.125h2.25c0.621,0 1.125,0.504 1.125,1.125V21h4.125c0.621,0 1.125,-0.504 1.125,-1.125V9.75M8.25,21h8.25" />
+ </vector>
+\ No newline at end of file
+diff --git a/packages/SystemUI/res/layout/activity_app_list.xml b/packages/SystemUI/res/layout/activity_app_list.xml
+new file mode 100644
+index 000000000000..170427f9ff34
+--- /dev/null
++++ b/packages/SystemUI/res/layout/activity_app_list.xml
+@@ -0,0 +1,48 @@
++<?xml version="1.0" encoding="utf-8"?>
++<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
++    android:layout_width="match_parent"
++    android:layout_height="match_parent"
++    android:orientation="vertical"
++    android:background="#1a1a2e">
++
++    <!-- Title bar -->
++    <LinearLayout
++        android:layout_width="match_parent"
++        android:layout_height="56dp"
++        android:orientation="horizontal"
++        android:gravity="center_vertical"
++        android:paddingHorizontal="16dp"
++        android:background="#16213e">
++
++        <TextView
++            android:layout_width="0dp"
++            android:layout_height="wrap_content"
++            android:layout_weight="1"
++            android:text="全部应用"
++            android:textColor="#FFFFFF"
++            android:textSize="20sp" />
++
++        <TextView
++            android:id="@+id/app_count"
++            android:layout_width="wrap_content"
++            android:layout_height="wrap_content"
++            android:textColor="#AAAAAA"
++            android:textSize="14sp" />
++    </LinearLayout>
++
++    <!-- App grid -->
++    <GridView
++        android:id="@+id/app_grid"
++        android:layout_width="match_parent"
++        android:layout_height="0dp"
++        android:layout_weight="1"
++        android:numColumns="6"
++        android:verticalSpacing="12dp"
++        android:horizontalSpacing="8dp"
++        android:padding="16dp"
++        android:clipToPadding="false"
++        android:scrollbars="vertical"
++        android:fadeScrollbars="true"
++        android:listSelector="@android:color/transparent" />
++
++</LinearLayout>
+\ No newline at end of file
+diff --git a/packages/SystemUI/res/layout/item_app.xml b/packages/SystemUI/res/layout/item_app.xml
+new file mode 100644
+index 000000000000..1a35ec28f918
+--- /dev/null
++++ b/packages/SystemUI/res/layout/item_app.xml
+@@ -0,0 +1,27 @@
++<?xml version="1.0" encoding="utf-8"?>
++<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
++    android:layout_width="match_parent"
++    android:layout_height="wrap_content"
++    android:orientation="vertical"
++    android:gravity="center"
++    android:padding="12dp"
++    android:background="?android:attr/selectableItemBackground">
++
++    <ImageView
++        android:id="@+id/app_icon"
++        android:layout_width="64dp"
++        android:layout_height="64dp"
++        android:scaleType="fitCenter" />
++
++    <TextView
++        android:id="@+id/app_name"
++        android:layout_width="wrap_content"
++        android:layout_height="wrap_content"
++        android:layout_marginTop="6dp"
++        android:maxLines="2"
++        android:ellipsize="end"
++        android:gravity="center"
++        android:textColor="#E0E0E0"
++        android:textSize="13sp" />
++
++</LinearLayout>
+\ No newline at end of file
+diff --git a/packages/SystemUI/res/layout/nav_apps.xml b/packages/SystemUI/res/layout/nav_apps.xml
+new file mode 100644
+index 000000000000..b4aa61586265
+--- /dev/null
++++ b/packages/SystemUI/res/layout/nav_apps.xml
+@@ -0,0 +1,17 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!--
++  ATK_DLRK3588: "Apps" button for car headunit navigation bar
++-->
++<com.android.systemui.navigationbar.buttons.KeyButtonView
++    xmlns:android="http://schemas.android.com/apk/res/android"
++    xmlns:systemui="http://schemas.android.com/apk/res-auto"
++    android:id="@+id/clipboard"
++    android:layout_width="@dimen/navigation_key_width"
++    android:layout_height="match_parent"
++    android:layout_weight="0"
++    android:scaleType="center"
++    android:src="@drawable/ic_nav_apps"
++    android:tint="#FFFFFF"
++    android:contentDescription="@string/accessibility_key"
++    android:paddingStart="@dimen/navigation_key_padding"
++    android:paddingEnd="@dimen/navigation_key_padding" />
+diff --git a/packages/SystemUI/res/layout/nav_settings.xml b/packages/SystemUI/res/layout/nav_settings.xml
+new file mode 100644
+index 000000000000..89a8b949b0e4
+--- /dev/null
++++ b/packages/SystemUI/res/layout/nav_settings.xml
+@@ -0,0 +1,14 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!--
++  ATK_DLRK3588: "Settings" button for car headunit navigation bar
++-->
++<com.android.systemui.navigationbar.buttons.KeyButtonView
++    xmlns:android="http://schemas.android.com/apk/res/android"
++    xmlns:systemui="http://schemas.android.com/apk/res-auto"
++    android:layout_width="@dimen/navigation_key_width"
++    android:layout_height="match_parent"
++    android:layout_weight="0"
++    android:scaleType="center"
++    android:src="@drawable/ic_nav_settings"
++    android:tint="#FFFFFF"
++    android:contentDescription="@string/accessibility_key" />
+\ No newline at end of file
+diff --git a/packages/SystemUI/res/layout/nav_volume_down.xml b/packages/SystemUI/res/layout/nav_volume_down.xml
+new file mode 100644
+index 000000000000..cea0044515db
+--- /dev/null
++++ b/packages/SystemUI/res/layout/nav_volume_down.xml
+@@ -0,0 +1,15 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!--
++  ATK_DLRK3588: "Volume Down" button for car headunit navigation bar
++-->
++<com.android.systemui.navigationbar.buttons.KeyButtonView
++    xmlns:android="http://schemas.android.com/apk/res/android"
++    xmlns:systemui="http://schemas.android.com/apk/res-auto"
++    android:layout_width="@dimen/navigation_key_width"
++    android:layout_height="match_parent"
++    android:layout_weight="0"
++    systemui:keyCode="25"
++    android:scaleType="center"
++    android:src="@drawable/ic_nav_volume_down"
++    android:tint="#FFFFFF"
++    android:contentDescription="@string/accessibility_key" />
+\ No newline at end of file
+diff --git a/packages/SystemUI/res/layout/nav_volume_mute.xml b/packages/SystemUI/res/layout/nav_volume_mute.xml
+new file mode 100644
+index 000000000000..3609f7352c68
+--- /dev/null
++++ b/packages/SystemUI/res/layout/nav_volume_mute.xml
+@@ -0,0 +1,15 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!--
++  ATK_DLRK3588: "Mute" button for car headunit navigation bar
++-->
++<com.android.systemui.navigationbar.buttons.KeyButtonView
++    xmlns:android="http://schemas.android.com/apk/res/android"
++    xmlns:systemui="http://schemas.android.com/apk/res-auto"
++    android:layout_width="@dimen/navigation_key_width"
++    android:layout_height="match_parent"
++    android:layout_weight="0"
++    systemui:keyCode="164"
++    android:scaleType="center"
++    android:src="@drawable/ic_nav_volume_mute"
++    android:tint="#FFFFFF"
++    android:contentDescription="@string/accessibility_key" />
+\ No newline at end of file
+diff --git a/packages/SystemUI/res/layout/nav_volume_up.xml b/packages/SystemUI/res/layout/nav_volume_up.xml
+new file mode 100644
+index 000000000000..cd9caaf84078
+--- /dev/null
++++ b/packages/SystemUI/res/layout/nav_volume_up.xml
+@@ -0,0 +1,15 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!--
++  ATK_DLRK3588: "Volume Up" button for car headunit navigation bar
++-->
++<com.android.systemui.navigationbar.buttons.KeyButtonView
++    xmlns:android="http://schemas.android.com/apk/res/android"
++    xmlns:systemui="http://schemas.android.com/apk/res-auto"
++    android:layout_width="@dimen/navigation_key_width"
++    android:layout_height="match_parent"
++    android:layout_weight="0"
++    systemui:keyCode="24"
++    android:scaleType="center"
++    android:src="@drawable/ic_nav_volume_up"
++    android:tint="#FFFFFF"
++    android:contentDescription="@string/accessibility_key" />
+\ No newline at end of file
+diff --git a/packages/SystemUI/res/layout/navigation_layout.xml b/packages/SystemUI/res/layout/navigation_layout.xml
+index 46f238cbe588..e27deab9c16c 100644
+--- a/packages/SystemUI/res/layout/navigation_layout.xml
++++ b/packages/SystemUI/res/layout/navigation_layout.xml
+@@ -23,6 +23,7 @@
+     android:layout_marginEnd="@dimen/rounded_corner_content_padding"
+     android:paddingStart="@dimen/nav_content_padding"
+     android:paddingEnd="@dimen/nav_content_padding"
++    android:background="#FF000000"
+     android:clipChildren="false"
+     android:clipToPadding="false"
+     android:id="@+id/horizontal">
+diff --git a/packages/SystemUI/res/values/colors.xml b/packages/SystemUI/res/values/colors.xml
+index 9d00a27442ca..7505adfcc055 100644
+--- a/packages/SystemUI/res/values/colors.xml
++++ b/packages/SystemUI/res/values/colors.xml
+@@ -91,7 +91,7 @@
+     <color name="user_switcher_fullscreen_popup_item_tint">@*android:color/text_color_primary_device_default_dark</color>
+ 
+     <!-- The color of the navigation bar icons. Need to be in sync with ic_sysbar_* -->
+-    <color name="navigation_bar_icon_color">#E5FFFFFF</color>
++    <color name="navigation_bar_icon_color">#FFFFFFFF</color>
+ 
+     <color name="navigation_bar_home_handle_light_color">#EBffffff</color>
+     <color name="navigation_bar_home_handle_dark_color">#99000000</color>
+diff --git a/packages/SystemUI/src/com/android/systemui/applist/AppListActivity.java b/packages/SystemUI/src/com/android/systemui/applist/AppListActivity.java
+new file mode 100644
+index 000000000000..1553d832dd43
+--- /dev/null
++++ b/packages/SystemUI/src/com/android/systemui/applist/AppListActivity.java
+@@ -0,0 +1,109 @@
++package com.android.systemui.applist;
++
++import android.app.Activity;
++import com.android.systemui.R;
++import android.content.Intent;
++import android.content.pm.PackageManager;
++import android.content.pm.ResolveInfo;
++import android.os.Bundle;
++import android.view.View;
++import android.view.ViewGroup;
++import android.widget.BaseAdapter;
++import android.widget.GridView;
++import android.widget.ImageView;
++import android.widget.TextView;
++
++import java.util.ArrayList;
++import java.util.Collections;
++import java.util.List;
++
++public class AppListActivity extends Activity {
++
++    private PackageManager mPm;
++
++    @Override
++    protected void onCreate(Bundle savedInstanceState) {
++        super.onCreate(savedInstanceState);
++        setContentView(R.layout.activity_app_list);
++
++        mPm = getPackageManager();
++
++        GridView grid = findViewById(R.id.app_grid);
++        TextView countView = findViewById(R.id.app_count);
++
++        List<ResolveInfo> apps = loadApps();
++        countView.setText(String.valueOf(apps.size()) + " 个应用");
++
++        grid.setAdapter(new AppsAdapter(apps));
++        grid.setOnItemClickListener((parent, view, position, id) -> {
++            ResolveInfo info = (ResolveInfo) parent.getItemAtPosition(position);
++            Intent intent = new Intent(Intent.ACTION_MAIN)
++                    .setClassName(info.activityInfo.packageName, info.activityInfo.name)
++                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
++            startActivity(intent);
++        });
++    }
++
++    private List<ResolveInfo> loadApps() {
++        Intent mainIntent = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER);
++        List<ResolveInfo> apps = mPm.queryIntentActivities(mainIntent, 0);
++
++        // Sort alphabetically by app label, ignore case
++        Collections.sort(apps, (a, b) -> {
++            String nameA = a.loadLabel(mPm).toString();
++            String nameB = b.loadLabel(mPm).toString();
++            return nameA.compareToIgnoreCase(nameB);
++        });
++
++        return apps;
++    }
++
++    private class AppsAdapter extends BaseAdapter {
++
++        private final List<ResolveInfo> mApps;
++
++        AppsAdapter(List<ResolveInfo> apps) {
++            mApps = apps;
++        }
++
++        @Override
++        public int getCount() {
++            return mApps.size();
++        }
++
++        @Override
++        public Object getItem(int position) {
++            return mApps.get(position);
++        }
++
++        @Override
++        public long getItemId(int position) {
++            return position;
++        }
++
++        @Override
++        public View getView(int position, View convertView, ViewGroup parent) {
++            ViewHolder holder;
++            if (convertView == null) {
++                convertView = getLayoutInflater().inflate(R.layout.item_app, parent, false);
++                holder = new ViewHolder();
++                holder.icon = convertView.findViewById(R.id.app_icon);
++                holder.name = convertView.findViewById(R.id.app_name);
++                convertView.setTag(holder);
++            } else {
++                holder = (ViewHolder) convertView.getTag();
++            }
++
++            ResolveInfo info = mApps.get(position);
++            holder.icon.setImageDrawable(info.loadIcon(mPm));
++            holder.name.setText(info.loadLabel(mPm));
++
++            return convertView;
++        }
++
++        private class ViewHolder {
++            ImageView icon;
++            TextView name;
++        }
++    }
++}
+\ No newline at end of file
+diff --git a/packages/SystemUI/src/com/android/systemui/navigationbar/NavigationBarController.java b/packages/SystemUI/src/com/android/systemui/navigationbar/NavigationBarController.java
+index 21398e23cc10..693997bb80ab 100644
+--- a/packages/SystemUI/src/com/android/systemui/navigationbar/NavigationBarController.java
++++ b/packages/SystemUI/src/com/android/systemui/navigationbar/NavigationBarController.java
+@@ -237,6 +237,12 @@ public class NavigationBarController implements
+ 
+     /** @return {@code true} if taskbar is enabled, false otherwise */
+     private boolean initializeTaskbarIfNecessary() {
++        // Car headunit: force traditional navigation bar, disable taskbar
++        if (android.os.SystemProperties.getBoolean("persist.sys.headunit_navbar", false)) {
++            mTaskbarDelegate.destroy();
++            return false;
++        }
++
+         // Enable for large screens or (phone AND flag is set); assuming phone = !mIsLargeScreen
+         boolean taskbarEnabled = mIsLargeScreen || mFeatureFlags.isEnabled(
+                 Flags.HIDE_NAVBAR_WINDOW);
+diff --git a/packages/SystemUI/src/com/android/systemui/navigationbar/NavigationBarInflaterView.java b/packages/SystemUI/src/com/android/systemui/navigationbar/NavigationBarInflaterView.java
+index 59bb2278edfe..ea81c435a9c4 100644
+--- a/packages/SystemUI/src/com/android/systemui/navigationbar/NavigationBarInflaterView.java
++++ b/packages/SystemUI/src/com/android/systemui/navigationbar/NavigationBarInflaterView.java
+@@ -21,8 +21,10 @@ import static android.view.WindowManagerPolicyConstants.NAV_BAR_MODE_3BUTTON;
+ 
+ import android.annotation.Nullable;
+ import android.content.Context;
++import android.content.Intent;
+ import android.content.res.Configuration;
+ import android.graphics.drawable.Icon;
++import android.provider.Settings;
+ import android.util.AttributeSet;
+ import android.util.Log;
+ import android.util.SparseArray;
+@@ -68,6 +70,11 @@ public class NavigationBarInflaterView extends FrameLayout
+     public static final String RIGHT = "right";
+     public static final String CONTEXTUAL = "contextual";
+     public static final String IME_SWITCHER = "ime_switcher";
++    public static final String NAV_APPS = "nav_apps";
++    public static final String NAV_SETTINGS = "nav_settings";
++    public static final String NAV_VOLUME_UP = "nav_volume_up";
++    public static final String NAV_VOLUME_DOWN = "nav_volume_down";
++    public static final String NAV_VOLUME_MUTE = "nav_volume_mute";
+ 
+     public static final String GRAVITY_SEPARATOR = ";";
+     public static final String BUTTON_SEPARATOR = ",";
+@@ -138,6 +145,11 @@ public class NavigationBarInflaterView extends FrameLayout
+     }
+ 
+     protected String getDefaultLayout() {
++        // Car headunit: force custom 4-button layout (back, home, apps, settings)
++        if (android.os.SystemProperties.getBoolean("persist.sys.headunit_navbar", false)) {
++            return "space;back,home,nav_volume_down,nav_volume_mute,nav_volume_up,nav_apps,nav_settings;space";
++        }
++
+         final int defaultResource = QuickStepContract.isGesturalMode(mNavBarMode)
+                 ? R.string.config_navBarLayoutHandle
+                 : mOverviewProxyService.shouldShowSwipeUpUI()
+@@ -387,6 +399,28 @@ public class NavigationBarInflaterView extends FrameLayout
+             v = inflater.inflate(R.layout.home_handle, parent, false);
+         } else if (IME_SWITCHER.equals(button)) {
+             v = inflater.inflate(R.layout.ime_switcher, parent, false);
++        } else if (NAV_APPS.equals(button)) {
++            v = inflater.inflate(R.layout.nav_apps, parent, false);
++            v.setOnClickListener(view -> {
++                Intent intent = new Intent(Intent.ACTION_MAIN)
++                        .setClassName("com.android.systemui",
++                                "com.android.systemui.applist.AppListActivity")
++                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
++                mContext.startActivity(intent);
++            });
++        } else if (NAV_SETTINGS.equals(button)) {
++            v = inflater.inflate(R.layout.nav_settings, parent, false);
++            v.setOnClickListener(view -> {
++                Intent intent = new Intent(Settings.ACTION_SETTINGS)
++                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
++                mContext.startActivity(intent);
++            });
++        } else if (NAV_VOLUME_UP.equals(button)) {
++            v = inflater.inflate(R.layout.nav_volume_up, parent, false);
++        } else if (NAV_VOLUME_DOWN.equals(button)) {
++            v = inflater.inflate(R.layout.nav_volume_down, parent, false);
++        } else if (NAV_VOLUME_MUTE.equals(button)) {
++            v = inflater.inflate(R.layout.nav_volume_mute, parent, false);
+         } else if (button.startsWith(KEY)) {
+             String uri = extractImage(button);
+             int code = extractKeycode(button);
+diff --git a/packages/SystemUI/src/com/android/systemui/navigationbar/NavigationBarTransitions.java b/packages/SystemUI/src/com/android/systemui/navigationbar/NavigationBarTransitions.java
+index 1d73bc205dc4..90c3eeaaffab 100644
+--- a/packages/SystemUI/src/com/android/systemui/navigationbar/NavigationBarTransitions.java
++++ b/packages/SystemUI/src/com/android/systemui/navigationbar/NavigationBarTransitions.java
+@@ -83,6 +83,11 @@ public final class NavigationBarTransitions extends BarTransitions implements
+                 .getBoolean(R.bool.config_navigation_bar_enable_auto_dim_no_visible_wallpaper);
+         mDarkIntensityListeners = new ArrayList();
+ 
++        // Car headunit: force always opaque black background, ignore app requests
++        if (android.os.SystemProperties.getBoolean("persist.sys.headunit_navbar", false)) {
++            setAlwaysOpaque(true);
++        }
++
+         mView.addOnLayoutChangeListener(
+                 (v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
+                     View currentView = mView.getCurrentView();
+diff --git a/packages/SystemUI/src/com/android/systemui/navigationbar/buttons/KeyButtonView.java b/packages/SystemUI/src/com/android/systemui/navigationbar/buttons/KeyButtonView.java
+index 83c2a5de5c6e..8be43e23722c 100644
+--- a/packages/SystemUI/src/com/android/systemui/navigationbar/buttons/KeyButtonView.java
++++ b/packages/SystemUI/src/com/android/systemui/navigationbar/buttons/KeyButtonView.java
+@@ -349,14 +349,16 @@ public class KeyButtonView extends ImageView implements ButtonInterface {
+         if (drawable == null) {
+             return;
+         }
+-        KeyButtonDrawable keyButtonDrawable = (KeyButtonDrawable) drawable;
+-        keyButtonDrawable.setDarkIntensity(mDarkIntensity);
+-        mHasOvalBg = keyButtonDrawable.hasOvalBg();
+-        if (mHasOvalBg) {
+-            mOvalBgPaint.setColor(keyButtonDrawable.getDrawableBackgroundColor());
++        if (drawable instanceof KeyButtonDrawable) {
++            KeyButtonDrawable keyButtonDrawable = (KeyButtonDrawable) drawable;
++            keyButtonDrawable.setDarkIntensity(mDarkIntensity);
++            mHasOvalBg = keyButtonDrawable.hasOvalBg();
++            if (mHasOvalBg) {
++                mOvalBgPaint.setColor(keyButtonDrawable.getDrawableBackgroundColor());
++            }
++            mRipple.setType(keyButtonDrawable.hasOvalBg() ? KeyButtonRipple.Type.OVAL
++                    : KeyButtonRipple.Type.ROUNDED_RECT);
+         }
+-        mRipple.setType(keyButtonDrawable.hasOvalBg() ? KeyButtonRipple.Type.OVAL
+-                : KeyButtonRipple.Type.ROUNDED_RECT);
+     }
+ 
+     public void playSoundEffect(int soundConstant) {
+diff --git a/packages/SystemUI/src/com/android/systemui/statusbar/phone/LightBarController.java b/packages/SystemUI/src/com/android/systemui/statusbar/phone/LightBarController.java
+index fe2a9137c1a9..ad5bd4c31497 100644
+--- a/packages/SystemUI/src/com/android/systemui/statusbar/phone/LightBarController.java
++++ b/packages/SystemUI/src/com/android/systemui/statusbar/phone/LightBarController.java
+@@ -159,6 +159,10 @@ public class LightBarController implements BatteryController.BatteryStateChangeC
+             mNavigationLight = mHasLightNavigationBar
+                     && (mDirectReplying && mNavbarColorManagedByIme || !mForceDarkForScrim)
+                     && !mQsCustomizing;
++            // Car headunit: force dark navigation bar (white icons), ignore app requests
++            if (android.os.SystemProperties.getBoolean("persist.sys.headunit_navbar", false)) {
++                mNavigationLight = false;
++            }
+             if (mNavigationLight != last) {
+                 updateNavigation();
+             }
+-- 
+2.53.0
+

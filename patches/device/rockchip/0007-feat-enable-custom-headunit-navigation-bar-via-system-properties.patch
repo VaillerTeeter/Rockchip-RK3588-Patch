@@ -1,0 +1,30 @@
+From 69ab2ad441e632a0e0ab7bbda170b2d00efd42e8 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 7 Aug 2026 01:12:58 +0800
+Subject: [PATCH] feat: enable custom headunit navigation bar via system
+ properties
+
+    Set qemu.hw.mainkeys=0 to show the navigation bar and
+    persist.sys.headunit_navbar=1 to activate the custom
+    headunit navbar logic (forced black background, white
+    icons, volume buttons, apps/settings launcher).
+---
+ rk3588/ATK_DLRK3588/ATK_DLRK3588.mk | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/rk3588/ATK_DLRK3588/ATK_DLRK3588.mk b/rk3588/ATK_DLRK3588/ATK_DLRK3588.mk
+index 35a4a8c..86585c8 100644
+--- a/rk3588/ATK_DLRK3588/ATK_DLRK3588.mk
++++ b/rk3588/ATK_DLRK3588/ATK_DLRK3588.mk
+@@ -41,6 +41,8 @@ PRODUCT_PROPERTY_OVERRIDES += ro.wifi.sleep.power.down=true
+ PRODUCT_PROPERTY_OVERRIDES += persist.wifi.sleep.delay.ms=0
+ PRODUCT_PROPERTY_OVERRIDES += persist.bt.power.down=true
+ PRODUCT_PROPERTY_OVERRIDES += vendor.hwc.device.primary=HDMI-A-1
++PRODUCT_PROPERTY_OVERRIDES += qemu.hw.mainkeys=0
++PRODUCT_PROPERTY_OVERRIDES += persist.sys.headunit_navbar=1
+ 
+ # =============================================================================
+ # Prebuilt packages
+-- 
+2.53.0
+
