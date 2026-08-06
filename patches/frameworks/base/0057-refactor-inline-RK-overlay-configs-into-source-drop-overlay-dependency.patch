@@ -1,0 +1,155 @@
+From 3ab1eaeccce0288b3544b454e843267c6bc9640f Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 7 Aug 2026 01:21:25 +0800
+Subject: [PATCH] refactor: inline RK overlay configs into source, drop overlay
+ dependency
+
+    Move all ATK_DLRK3588 overlay overrides directly into their source
+    files so the overlay mechanism can be removed from the device tree.
+    Affected files: frameworks/base config, SettingsProvider defaults,
+    and SystemUI config.
+
+Change-Id: I20b10be49e7428284a3eac7df8fca2a1f466ec2a
+---
+ core/res/res/values/config.xml                 | 18 ++++++++++++------
+ .../SettingsProvider/res/values/defaults.xml   | 12 ++++++------
+ packages/SystemUI/res/values/config.xml        |  6 +++++-
+ 3 files changed, 23 insertions(+), 13 deletions(-)
+
+diff --git a/core/res/res/values/config.xml b/core/res/res/values/config.xml
+index 9891409a08bb..ddf0c97d485b 100644
+--- a/core/res/res/values/config.xml
++++ b/core/res/res/values/config.xml
+@@ -246,7 +246,7 @@
+          dozing).  This should be enabled if you have such services and expect apps to
+          correctly use them when installed on your device.  Otherwise, keep this disabled
+          so that applications can still use their own mechanisms. -->
+-    <bool name="config_enableAutoPowerModes">false</bool>
++    <bool name="config_enableAutoPowerModes">true</bool>
+ 
+     <!-- Whether (if true) this is a kind of device that can be moved around (eg. phone/laptop),
+          or (if false) something for which movement is either not measurable or should not count
+@@ -301,6 +301,8 @@
+         <item>"wifi_p2p,13,1,0,-1,true"</item>
+         <item>"mobile_ia,14,0,2,-1,true"</item>
+         <item>"mobile_emergency,15,0,2,-1,true"</item>
++        <item>"bluetooth,7,7,0,-1,true"</item>
++        <item>"ethernet,9,9,9,-1,true"</item>
+     </string-array>
+ 
+     <!-- Array of ConnectivityManager.TYPE_xxxx constants for networks that may only
+@@ -1523,7 +1525,7 @@
+     <!-- Screen brightness used to dim the screen when the user activity
+          timeout expires.  May be less than the minimum allowed brightness setting
+          that can be set by the user. -->
+-    <integer name="config_screenBrightnessDim">10</integer>
++    <integer name="config_screenBrightnessDim">2</integer>
+     <item name="config_screenBrightnessDimFloat" format="float" type="dimen">0.05</item>
+ 
+     <!-- If the screen brightness is already set at or below config_screenBrightnessDim, and the
+@@ -2463,7 +2465,7 @@
+ 
+     <!-- Whether a software navigation bar should be shown. NOTE: in the future this may be
+          autodetected from the Configuration. -->
+-    <bool name="config_showNavigationBar">false</bool>
++    <bool name="config_showNavigationBar">true</bool>
+ 
+     <!-- Whether action menu items should be displayed in ALLCAPS or not.
+          Defaults to true. If this is not appropriate for specific locales
+@@ -2471,7 +2473,11 @@
+     <bool name="config_actionMenuItemAllCaps">true</bool>
+ 
+     <!-- Remote server that can provide NTP responses. -->
+-    <string translatable="false" name="config_ntpServer">time.android.com</string>
++    <string translatable="false" name="config_ntpServer">asia.pool.ntp.org</string>
++    <!-- Boolean indicating whether or not wifi firmware debugging is enabled -->
++    <bool translatable="false" name="config_wifi_enable_wifi_firmware_debugging">false</bool>
++    <!-- Integer size limit, in KB, for a single WifiLogger ringbuffer, in verbose logging mode -->
++    <integer translatable="false" name="config_wifi_logger_ring_buffer_verbose_size_limit_kb">64</integer>
+     <!-- Normal polling frequency in milliseconds -->
+     <integer name="config_ntpPollingInterval">64800000</integer>
+     <!-- Try-again polling interval in milliseconds, in case the network request failed -->
+@@ -2765,7 +2771,7 @@
+     <bool name="config_syncstorageengine_masterSyncAutomatically">true</bool>
+ 
+     <!--  Maximum number of supported users -->
+-    <integer name="config_multiuserMaximumUsers">1</integer>
++    <integer name="config_multiuserMaximumUsers">3</integer>
+ 
+     <!-- Maximum number of users we allow to be running at a time -->
+     <integer name="config_multiuserMaxRunningUsers">3</integer>
+@@ -3847,7 +3853,7 @@
+ 
+     <!-- Controls whether the navbar needs a scrim with
+          {@link Window#setEnsuringNavigationBarContrastWhenTransparent}. -->
+-    <bool name="config_navBarNeedsScrim">true</bool>
++    <bool name="config_navBarNeedsScrim">false</bool>
+ 
+     <!-- Controls whether seamless rotation should be allowed even though the navbar can move
+          (which normally prevents seamless rotation). -->
+diff --git a/packages/SettingsProvider/res/values/defaults.xml b/packages/SettingsProvider/res/values/defaults.xml
+index 99b15db780dc..fff49fc6b272 100644
+--- a/packages/SettingsProvider/res/values/defaults.xml
++++ b/packages/SettingsProvider/res/values/defaults.xml
+@@ -18,7 +18,7 @@
+ -->
+ <resources>
+     <bool name="def_dim_screen">true</bool>
+-    <integer name="def_screen_off_timeout">60000</integer>
++    <integer name="def_screen_off_timeout">0x7fffffff</integer>
+     <integer name="def_sleep_timeout">-1</integer>
+     <bool name="def_airplane_mode_on">false</bool>
+     <bool name="def_theater_mode_on">false</bool>
+@@ -32,11 +32,11 @@
+     <!-- Default screen brightness, from 0 to 255.  102 is 40%. -->
+     <integer name="def_screen_brightness">102</integer>
+     <bool name="def_screen_brightness_automatic_mode">false</bool>
+-    <fraction name="def_window_animation_scale">100%</fraction>
+-    <fraction name="def_window_transition_scale">100%</fraction>
++    <fraction name="def_window_animation_scale">50%</fraction>
++    <fraction name="def_window_transition_scale">50%</fraction>
+     <bool name="def_haptic_feedback">true</bool>
+ 
+-    <bool name="def_bluetooth_on">true</bool>
++    <bool name="def_bluetooth_on">false</bool>
+     <bool name="def_wifi_display_on">false</bool>
+     <bool name="def_install_non_market_apps">false</bool>
+     <!-- 0 == off, 3 == on -->
+@@ -82,7 +82,7 @@
+     <integer name="def_max_sound_trigger_detection_service_ops_per_day" translatable="false">1000</integer>
+     <integer name="def_sound_trigger_detection_service_op_timeout" translatable="false">15000</integer>
+ 
+-    <bool name="def_lockscreen_disabled">false</bool>
++    <bool name="def_lockscreen_disabled">true</bool>
+     <bool name="def_device_provisioned">false</bool>
+     <integer name="def_dock_audio_media_enabled">1</integer>
+ 
+@@ -154,7 +154,7 @@
+          which is a comma separated list of packages that no longer need confirmation
+          for immersive mode.
+          Override to disable immersive mode confirmation for certain packages. -->
+-    <string name="def_immersive_mode_confirmations" translatable="false"></string>
++    <string name="def_immersive_mode_confirmations" translatable="false">confirmed</string>
+ 
+     <!-- Default for Settings.Global.WIFI_SCAN_ALWAYS_AVAILABLE -->
+     <integer name="def_wifi_scan_always_available">0</integer>
+diff --git a/packages/SystemUI/res/values/config.xml b/packages/SystemUI/res/values/config.xml
+index 9fae4d3e0855..0b4f33ed162c 100644
+--- a/packages/SystemUI/res/values/config.xml
++++ b/packages/SystemUI/res/values/config.xml
+@@ -50,7 +50,11 @@
+          enabled for OLED devices to reduce/prevent burn in on the navigation bar (because of the
+          black background and static button placements) and disabled for all other devices to
+          prevent wasting cpu cycles on the dimming animation -->
+-    <bool name="config_navigation_bar_enable_auto_dim_no_visible_wallpaper">true</bool>
++    <bool name="config_navigation_bar_enable_auto_dim_no_visible_wallpaper">false</bool>
++
++    <!-- If true, enable the advance anti-falsing classifier on the lockscreen. On
++         some devices it does not work well, particularly with noisy touchscreens. -->
++    <bool name="config_lockscreenAntiFalsingClassifierEnabled">false</bool>
+ 
+     <!-- The maximum number of tiles in the QuickQSPanel -->
+     <integer name="quick_qs_panel_max_tiles">4</integer>
+-- 
+2.53.0
+
