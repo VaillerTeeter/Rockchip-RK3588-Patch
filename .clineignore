@@ -1,0 +1,41 @@
+# === Sub-repo source trees (full copies into AOSP, modified via patches, not read directly) ===
+rk-kernel-5.10/
+u-boot/
+rkbin/
+rk-can-utils/
+rk-ntfs-3g/
+
+# === Temp files & binaries ===
+TMP/
+prebuilts/
+*.apk
+*.tar.gz
+*.bmp
+*.bin
+*.img
+*.o
+*.ko
+*.a
+*.so
+*.dtb
+*.dtbo
+
+# === Logs & lock files ===
+*.log
+*.lock
+
+# === Binary media (no semantic value) ===
+*.png
+*.ico
+*.icns
+*.gif
+*.webp
+*.mp4
+*.ttf
+*.otf
+*.woff
+*.woff2
+
+# === IDE & OS noise ===
+.DS_Store
+Thumbs.db
