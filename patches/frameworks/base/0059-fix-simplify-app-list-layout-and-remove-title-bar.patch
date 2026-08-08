@@ -1,0 +1,114 @@
+From bae2b8eb4118697df160c2b41dafcd76324803d9 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Sat, 8 Aug 2026 19:27:23 +0800
+Subject: [PATCH] fix: simplify app list layout and remove title bar
+
+    Drop the LinearLayout wrapper and embedded title bar from the app
+    drawer layout. The GridView is now the root element, and the
+    activity requests FEATURE_NO_TITLE to suppress the system
+    ActionBar.
+
+Change-Id: Ieb491894f817ad80e1553e719b3396f2df7b57a5
+---
+ .../SystemUI/res/layout/activity_app_list.xml | 56 ++++---------------
+ .../systemui/applist/AppListActivity.java     |  4 +-
+ 2 files changed, 13 insertions(+), 47 deletions(-)
+
+diff --git a/packages/SystemUI/res/layout/activity_app_list.xml b/packages/SystemUI/res/layout/activity_app_list.xml
+index 170427f9ff34..ecfd4a818510 100644
+--- a/packages/SystemUI/res/layout/activity_app_list.xml
++++ b/packages/SystemUI/res/layout/activity_app_list.xml
+@@ -1,48 +1,14 @@
+ <?xml version="1.0" encoding="utf-8"?>
+-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
++<GridView xmlns:android="http://schemas.android.com/apk/res/android"
++    android:id="@+id/app_grid"
+     android:layout_width="match_parent"
+     android:layout_height="match_parent"
+-    android:orientation="vertical"
+-    android:background="#1a1a2e">
+-
+-    <!-- Title bar -->
+-    <LinearLayout
+-        android:layout_width="match_parent"
+-        android:layout_height="56dp"
+-        android:orientation="horizontal"
+-        android:gravity="center_vertical"
+-        android:paddingHorizontal="16dp"
+-        android:background="#16213e">
+-
+-        <TextView
+-            android:layout_width="0dp"
+-            android:layout_height="wrap_content"
+-            android:layout_weight="1"
+-            android:text="全部应用"
+-            android:textColor="#FFFFFF"
+-            android:textSize="20sp" />
+-
+-        <TextView
+-            android:id="@+id/app_count"
+-            android:layout_width="wrap_content"
+-            android:layout_height="wrap_content"
+-            android:textColor="#AAAAAA"
+-            android:textSize="14sp" />
+-    </LinearLayout>
+-
+-    <!-- App grid -->
+-    <GridView
+-        android:id="@+id/app_grid"
+-        android:layout_width="match_parent"
+-        android:layout_height="0dp"
+-        android:layout_weight="1"
+-        android:numColumns="6"
+-        android:verticalSpacing="12dp"
+-        android:horizontalSpacing="8dp"
+-        android:padding="16dp"
+-        android:clipToPadding="false"
+-        android:scrollbars="vertical"
+-        android:fadeScrollbars="true"
+-        android:listSelector="@android:color/transparent" />
+-
+-</LinearLayout>
+\ No newline at end of file
++    android:numColumns="6"
++    android:verticalSpacing="12dp"
++    android:horizontalSpacing="8dp"
++    android:padding="16dp"
++    android:clipToPadding="false"
++    android:scrollbars="vertical"
++    android:fadeScrollbars="true"
++    android:listSelector="@android:color/transparent"
++    android:background="#1a1a2e" />
+diff --git a/packages/SystemUI/src/com/android/systemui/applist/AppListActivity.java b/packages/SystemUI/src/com/android/systemui/applist/AppListActivity.java
+index 1553d832dd43..03a0347cabdd 100644
+--- a/packages/SystemUI/src/com/android/systemui/applist/AppListActivity.java
++++ b/packages/SystemUI/src/com/android/systemui/applist/AppListActivity.java
+@@ -7,6 +7,7 @@ import android.content.pm.PackageManager;
+ import android.content.pm.ResolveInfo;
+ import android.os.Bundle;
+ import android.view.View;
++import android.view.Window;
+ import android.view.ViewGroup;
+ import android.widget.BaseAdapter;
+ import android.widget.GridView;
+@@ -23,16 +24,15 @@ public class AppListActivity extends Activity {
+ 
+     @Override
+     protected void onCreate(Bundle savedInstanceState) {
++        requestWindowFeature(Window.FEATURE_NO_TITLE);
+         super.onCreate(savedInstanceState);
+         setContentView(R.layout.activity_app_list);
+ 
+         mPm = getPackageManager();
+ 
+         GridView grid = findViewById(R.id.app_grid);
+-        TextView countView = findViewById(R.id.app_count);
+ 
+         List<ResolveInfo> apps = loadApps();
+-        countView.setText(String.valueOf(apps.size()) + " 个应用");
+ 
+         grid.setAdapter(new AppsAdapter(apps));
+         grid.setOnItemClickListener((parent, view, position, id) -> {
+-- 
+2.53.0
+

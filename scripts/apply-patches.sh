@@ -216,6 +216,8 @@ step "device/rockchip — 解压 + 打补丁"
 DEV_RK_TAR="$PATCHES_ROOT/patches/device/rk3588-device-rk-dirs.tar.gz"
 DEV_DST="$TARGET_ROOT/device"
 DEV_PATCH_DIR="$PATCHES_ROOT/patches/device"
+DEV_APK_SRC_1="$DEV_PATCH_DIR/Auto"
+DEV_APK_DST_1="$DEV_DST/rockchip/rk3588/ATK_DLRK3588/preinstall/Auto"
 
 # 清理上次 _ensure_git_head 创建的 .git 目录，避免二次 tar 解压时
 # tarball 中的 .git 文件与磁盘上的 .git 目录冲突（File exists）
@@ -231,6 +233,8 @@ apply_resources \
 _ensure_git_repo "$DEV_DST/rockchip"       "device/rockchip"
 # 对 xxxx 打补丁（_ensure_git_repo 刚创建了 git 仓库）
 apply_patches    "$DEV_PATCH_DIR/rockchip" "$DEV_DST/rockchip" "device/rockchip"
+# copy 内置 APK
+copy_with_guard  "$DEV_APK_SRC_1"          "$DEV_APK_DST_1"    "Auto"
 
 # ---------- 补丁 11：frameworks ----------
 step "frameworks — 打补丁 + 解压"

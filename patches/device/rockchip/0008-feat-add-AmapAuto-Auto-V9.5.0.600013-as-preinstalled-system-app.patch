@@ -1,0 +1,149 @@
+From 6c7f1f28b628410e3b70ad7ae5040d17d7c101b1 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Sat, 8 Aug 2026 19:14:37 +0800
+Subject: [PATCH] feat: add AmapAuto (Auto V9.5.0.600013) as preinstalled
+ system app
+
+    Install AmapAuto apk, native libraries, and default permissions into
+    /system/preinstall/Auto for ATK_DLRK3588 device target.
+---
+ rk3588/ATK_DLRK3588/ATK_DLRK3588.mk           |  4 +
+ .../ATK_DLRK3588/preinstall/Auto/Android.mk   | 77 +++++++++++++++++++
+ .../preinstall/Auto/default-permissions.xml   | 17 ++++
+ rk3588/ATK_DLRK3588/preinstall/preinstall.mk  |  1 +
+ 4 files changed, 99 insertions(+)
+ create mode 100644 rk3588/ATK_DLRK3588/preinstall/Auto/Android.mk
+ create mode 100644 rk3588/ATK_DLRK3588/preinstall/Auto/default-permissions.xml
+
+diff --git a/rk3588/ATK_DLRK3588/ATK_DLRK3588.mk b/rk3588/ATK_DLRK3588/ATK_DLRK3588.mk
+index 86585c8..6f8952a 100644
+--- a/rk3588/ATK_DLRK3588/ATK_DLRK3588.mk
++++ b/rk3588/ATK_DLRK3588/ATK_DLRK3588.mk
+@@ -49,6 +49,10 @@ PRODUCT_PROPERTY_OVERRIDES += persist.sys.headunit_navbar=1
+ # =============================================================================
+ PRODUCT_PACKAGES += CarHeadunitLauncher
+ 
++# Pre-granted runtime permissions for preinstalled apps
++PRODUCT_COPY_FILES += \
++    device/rockchip/rk3588/ATK_DLRK3588/preinstall/Auto/default-permissions.xml:$(TARGET_COPY_OUT_SYSTEM)/etc/default-permissions/default-permissions-auto.xml
++
+ # =============================================================================
+ # Display: 2x HiDPI scaling
+ #   13.4" panel @ 3840x2160 (329 PPI)
+diff --git a/rk3588/ATK_DLRK3588/preinstall/Auto/Android.mk b/rk3588/ATK_DLRK3588/preinstall/Auto/Android.mk
+new file mode 100644
+index 0000000..63de041
+--- /dev/null
++++ b/rk3588/ATK_DLRK3588/preinstall/Auto/Android.mk
+@@ -0,0 +1,77 @@
++LOCAL_PATH := $(call my-dir)
++
++# ========== Auto APK ==========
++include $(CLEAR_VARS)
++LOCAL_MODULE := Auto
++LOCAL_MODULE_CLASS := APPS
++LOCAL_MODULE_TAGS := optional
++LOCAL_BUILT_MODULE_STEM := package.apk
++LOCAL_MODULE_SUFFIX := $(COMMON_ANDROID_PACKAGE_SUFFIX)
++LOCAL_SRC_FILES := $(LOCAL_MODULE).apk
++LOCAL_CERTIFICATE := PRESIGNED
++LOCAL_PREBUILT_JNI_LIBS := \
++    lib/arm64-v8a/libAmapFreeType.so \
++    lib/arm64-v8a/libAutoDice.so \
++    lib/arm64-v8a/libBootLoader.so \
++    lib/arm64-v8a/libCommon.so \
++    lib/arm64-v8a/libContentProvider.so \
++    lib/arm64-v8a/libEaglet.so \
++    lib/arm64-v8a/libEagletEx.so \
++    lib/arm64-v8a/libGAdaptor.so \
++    lib/arm64-v8a/libGAdaptorInterface.so \
++    lib/arm64-v8a/libGComm3rd.so \
++    lib/arm64-v8a/libGFrame.so \
++    lib/arm64-v8a/libGNet.so \
++    lib/arm64-v8a/libGPlatformInterface.so \
++    lib/arm64-v8a/libGSQuirrel.so \
++    lib/arm64-v8a/libGUltraLog.so \
++    lib/arm64-v8a/libGbl.so \
++    lib/arm64-v8a/libMainScreen.so \
++    lib/arm64-v8a/libOSL_MNN.so \
++    lib/arm64-v8a/libUpdateMng.so \
++    lib/arm64-v8a/libaim.so \
++    lib/arm64-v8a/libamsgnss.so \
++    lib/arm64-v8a/libanr_tool.so \
++    lib/arm64-v8a/libapssdk.so \
++    lib/arm64-v8a/libautonavi.so \
++    lib/arm64-v8a/libbase_utils.so \
++    lib/arm64-v8a/libc++_shared.so \
++    lib/arm64-v8a/libcmb_AGroupPackage.so \
++    lib/arm64-v8a/libcmb_BootScreenPackage.so \
++    lib/arm64-v8a/libcmb_Common.so \
++    lib/arm64-v8a/libcmb_DriveReportPackage.so \
++    lib/arm64-v8a/libcmb_Dupinfo.so \
++    lib/arm64-v8a/libcmb_FileMerge.so \
++    lib/arm64-v8a/libcmb_GVersion.so \
++    lib/arm64-v8a/libcmb_GasServicePackage.so \
++    lib/arm64-v8a/libcmb_MainPackage.so \
++    lib/arm64-v8a/libcmb_MyTrackPackage.so \
++    lib/arm64-v8a/libcmb_OverlayRes.so \
++    lib/arm64-v8a/libcmb_PhoneConnPackage.so \
++    lib/arm64-v8a/libcmb_SwitchCardPackage.so \
++    lib/arm64-v8a/libcmb_TbtPackage.so \
++    lib/arm64-v8a/libcmb_TripodPackage.so \
++    lib/arm64-v8a/libcmb_UserInfoPackage.so \
++    lib/arm64-v8a/libcmb_WechatBindPackage.so \
++    lib/arm64-v8a/libcmb_font_cn.so \
++    lib/arm64-v8a/libcmb_style1.so \
++    lib/arm64-v8a/libcmb_style2.so \
++    lib/arm64-v8a/libcmb_style3.so \
++    lib/arm64-v8a/libcmb_style4.so \
++    lib/arm64-v8a/libcmb_style5.so \
++    lib/arm64-v8a/libdmojo_support.so \
++    lib/arm64-v8a/libdumpcrash.so \
++    lib/arm64-v8a/libgaea.so \
++    lib/arm64-v8a/libhsl.so \
++    lib/arm64-v8a/libifly_aime.so \
++    lib/arm64-v8a/libiksemel.so \
++    lib/arm64-v8a/libmqtt_jni.so \
++    lib/arm64-v8a/libneonui_shared.so \
++    lib/arm64-v8a/libopenssl.so \
++    lib/arm64-v8a/libsgmain.so \
++    lib/arm64-v8a/libsgmainso-6.7.260202.so \
++    lib/arm64-v8a/libsgmainso.version.so \
++    lib/arm64-v8a/libturbo.so \
++    lib/arm64-v8a/libwireless.so
++LOCAL_DEX_PREOPT := false
++include $(BUILD_PREBUILT)
+diff --git a/rk3588/ATK_DLRK3588/preinstall/Auto/default-permissions.xml b/rk3588/ATK_DLRK3588/preinstall/Auto/default-permissions.xml
+new file mode 100644
+index 0000000..dcd5530
+--- /dev/null
++++ b/rk3588/ATK_DLRK3588/preinstall/Auto/default-permissions.xml
+@@ -0,0 +1,17 @@
++<?xml version="1.0" encoding="utf-8"?>
++<exceptions>
++    <exception package="com.autonavi.amapauto">
++        <!-- Runtime dangerous permissions - auto granted on boot -->
++        <permission name="android.permission.ACCESS_FINE_LOCATION" fixed="true"/>
++        <permission name="android.permission.ACCESS_COARSE_LOCATION" fixed="true"/>
++        <permission name="android.permission.ACCESS_BACKGROUND_LOCATION" fixed="true"/>
++        <permission name="android.permission.READ_PHONE_STATE" fixed="true"/>
++        <permission name="android.permission.READ_EXTERNAL_STORAGE" fixed="true"/>
++        <permission name="android.permission.WRITE_EXTERNAL_STORAGE" fixed="true"/>
++        <permission name="android.permission.POST_NOTIFICATIONS" fixed="true"/>
++        <permission name="android.permission.BLUETOOTH_CONNECT" fixed="true"/>
++        <permission name="android.permission.BLUETOOTH_SCAN" fixed="true"/>
++        <permission name="android.permission.FOREGROUND_SERVICE" fixed="true"/>
++        <permission name="android.permission.RECEIVE_BOOT_COMPLETED" fixed="true"/>
++    </exception>
++</exceptions>
+\ No newline at end of file
+diff --git a/rk3588/ATK_DLRK3588/preinstall/preinstall.mk b/rk3588/ATK_DLRK3588/preinstall/preinstall.mk
+index a27832a..1ba48d6 100644
+--- a/rk3588/ATK_DLRK3588/preinstall/preinstall.mk
++++ b/rk3588/ATK_DLRK3588/preinstall/preinstall.mk
+@@ -1 +1,2 @@
+ PRODUCT_PACKAGES += TencentAppStore
++PRODUCT_PACKAGES += Auto
+-- 
+2.53.0
+

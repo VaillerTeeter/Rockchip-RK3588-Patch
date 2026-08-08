@@ -1,0 +1,97 @@
+From f6ae55aeb211642e51d51a8e124e5ad161535df1 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Sat, 8 Aug 2026 19:28:41 +0800
+Subject: [PATCH] feat: hide amapauto from app drawer and suppress freeform
+ caption
+
+    Filter com.autonavi.amapauto from the app list since it is embedded
+    as a permanent map tile in CarHeadunitLauncher. Also hide the
+    freeform caption bar (DecorCaptionView) so the map appears seamless,
+    and prevent the caption from reappearing on configuration changes.
+
+Change-Id: I401edee9c0c2f00722565873c8600e327c1573c8
+---
+ .../internal/widget/DecorCaptionView.java     |  7 ++++++
+ .../systemui/applist/AppListActivity.java     |  6 ++++-
+ .../server/policy/PhoneWindowManager.java     | 23 +++++++++++++++++++
+ 3 files changed, 35 insertions(+), 1 deletion(-)
+
+diff --git a/core/java/com/android/internal/widget/DecorCaptionView.java b/core/java/com/android/internal/widget/DecorCaptionView.java
+index 362fd7b4e937..f35d6e4bc938 100644
+--- a/core/java/com/android/internal/widget/DecorCaptionView.java
++++ b/core/java/com/android/internal/widget/DecorCaptionView.java
+@@ -130,6 +130,13 @@ public class DecorCaptionView extends ViewGroup implements View.OnTouchListener,
+     public void setPhoneWindow(PhoneWindow owner, boolean show) {
+         mOwner = owner;
+         mShow = show;
++        // Suppress freeform caption bar for AmapAuto:
++        // The map is embedded into CarHeadunitLauncher via launchBounds and
++        // should appear as a seamless tile, not a draggable window.
++        if (mShow && "com.autonavi.amapauto".equals(
++                owner.getContext().getPackageName())) {
++            mShow = false;
++        }
+         mOverlayWithAppContent = owner.isOverlayWithDecorCaptionEnabled();
+         updateCaptionVisibility();
+         // By changing the outline provider to BOUNDS, the window can remove its
+diff --git a/packages/SystemUI/src/com/android/systemui/applist/AppListActivity.java b/packages/SystemUI/src/com/android/systemui/applist/AppListActivity.java
+index 03a0347cabdd..63ab23126f25 100644
+--- a/packages/SystemUI/src/com/android/systemui/applist/AppListActivity.java
++++ b/packages/SystemUI/src/com/android/systemui/applist/AppListActivity.java
+@@ -46,7 +46,11 @@ public class AppListActivity extends Activity {
+ 
+     private List<ResolveInfo> loadApps() {
+         Intent mainIntent = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER);
+-        List<ResolveInfo> apps = mPm.queryIntentActivities(mainIntent, 0);
++        List<ResolveInfo> apps = new ArrayList<>(mPm.queryIntentActivities(mainIntent, 0));
++
++        // Car headunit: hide amapauto from app drawer — it is embedded
++        // in the Launcher's map_container via freeform window.
++        apps.removeIf(info -> "com.autonavi.amapauto".equals(info.activityInfo.packageName));
+ 
+         // Sort alphabetically by app label, ignore case
+         Collections.sort(apps, (a, b) -> {
+diff --git a/services/core/java/com/android/server/policy/PhoneWindowManager.java b/services/core/java/com/android/server/policy/PhoneWindowManager.java
+index 40643f638ac0..25fca8e5a208 100644
+--- a/services/core/java/com/android/server/policy/PhoneWindowManager.java
++++ b/services/core/java/com/android/server/policy/PhoneWindowManager.java
+@@ -904,6 +904,18 @@ public class PhoneWindowManager implements WindowManagerPolicy {
+     }
+ 
+ 
++    /**
++     * Returns true if the focused window belongs to AmapAuto.
++     * Used to block all key events from reaching the embedded map.
++     */
++    private boolean isAmapAutoFocused(IBinder focusedToken) {
++        com.android.internal.policy.KeyInterceptionInfo info =
++                mWindowManagerInternal.getKeyInterceptionInfoFromToken(focusedToken);
++        if (info == null) return false;
++        return info.windowTitle != null
++                && info.windowTitle.contains("com.autonavi.amapauto");
++    }
++
+     // returns true if the key was handled and should not be passed to the user
+     private boolean backKeyPress() {
+         mLogger.count("key_back_press", 1);
+@@ -2859,6 +2871,17 @@ public class PhoneWindowManager implements WindowManagerPolicy {
+     @Override
+     public long interceptKeyBeforeDispatching(IBinder focusedToken, KeyEvent event,
+             int policyFlags) {
++        // Block BACK and HOME from reaching the AmapAuto freeform window.
++        // The map is embedded as a display-only tile in CarHeadunitLauncher;
++        // volume and media keys must pass through for the navigation bar buttons.
++        if (focusedToken != null && isAmapAutoFocused(focusedToken)) {
++            if (event.getKeyCode() == KeyEvent.KEYCODE_BACK
++                    || event.getKeyCode() == KeyEvent.KEYCODE_HOME) {
++                return -1;
++            }
++            return 0;
++        }
++
+         final boolean keyguardOn = keyguardOn();
+         final int keyCode = event.getKeyCode();
+         final int repeatCount = event.getRepeatCount();
+-- 
+2.53.0
+
