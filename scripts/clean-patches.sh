@@ -335,6 +335,8 @@ clean_resources \
     --remove "$TARGET_ROOT/vendor" "vendor"
 
 # ---------- 补丁 16：Launcher ----------
+step "CarHeadunitLauncher — 删除"
+
 LAUNCHER_DST_DIR="$TARGET_ROOT/packages/apps/CarHeadunitLauncher"
 
 clean_resources \

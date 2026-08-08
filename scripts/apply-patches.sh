@@ -350,6 +350,8 @@ apply_resources \
 _ensure_git_head "$TARGET_ROOT/vendor/rockchip/hardware/interfaces/codec2" "codec2"
 
 # ---------- 补丁 16：Launcher ----------
+step "CarHeadunitLauncher — 复制"
+
 LAUNCHER_SRC_DIR="$PATCHES_ROOT/CarHeadunitLauncher"
 LAUNCHER_DST_DIR="$TARGET_ROOT/packages/apps/CarHeadunitLauncher"
 
