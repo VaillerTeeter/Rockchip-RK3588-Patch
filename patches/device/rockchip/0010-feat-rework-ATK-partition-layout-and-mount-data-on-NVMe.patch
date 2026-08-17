@@ -1,0 +1,108 @@
+From 9e4cddec0ffe8db05bea0fb9e297b2b85fa4a439 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Mon, 17 Aug 2026 17:14:18 +0800
+Subject: [PATCH] feat: rework ATK partition layout and mount data on NVMe
+
+    - Partitions.mk/RebuildParameter.mk: make backup partition size
+      configurable via BOARD_BACKUPIMAGE_PARTITION_SIZE
+    - BoardConfig.mk: set boot 64M, cache 128M, super 4G, backup 128M
+    - fstab.in/recovery.fstab: mount /data from /dev/block/nvme0n1p1
+      instead of the by-name userdata partition
+    - file_contexts: label /dev/block/nvme[0-9]+p[0-9]+ as userdata block
+      device
+---
+ common/build/rockchip/Partitions.mk       |  3 +++
+ common/build/rockchip/RebuildParameter.mk |  2 +-
+ common/scripts/fstab_tools/fstab.in       |  2 +-
+ common/sepolicy/vendor/file_contexts      |  1 +
+ rk3588/ATK_DLRK3588/BoardConfig.mk        | 12 ++++++++++++
+ rk3588/ATK_DLRK3588/recovery.fstab        |  2 +-
+ 6 files changed, 19 insertions(+), 3 deletions(-)
+
+diff --git a/common/build/rockchip/Partitions.mk b/common/build/rockchip/Partitions.mk
+index 4653576..bde7e9d 100644
+--- a/common/build/rockchip/Partitions.mk
++++ b/common/build/rockchip/Partitions.mk
+@@ -37,6 +37,9 @@ BOARD_CACHEIMAGE_FILE_SYSTEM_TYPE ?= ext4
+ # Add standalone metadata partition
+ BOARD_USES_METADATA_PARTITION ?= true
+ 
++# RK upgrade staging partition (default 384M; overridable per device)
++BOARD_BACKUPIMAGE_PARTITION_SIZE ?= 402653184
++
+ #Calculate partition size from parameter.txt
+ USE_DEFAULT_PARAMETER := $(shell test -f $(TARGET_DEVICE_DIR)/parameter.txt && echo true)
+ ifeq ($(strip $(USE_DEFAULT_PARAMETER)), true)
+diff --git a/common/build/rockchip/RebuildParameter.mk b/common/build/rockchip/RebuildParameter.mk
+index 36533b6..60803c5 100644
+--- a/common/build/rockchip/RebuildParameter.mk
++++ b/common/build/rockchip/RebuildParameter.mk
+@@ -28,7 +28,7 @@ endif # Header V3
+ partition_list := $(partition_list),dtbo:$(BOARD_DTBOIMG_PARTITION_SIZE),vbmeta:1M,boot:$(BOARD_BOOTIMAGE_PARTITION_SIZE),recovery:$(BOARD_RECOVERYIMAGE_PARTITION_SIZE)
+ endif # BOARD_USES_AB_IMAGE
+ 
+-partition_list := $(partition_list),backup:384M,cache:$(BOARD_CACHEIMAGE_PARTITION_SIZE),metadata:16M
++partition_list := $(partition_list),backup:$(BOARD_BACKUPIMAGE_PARTITION_SIZE),cache:$(BOARD_CACHEIMAGE_PARTITION_SIZE),metadata:16M
+ 
+ ifeq ($(strip $(BUILD_WITH_GOOGLE_FRP)), true)
+ partition_list := $(partition_list),frp:512K
+diff --git a/common/scripts/fstab_tools/fstab.in b/common/scripts/fstab_tools/fstab.in
+index 634df26..55b661c 100755
+--- a/common/scripts/fstab_tools/fstab.in
++++ b/common/scripts/fstab_tools/fstab.in
+@@ -26,6 +26,6 @@ ${_block_prefix}odm     /odm      ext4 ro,barrier=1 ${_flags},first_stage_mount
+ # For sdmmc
+ /devices/platform/${_sdmmc_device}/mmc_host*        auto  auto    defaults        voldmanaged=sdcard1:auto
+ #  Full disk encryption has less effect on rk3326, so default to enable this.
+-/dev/block/by-name/userdata /data f2fs noatime,nosuid,nodev,discard,reserve_root=32768,resgid=1065 latemount,wait,check,fileencryption=aes-256-xts:aes-256-cts:v2+inlinecrypt_optimized,keydirectory=/metadata/vold/metadata_encryption,quota,formattable,reservedsize=128M,checkpoint=fs
++/dev/block/nvme0n1p1 /data f2fs noatime,nosuid,nodev,discard,reserve_root=32768,resgid=1065 latemount,wait,check,fileencryption=aes-256-xts:aes-256-cts:v2+inlinecrypt_optimized,keydirectory=/metadata/vold/metadata_encryption,quota,formattable,reservedsize=128M,checkpoint=fs
+ # for ext4
+ #/dev/block/by-name/userdata    /data      ext4    discard,noatime,nosuid,nodev,noauto_da_alloc,data=ordered,user_xattr,barrier=1,resgid=1065    latemount,wait,formattable,check,fileencryption=software,quota,reservedsize=128M,checkpoint=block
+diff --git a/common/sepolicy/vendor/file_contexts b/common/sepolicy/vendor/file_contexts
+index 25889f9..b727cf2 100644
+--- a/common/sepolicy/vendor/file_contexts
++++ b/common/sepolicy/vendor/file_contexts
+@@ -71,6 +71,7 @@
+ /dev/block/by-name/cache                        u:object_r:e2fsck_cache_block_device:s0
+ /dev/block/by-name/metadata                     u:object_r:metadata_block_device:s0
+ /dev/block/by-name/userdata                     u:object_r:userdata_block_device:s0
++/dev/block/nvme[0-9]+p[0-9]+                    u:object_r:userdata_block_device:s0
+ /dev/block/by-name/boot                         u:object_r:boot_block_device:s0
+ /dev/block/by-name/vendor_boot                  u:object_r:boot_block_device:s0
+ /dev/block/by-name/recovery                     u:object_r:recovery_block_device:s0
+diff --git a/rk3588/ATK_DLRK3588/BoardConfig.mk b/rk3588/ATK_DLRK3588/BoardConfig.mk
+index 486bb36..b9512aa 100644
+--- a/rk3588/ATK_DLRK3588/BoardConfig.mk
++++ b/rk3588/ATK_DLRK3588/BoardConfig.mk
+@@ -39,3 +39,15 @@ BOARD_HAS_RK_4G_MODEM := true
+ BOARD_HDMI_IN_SUPPORT := true
+ BOARD_HAS_QUECTEL_5G_MODEM := true
+ # BOARD_HAS_FIBOCOM_5G_MODEM := true
++
++# =============================================================================
++# Partition sizes
++#   boot 64M  (was 40M) - kernel+ramdisk grows
++#   cache 128M (was 384M) - unused with dynamic partitions
++#   backup 128M (was 384M) - RK upgrade staging, shrunk
++#   super 4G   (was 3.04G) - room for large staged APKs + vendor/product
++# =============================================================================
++BOARD_BOOTIMAGE_PARTITION_SIZE := 67108864
++BOARD_CACHEIMAGE_PARTITION_SIZE := 134217728
++BOARD_SUPER_PARTITION_SIZE := 4294967296
++BOARD_BACKUPIMAGE_PARTITION_SIZE := 134217728
+diff --git a/rk3588/ATK_DLRK3588/recovery.fstab b/rk3588/ATK_DLRK3588/recovery.fstab
+index 9cd4fdb..ba7b25f 100644
+--- a/rk3588/ATK_DLRK3588/recovery.fstab
++++ b/rk3588/ATK_DLRK3588/recovery.fstab
+@@ -13,7 +13,7 @@
+ /dev/block/by-name/init_boot            /init_boot          ext4             defaults                  defaults
+ /dev/block/by-name/cache                 /cache               ext4             defaults                  defaults
+ /dev/block/by-name/metadata              /metadata            ext4             defaults                  defaults
+-/dev/block/by-name/userdata              /data                f2fs             defaults                  defaults
++/dev/block/nvme0n1p1                       /data                f2fs             defaults                  defaults
+ /dev/block/by-name/cust                  /cust                ext4             defaults                  defaults
+ /dev/block/by-name/custom                /custom              ext4             defaults                  defaults
+ /dev/block/by-name/radical_update        /radical_update      ext4             defaults                  defaults
+-- 
+2.53.0
+
