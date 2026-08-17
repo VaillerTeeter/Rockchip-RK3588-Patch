@@ -1,3 +1,4 @@
 patches/**/*.tar.gz filter=lfs diff=lfs merge=lfs -text
 patches/**/*.apk filter=lfs diff=lfs merge=lfs -text
 patches/**/*.so filter=lfs diff=lfs merge=lfs -text
+patches/**/*.ts filter=lfs diff=lfs merge=lfs -text
