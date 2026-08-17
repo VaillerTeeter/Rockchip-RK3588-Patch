@@ -1,0 +1,129 @@
+From c30982b407472343b6c7e192c50ab1454581e70c Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Mon, 17 Aug 2026 17:18:18 +0800
+Subject: [PATCH] chore: remove unused default apps from tablet build
+
+    - device.mk: drop ExactCalculator, SoundRecorder and Music
+    - hdmi_in.mk: drop rkCamera2
+    - rockchip_apps.mk: drop Lightning, RkVideoPlayer and RkExplorer
+---
+ common/device.mk                | 18 +++++++-----------
+ common/modules/hdmi_in.mk       |  1 -
+ common/modules/rockchip_apps.mk |  3 ---
+ 3 files changed, 7 insertions(+), 15 deletions(-)
+
+diff --git a/common/device.mk b/common/device.mk
+index 94d8e65..1c7fc8a 100644
+--- a/common/device.mk
++++ b/common/device.mk
+@@ -32,7 +32,6 @@ PRODUCT_AAPT_CONFIG ?= normal large xlarge hdpi tvdpi xhdpi xxhdpi
+ PRODUCT_AAPT_PREF_CONFIG ?= xhdpi
+ 
+ PRODUCT_PACKAGES += \
+-    ExactCalculator \
+     wakeup-alarmalign-whitelist.xml
+ 
+ ifdef TARGET_PREBUILT_KERNEL
+@@ -224,7 +223,7 @@ PRODUCT_COPY_FILES += \
+ endif
+ endif # Use PRODUCT_FSTAB_TEMPLATE
+ 
+-# For audio-recoard 
++# For audio-recoard
+ PRODUCT_PACKAGES += \
+     libsrec_jni
+ 
+@@ -538,7 +537,7 @@ $(call inherit-product-if-exists, external/alsa-utils/copy.mk)
+ 
+ 
+ PRODUCT_PROPERTY_OVERRIDES += \
+-    persist.sys.strictmode.visual=false 
++    persist.sys.strictmode.visual=false
+ 
+ 
+ ifeq ($(strip $(BOARD_HAVE_FLASH)), true)
+@@ -575,7 +574,7 @@ ifeq ($(strip $(BUILD_WITH_CDROM)),true)
+ PRODUCT_PROPERTY_OVERRIDES +=                 \
+     ro.factory.hasUMS=cdrom                   \
+     ro.factory.cdrom=$(BUILD_WITH_CDROM_PATH) \
+-    persist.sys.usb.config=mass_storage,adb 
++    persist.sys.usb.config=mass_storage,adb
+ 
+ PRODUCT_COPY_FILES += \
+     $(LOCAL_PATH)/init.rockchip.hasCDROM.true.rc:$(TARGET_COPY_OUT_VENDOR)/etc/init/hw/init.$(TARGET_BOARD_HARDWARE).environment.rc
+@@ -640,7 +639,7 @@ else
+ PRODUCT_PROPERTY_OVERRIDES += \
+     ro.factory.without_battery=false
+ endif
+- 
++
+ PRODUCT_PACKAGES += \
+     com.android.future.usb.accessory
+ 
+@@ -770,7 +769,7 @@ PRODUCT_PACKAGES += \
+ 
+ ifeq ($(strip $(TARGET_BOARD_PLATFORM_PRODUCT)), vr)
+ PRODUCT_COPY_FILES += \
+-       device/rockchip/common/lowmem_package_filter.xml:system/etc/lowmem_package_filter.xml 
++       device/rockchip/common/lowmem_package_filter.xml:system/etc/lowmem_package_filter.xml
+ endif
+ 
+ #if force app can see udisk
+@@ -793,14 +792,14 @@ PRODUCT_PROPERTY_OVERRIDES += \
+ endif
+ 
+ 
+-#boot video enable 
++#boot video enable
+ ifeq ($(strip $(BOOT_VIDEO_ENABLE)),true)
+ include device/rockchip/common/bootvideo/bootvideo.mk
+ endif
+ 
+ ifeq ($(strip $(BOARD_ENABLE_PMS_MULTI_THREAD_SCAN)), true)
+ PRODUCT_PROPERTY_OVERRIDES += \
+-	ro.pms.multithreadscan=true		
++	ro.pms.multithreadscan=true
+ endif
+ 
+ #add for hwui property
+@@ -860,11 +859,8 @@ else ifeq ($(TARGET_BOARD_PLATFORM_PRODUCT),atv)
+   $(call inherit-product, device/rockchip/common/modules/rockchip_apps_box.mk)
+ 
+ else # tablet
+-  PRODUCT_PACKAGES += \
+-        SoundRecorder
+ ifneq ($(strip $(BUILD_WITH_GOOGLE_GMS_EXPRESS)),true)
+ PRODUCT_PACKAGES += \
+-    Music \
+     WallpaperPicker
+ 
+ $(call inherit-product, device/rockchip/common/modules/rockchip_apps.mk)
+diff --git a/common/modules/hdmi_in.mk b/common/modules/hdmi_in.mk
+index f9c4201..5788794 100644
+--- a/common/modules/hdmi_in.mk
++++ b/common/modules/hdmi_in.mk
+@@ -16,7 +16,6 @@
+ # TV Apps
+ PRODUCT_PACKAGES += \
+     TvProvider \
+-    rkCamera2 \
+     PartnerSupportSampleTvInput
+ 
+ # JNI
+diff --git a/common/modules/rockchip_apps.mk b/common/modules/rockchip_apps.mk
+index 1f27492..9bae332 100644
+--- a/common/modules/rockchip_apps.mk
++++ b/common/modules/rockchip_apps.mk
+@@ -15,9 +15,6 @@
+ #
+ PRODUCT_PACKAGES += \
+     RKDeviceTest \
+-    Lightning \
+     LiveWallpapersPicker \
+-    RkVideoPlayer \
+-    RkExplorer \
+     StressTest \
+     RKUpdateService
+-- 
+2.53.0
+

@@ -1,0 +1,53 @@
+From af39719d3d340da45e9094fbf27cad1ff80e7e4f Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Mon, 17 Aug 2026 15:19:27 +0800
+Subject: [PATCH] chore: remove unused AOSP default apps from handheld product
+ packages
+
+    - handheld_product.mk: drop Browser2, Calendar, Camera2, Contacts,
+      DeskClock, Gallery2, Music, QuickSearchBox from PRODUCT_PACKAGES
+    - handheld_system.mk: drop DocumentsUI from PRODUCT_PACKAGES
+
+Change-Id: I9381d04140d058ab5824e34ad0ac644bbf93a7d8
+---
+ target/product/handheld_product.mk | 8 --------
+ target/product/handheld_system.mk  | 1 -
+ 2 files changed, 9 deletions(-)
+
+diff --git a/target/product/handheld_product.mk b/target/product/handheld_product.mk
+index 2199c570a..2b723357f 100644
+--- a/target/product/handheld_product.mk
++++ b/target/product/handheld_product.mk
+@@ -22,17 +22,9 @@ $(call inherit-product, $(SRC_TARGET_DIR)/product/media_product.mk)
+ 
+ # /product packages
+ PRODUCT_PACKAGES += \
+-    Browser2 \
+-    Calendar \
+-    Camera2 \
+-    Contacts \
+-    DeskClock \
+-    Gallery2 \
+     LatinIME \
+-    Music \
+     OneTimeInitializer \
+     preinstalled-packages-platform-handheld-product.xml \
+-    QuickSearchBox \
+     SettingsIntelligence \
+     frameworks-base-overlays
+ 
+diff --git a/target/product/handheld_system.mk b/target/product/handheld_system.mk
+index 41233b2c0..626c701bb 100644
+--- a/target/product/handheld_system.mk
++++ b/target/product/handheld_system.mk
+@@ -42,7 +42,6 @@ PRODUCT_PACKAGES += \
+     CameraExtensionsProxy \
+     CaptivePortalLogin \
+     CertInstaller \
+-    DocumentsUI \
+     DownloadProviderUi \
+     EasterEgg \
+     ExternalStorageProvider \
+-- 
+2.53.0
+
