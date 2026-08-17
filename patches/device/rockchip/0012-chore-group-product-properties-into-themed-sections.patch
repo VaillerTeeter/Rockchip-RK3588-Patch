@@ -1,0 +1,52 @@
+From 97368a8244e7dba00944f55166c8e004c991a4e7 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Mon, 17 Aug 2026 17:22:07 +0800
+Subject: [PATCH] chore: group product properties into themed sections
+
+    - move vendor.hwc.device.primary into the HDMI output section
+    - add a dedicated Navigation Bar section holding qemu.hw.mainkeys
+      and persist.sys.headunit_navbar with explanatory comments
+---
+ rk3588/ATK_DLRK3588/ATK_DLRK3588.mk | 13 ++++++++++---
+ 1 file changed, 10 insertions(+), 3 deletions(-)
+
+diff --git a/rk3588/ATK_DLRK3588/ATK_DLRK3588.mk b/rk3588/ATK_DLRK3588/ATK_DLRK3588.mk
+index de66b75..a148168 100644
+--- a/rk3588/ATK_DLRK3588/ATK_DLRK3588.mk
++++ b/rk3588/ATK_DLRK3588/ATK_DLRK3588.mk
+@@ -40,9 +40,6 @@ PRODUCT_MANUFACTURER := Alientek
+ PRODUCT_PROPERTY_OVERRIDES += ro.wifi.sleep.power.down=true
+ PRODUCT_PROPERTY_OVERRIDES += persist.wifi.sleep.delay.ms=0
+ PRODUCT_PROPERTY_OVERRIDES += persist.bt.power.down=true
+-PRODUCT_PROPERTY_OVERRIDES += vendor.hwc.device.primary=HDMI-A-1
+-PRODUCT_PROPERTY_OVERRIDES += qemu.hw.mainkeys=0
+-PRODUCT_PROPERTY_OVERRIDES += persist.sys.headunit_navbar=1
+ 
+ # =============================================================================
+ # Prebuilt packages
+@@ -73,12 +70,22 @@ PRODUCT_PROPERTY_OVERRIDES += ro.sf.lcd_density=320
+ 
+ # =============================================================================
+ # HDMI output: dual-port 4K @ 60Hz
++#   vendor.hwc.device.primary=HDMI-A-1
+ # =============================================================================
++PRODUCT_PROPERTY_OVERRIDES += vendor.hwc.device.primary=HDMI-A-1
+ PRODUCT_PROPERTY_OVERRIDES += persist.vendor.resolution.HDMI-A-0=3840x2160p60
+ PRODUCT_PROPERTY_OVERRIDES += persist.vendor.framebuffer.HDMI-A-0=3840x2160@60
+ PRODUCT_PROPERTY_OVERRIDES += persist.vendor.resolution.HDMI-A-1=3840x2160p60
+ PRODUCT_PROPERTY_OVERRIDES += persist.vendor.framebuffer.HDMI-A-1=3840x2160@60
+ 
++# =============================================================================
++# Navigation Bar
++#   qemu.hw.mainkeys=0              - no physical keys → enable on-screen nav bar
++#   persist.sys.headunit_navbar=1   - custom headunit navbar (used by SystemUI overlay)
++# =============================================================================
++PRODUCT_PROPERTY_OVERRIDES += qemu.hw.mainkeys=0
++PRODUCT_PROPERTY_OVERRIDES += persist.sys.headunit_navbar=1
++
+ # =============================================================================
+ # Dalvik VM heap
+ #   heapstartsize=16m       - initial heap per process
+-- 
+2.53.0
+
