@@ -2,10 +2,9 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:background="#1a1a2e">
+    android:orientation="vertical">
 
-    <!-- 地图 + 侧边栏区域，占满剩余高度 -->
+    <!-- 地图 + 侧边栏区域 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
@@ -18,44 +17,481 @@
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="2"
-            android:background="#000000" />
+            android:layout_marginEnd="12dp"
+            android:background="@drawable/map_container_bg" />
 
-        <!-- 右侧 app 侧边栏 (320dp, 接近手机竖屏宽) -->
+        <!-- 右侧 车辆信息面板 -->
         <FrameLayout
             android:id="@+id/panel_sidebar"
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="1"
-            android:background="#1e1e30">
+            android:layout_marginStart="12dp">
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="top|start"
-                android:text="App侧边栏"
-                android:textColor="#FFFFFF"
-                android:textSize="20sp"
-                android:padding="8dp" />
+            <!-- 背景 + 车况信息（底层） -->
+            <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@drawable/panel_sidebar_bg"
+            android:padding="8dp"
+            android:orientation="vertical">
+
+<!-- keep original content below unchanged -->
+
+            <!-- 1. 油量 + 驾驶评分 (一行) -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="80dp"
+                android:orientation="horizontal"
+                android:baselineAligned="false"
+                android:padding="10dp">
+
+                    <!-- 左: 油量 -->
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical"
+                        android:gravity="center">
+                        <LinearLayout
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical">
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="⛽"
+                                android:textSize="42sp" />
+                            <TextView
+                                android:id="@+id/oil_level"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="68%"
+                                android:textColor="#4CAF50"
+                                android:textSize="42sp"
+                                android:textStyle="bold" />
+                        </LinearLayout>
+                        <FrameLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="12dp"
+                            android:layout_marginTop="6dp">
+                            <View
+                                android:layout_width="match_parent"
+                                android:layout_height="12dp"
+                                android:background="#333355" />
+                            <View
+                                android:id="@+id/oil_bar"
+                                android:layout_width="100dp"
+                                android:layout_height="12dp"
+                                android:background="#4CAF50" />
+                        </FrameLayout>
+                    </LinearLayout>
+
+                    <!-- 右: 驾驶评分 -->
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical"
+                        android:gravity="center">
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical">
+                            <TextView
+                                android:id="@+id/score_grade"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="B 85"
+                                android:textColor="#4CAF50"
+                                android:textSize="42sp"
+                                android:textStyle="bold"
+                                android:layout_marginEnd="8dp" />
+                            <GridLayout
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:columnCount="2"
+                                android:rowCount="2">
+                                <TextView android:text="急加速 0" android:textColor="#ffffff" android:textSize="14sp" android:padding="2dp" android:layout_marginEnd="8dp" />
+                                <TextView android:text="急刹 1" android:textColor="#ffffff" android:textSize="14sp" android:padding="2dp" />
+                                <TextView android:text="急转弯 0" android:textColor="#ffffff" android:textSize="14sp" android:padding="2dp" android:layout_marginEnd="8dp" />
+                                <TextView android:text="颠簸 3" android:textColor="#ffffff" android:textSize="14sp" android:padding="2dp" />
+                            </GridLayout>
+                        </LinearLayout>
+                        <FrameLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="12dp"
+                            android:layout_marginTop="6dp">
+                            <View
+                                android:layout_width="match_parent"
+                                android:layout_height="12dp"
+                                android:background="#333355" />
+                            <View
+                                android:id="@+id/smoothness_bar"
+                                android:layout_width="100dp"
+                                android:layout_height="12dp"
+                                android:background="#4CAF50" />
+                        </FrameLayout>
+                    </LinearLayout>
+                </LinearLayout>
+
+                <!-- 2. 水温 + 电瓶电压 (一行) -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="80dp"
+                    android:orientation="horizontal"
+                    android:baselineAligned="false"
+                    android:padding="10dp">
+
+                    <!-- 左: 水温 -->
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical"
+                        android:gravity="center">
+                        <LinearLayout
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical">
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="🌡️"
+                                android:textSize="42sp" />
+                            <TextView
+                                android:id="@+id/coolant_temp"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="90°C"
+                                android:textColor="#64B5F6"
+                                android:textSize="42sp"
+                                android:textStyle="bold" />
+                        </LinearLayout>
+                        <FrameLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="12dp"
+                            android:layout_marginTop="6dp">
+                            <View
+                                android:layout_width="match_parent"
+                                android:layout_height="12dp"
+                                android:background="#333355" />
+                            <View
+                                android:id="@+id/coolant_bar"
+                                android:layout_width="80dp"
+                                android:layout_height="12dp"
+                                android:background="#64B5F6" />
+                        </FrameLayout>
+                    </LinearLayout>
+
+                    <!-- 右: 电瓶电压 -->
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical"
+                        android:gravity="center">
+                        <LinearLayout
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical">
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="🔋"
+                                android:textSize="42sp" />
+                            <TextView
+                                android:id="@+id/battery_voltage"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="13.8V"
+                                android:textColor="#81C784"
+                                android:textSize="42sp"
+                                android:textStyle="bold" />
+                        </LinearLayout>
+                        <FrameLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="12dp"
+                            android:layout_marginTop="6dp">
+                            <View
+                                android:layout_width="match_parent"
+                                android:layout_height="12dp"
+                                android:background="#333355" />
+                            <View
+                                android:id="@+id/battery_bar"
+                                android:layout_width="80dp"
+                                android:layout_height="12dp"
+                                android:background="#81C784" />
+                        </FrameLayout>
+                    </LinearLayout>
+                </LinearLayout>
+
+                <!-- 3. 胎压监测 + 车身姿态 (左右分栏) -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+
+                    <com.carlauncher.CarChassisView
+                        android:id="@+id/tpms_view"
+                        android:layout_width="0dp"
+                        android:layout_height="300dp"
+                        android:layout_weight="1"
+                        android:padding="4dp" />
+
+                    <com.carlauncher.CarAttitudeView
+                        android:id="@+id/attitude_view"
+                        android:layout_width="0dp"
+                        android:layout_height="300dp"
+                        android:layout_weight="1"
+                        android:padding="4dp" />
+                </LinearLayout>
+
+                <!-- 4. 指南针 + 行程统计/保养 (左右分栏) -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="1"
+                    android:orientation="horizontal">
+
+                    <com.carlauncher.CompassView
+                        android:id="@+id/compass_view"
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_weight="1"
+                        android:padding="4dp" />
+
+                    <!-- 右侧：行程统计 + 保养 -->
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_weight="1"
+                        android:orientation="vertical"
+                        android:gravity="top|start"
+                        android:padding="8dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:text="本次  1.2h / 35km"
+                            android:textColor="#FFFFFF"
+                            android:textSize="22sp" />
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="6dp"
+                            android:text="本周  4.8h / 142km"
+                            android:textColor="#FFFFFF"
+                            android:textSize="22sp" />
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="6dp"
+                            android:text="本月  18h / 560km"
+                            android:textColor="#FFFFFF"
+                            android:textSize="22sp" />
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="6dp"
+                            android:text="总里程  2,340km"
+                            android:textColor="#ffffff"
+                            android:textSize="22sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:text="距下次保养  2,340km"
+                            android:textColor="#ffffff"
+                            android:textSize="22sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+                </LinearLayout>
+
+            </LinearLayout>
+
+            <!-- 网易云音乐 overlay（顶层，覆盖车况信息） -->
+            <FrameLayout
+                android:id="@+id/music_overlay"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent" />
+
+            <!-- 喜马拉雅 overlay（顶层，覆盖车况信息） -->
+            <FrameLayout
+                android:id="@+id/ximalaya_overlay"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent" />
+
+            <!-- 抖音 overlay（顶层，覆盖车况信息） -->
+            <FrameLayout
+                android:id="@+id/douyin_overlay"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent" />
+
         </FrameLayout>
 
     </LinearLayout>
 
-    <!-- 快捷入口卡片，一行横向 -->
+    <!-- 快捷入口：播放器 + 3卡片 -->
     <LinearLayout
         android:id="@+id/shortcuts_row"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:background="@android:color/transparent"
+        android:layout_marginTop="24dp"
+        android:layout_marginBottom="24dp"
         android:orientation="horizontal"
-        android:padding="24dp"
+        android:paddingStart="24dp"
+        android:paddingEnd="24dp"
         android:gravity="center">
 
-        <FrameLayout
-            android:id="@+id/card_0"
-            android:layout_width="0dp"
+        <!-- 媒体播放器 -->
+        <LinearLayout
+            android:id="@+id/media_player"
+            android:layout_width="260dp"
             android:layout_height="140dp"
-            android:layout_weight="1"
             android:layout_marginEnd="8dp"
-            android:background="@drawable/card_0_bg" />
+            android:background="@drawable/media_player_bg"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:padding="8dp">
+
+            <TextView
+                android:id="@+id/media_app_label"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:text="@string/media_no_app"
+                android:textColor="#99FFFFFF"
+                android:textSize="12sp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:orientation="horizontal"
+                android:gravity="center">
+
+                <ImageView
+                    android:id="@+id/btn_prev"
+                    android:layout_width="56dp"
+                    android:layout_height="56dp"
+                    android:src="@drawable/ic_skip_prev"
+                    android:background="@drawable/btn_ripple"
+                    android:clickable="true"
+                    android:layout_marginEnd="12dp" />
+
+                <ImageView
+                    android:id="@+id/btn_play"
+                    android:layout_width="56dp"
+                    android:layout_height="56dp"
+                    android:src="@drawable/ic_play"
+                    android:background="@drawable/btn_ripple"
+                    android:clickable="true"
+                    android:layout_marginHorizontal="12dp" />
+
+                <ImageView
+                    android:id="@+id/btn_next"
+                    android:layout_width="56dp"
+                    android:layout_height="56dp"
+                    android:src="@drawable/ic_skip_next"
+                    android:background="@drawable/btn_ripple"
+                    android:clickable="true"
+                    android:layout_marginStart="12dp" />
+
+            </LinearLayout>
+
+        </LinearLayout>
+
+        <FrameLayout
+            android:id="@+id/card_music"
+            android:layout_width="140dp"
+            android:layout_height="140dp"
+            android:layout_marginHorizontal="8dp"
+            android:background="@android:color/transparent"
+            android:foreground="?android:attr/selectableItemBackgroundBorderless"
+            android:clickable="true"
+            android:focusable="true">
+            <ImageView
+                android:id="@+id/music_app_icon"
+                android:layout_width="72dp"
+                android:layout_height="72dp"
+                android:layout_gravity="center" />
+        </FrameLayout>
+
+        <FrameLayout
+            android:id="@+id/card_ximalaya"
+            android:layout_width="140dp"
+            android:layout_height="140dp"
+            android:layout_marginHorizontal="8dp"
+            android:background="@android:color/transparent"
+            android:foreground="?android:attr/selectableItemBackgroundBorderless"
+            android:clickable="true"
+            android:focusable="true">
+            <ImageView
+                android:id="@+id/ximalaya_app_icon"
+                android:layout_width="72dp"
+                android:layout_height="72dp"
+                android:layout_gravity="center" />
+        </FrameLayout>
+
+        <FrameLayout
+            android:id="@+id/card_douyin"
+            android:layout_width="140dp"
+            android:layout_height="140dp"
+            android:layout_marginHorizontal="8dp"
+            android:background="@android:color/transparent"
+            android:foreground="?android:attr/selectableItemBackgroundBorderless"
+            android:clickable="true"
+            android:focusable="true">
+            <ImageView
+                android:id="@+id/douyin_app_icon"
+                android:layout_width="72dp"
+                android:layout_height="72dp"
+                android:layout_gravity="center" />
+        </FrameLayout>
+
+        <FrameLayout
+            android:id="@+id/card_bilibili"
+            android:layout_width="140dp"
+            android:layout_height="140dp"
+            android:layout_marginHorizontal="8dp"
+            android:background="@android:color/transparent"
+            android:foreground="?android:attr/selectableItemBackgroundBorderless"
+            android:clickable="true"
+            android:focusable="true">
+            <ImageView
+                android:id="@+id/bilibili_app_icon"
+                android:layout_width="72dp"
+                android:layout_height="72dp"
+                android:layout_gravity="center" />
+        </FrameLayout>
+
+        <FrameLayout
+            android:id="@+id/card_emby"
+            android:layout_width="140dp"
+            android:layout_height="140dp"
+            android:layout_marginHorizontal="8dp"
+            android:background="@android:color/transparent"
+            android:foreground="?android:attr/selectableItemBackgroundBorderless"
+            android:clickable="true"
+            android:focusable="true">
+            <ImageView
+                android:id="@+id/emby_app_icon"
+                android:layout_width="72dp"
+                android:layout_height="72dp"
+                android:layout_gravity="center" />
+        </FrameLayout>
 
         <FrameLayout
             android:id="@+id/card_1"
@@ -63,25 +499,16 @@
             android:layout_height="140dp"
             android:layout_weight="1"
             android:layout_marginHorizontal="8dp"
-            android:background="@drawable/card_1_bg" />
+            android:background="@drawable/card_bg" />
 
         <FrameLayout
             android:id="@+id/card_2"
             android:layout_width="0dp"
             android:layout_height="140dp"
             android:layout_weight="1"
-            android:layout_marginHorizontal="8dp"
-            android:background="@drawable/card_2_bg" />
-
-        <FrameLayout
-            android:id="@+id/card_3"
-            android:layout_width="0dp"
-            android:layout_height="140dp"
-            android:layout_weight="1"
             android:layout_marginStart="8dp"
-            android:background="@drawable/card_3_bg" />
+            android:background="@drawable/card_bg" />
 
     </LinearLayout>
-
 
 </LinearLayout>

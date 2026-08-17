@@ -17,4 +17,17 @@ android_app {
     system_ext_specific: true,
 
     overrides: ["Launcher3QuickStep"],
+
+    required: ["privapp-permissions-com.carlauncher.xml"],
+}
+
+// Privileged-permission allowlist for CarHeadunitLauncher. Installed to
+// /system_ext/etc/permissions/ so the grants also hold on user builds
+// (userdebug relaxes priv-app permission enforcement).
+prebuilt_etc {
+    name: "privapp-permissions-com.carlauncher.xml",
+    src: "permissions/privapp-permissions-com.carlauncher.xml",
+    system_ext_specific: true,
+    sub_dir: "permissions",
+    filename_from_src: true,
 }
