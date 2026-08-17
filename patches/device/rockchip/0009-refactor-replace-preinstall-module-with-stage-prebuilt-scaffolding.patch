@@ -1,0 +1,467 @@
+From 003b4cebd9c71732702a92daa7e2bbbad2cd543f Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Mon, 17 Aug 2026 16:57:38 +0800
+Subject: [PATCH] refactor: replace preinstall module with stage prebuilt
+ scaffolding
+
+    - ATK_DLRK3588.mk: include stage/preinstall.mk and register
+      default-permissions for staged third-party APKs
+    - stage/Android.mk: stage APKs as BUILD_PREBUILT into /system/preinstall
+      for first-boot install
+    - stage/preinstall.mk: list staged preinstall packages
+    - default-permissions: add grants for AmapAuto, NeteaseCloudMusic,
+      Ximalaya, Douyin, BilibiliHD, Emby, WallpaperEngine, AnExplorer
+    - remove legacy preinstall Android.mk modules
+---
+ rk3588/ATK_DLRK3588/ATK_DLRK3588.mk           | 16 +++-
+ rk3588/ATK_DLRK3588/preinstall/Android.mk     |  2 -
+ .../ATK_DLRK3588/preinstall/Auto/Android.mk   | 77 ------------------
+ .../preinstall/TencentAppStore/Android.mk     | 11 ---
+ rk3588/ATK_DLRK3588/preinstall/preinstall.mk  |  2 -
+ .../stage/AnExplorer/default-permissions.xml  | 14 ++++
+ rk3588/ATK_DLRK3588/stage/Android.mk          | 79 +++++++++++++++++++
+ .../Auto/default-permissions.xml              |  0
+ .../stage/BilibiliHD/default-permissions.xml  | 22 ++++++
+ .../stage/Douyin/default-permissions.xml      | 22 ++++++
+ .../stage/Emby/default-permissions.xml        | 15 ++++
+ .../NeteaseCloudMusic/default-permissions.xml | 11 +++
+ .../WallpaperEngine/default-permissions.xml   | 11 +++
+ .../stage/Ximalaya/default-permissions.xml    | 21 +++++
+ rk3588/ATK_DLRK3588/stage/preinstall.mk       |  8 ++
+ 15 files changed, 216 insertions(+), 95 deletions(-)
+ delete mode 100644 rk3588/ATK_DLRK3588/preinstall/Android.mk
+ delete mode 100644 rk3588/ATK_DLRK3588/preinstall/Auto/Android.mk
+ delete mode 100644 rk3588/ATK_DLRK3588/preinstall/TencentAppStore/Android.mk
+ delete mode 100644 rk3588/ATK_DLRK3588/preinstall/preinstall.mk
+ create mode 100644 rk3588/ATK_DLRK3588/stage/AnExplorer/default-permissions.xml
+ create mode 100644 rk3588/ATK_DLRK3588/stage/Android.mk
+ rename rk3588/ATK_DLRK3588/{preinstall => stage}/Auto/default-permissions.xml (100%)
+ create mode 100644 rk3588/ATK_DLRK3588/stage/BilibiliHD/default-permissions.xml
+ create mode 100644 rk3588/ATK_DLRK3588/stage/Douyin/default-permissions.xml
+ create mode 100644 rk3588/ATK_DLRK3588/stage/Emby/default-permissions.xml
+ create mode 100644 rk3588/ATK_DLRK3588/stage/NeteaseCloudMusic/default-permissions.xml
+ create mode 100644 rk3588/ATK_DLRK3588/stage/WallpaperEngine/default-permissions.xml
+ create mode 100644 rk3588/ATK_DLRK3588/stage/Ximalaya/default-permissions.xml
+ create mode 100644 rk3588/ATK_DLRK3588/stage/preinstall.mk
+
+diff --git a/rk3588/ATK_DLRK3588/ATK_DLRK3588.mk b/rk3588/ATK_DLRK3588/ATK_DLRK3588.mk
+index 6f8952a..de66b75 100644
+--- a/rk3588/ATK_DLRK3588/ATK_DLRK3588.mk
++++ b/rk3588/ATK_DLRK3588/ATK_DLRK3588.mk
+@@ -21,7 +21,7 @@ PRODUCT_DTBO_TEMPLATE := $(LOCAL_PATH)/dt-overlay.in
+ include device/rockchip/common/build/rockchip/DynamicPartitions.mk
+ include device/rockchip/rk3588/ATK_DLRK3588/BoardConfig.mk
+ include device/rockchip/common/BoardConfig.mk
+-include device/rockchip/rk3588/ATK_DLRK3588/preinstall/preinstall.mk
++include device/rockchip/rk3588/ATK_DLRK3588/stage/preinstall.mk
+ 
+ $(call inherit-product, device/rockchip/rk3588/device.mk)
+ $(call inherit-product, device/rockchip/common/device.mk)
+@@ -49,9 +49,19 @@ PRODUCT_PROPERTY_OVERRIDES += persist.sys.headunit_navbar=1
+ # =============================================================================
+ PRODUCT_PACKAGES += CarHeadunitLauncher
+ 
+-# Pre-granted runtime permissions for preinstalled apps
++# Pre-granted runtime permissions for staged third-party APKs.
++# First-boot installation is handled by SystemServer (installPreinstalledCarApps)
++# in frameworks/base; the APKs themselves are staged via BUILD_PREBUILT
++# (see stage/Android.mk) into /system/preinstall.
+ PRODUCT_COPY_FILES += \
+-    device/rockchip/rk3588/ATK_DLRK3588/preinstall/Auto/default-permissions.xml:$(TARGET_COPY_OUT_SYSTEM)/etc/default-permissions/default-permissions-auto.xml
++    device/rockchip/rk3588/ATK_DLRK3588/stage/Auto/default-permissions.xml:$(TARGET_COPY_OUT_SYSTEM)/etc/default-permissions/default-permissions-auto.xml \
++    device/rockchip/rk3588/ATK_DLRK3588/stage/NeteaseCloudMusic/default-permissions.xml:$(TARGET_COPY_OUT_SYSTEM)/etc/default-permissions/default-permissions-neteasecloudmusic.xml \
++    device/rockchip/rk3588/ATK_DLRK3588/stage/Ximalaya/default-permissions.xml:$(TARGET_COPY_OUT_SYSTEM)/etc/default-permissions/default-permissions-ximalaya.xml \
++    device/rockchip/rk3588/ATK_DLRK3588/stage/Douyin/default-permissions.xml:$(TARGET_COPY_OUT_SYSTEM)/etc/default-permissions/default-permissions-douyin.xml \
++    device/rockchip/rk3588/ATK_DLRK3588/stage/BilibiliHD/default-permissions.xml:$(TARGET_COPY_OUT_SYSTEM)/etc/default-permissions/default-permissions-bilibilihd.xml \
++    device/rockchip/rk3588/ATK_DLRK3588/stage/Emby/default-permissions.xml:$(TARGET_COPY_OUT_SYSTEM)/etc/default-permissions/default-permissions-emby.xml \
++    device/rockchip/rk3588/ATK_DLRK3588/stage/WallpaperEngine/default-permissions.xml:$(TARGET_COPY_OUT_SYSTEM)/etc/default-permissions/default-permissions-wallpaperengine.xml \
++    device/rockchip/rk3588/ATK_DLRK3588/stage/AnExplorer/default-permissions.xml:$(TARGET_COPY_OUT_SYSTEM)/etc/default-permissions/default-permissions-anexplorer.xml
+ 
+ # =============================================================================
+ # Display: 2x HiDPI scaling
+diff --git a/rk3588/ATK_DLRK3588/preinstall/Android.mk b/rk3588/ATK_DLRK3588/preinstall/Android.mk
+deleted file mode 100644
+index 8338432..0000000
+--- a/rk3588/ATK_DLRK3588/preinstall/Android.mk
++++ /dev/null
+@@ -1,2 +0,0 @@
+-include $(call all-subdir-makefiles)
+-
+diff --git a/rk3588/ATK_DLRK3588/preinstall/Auto/Android.mk b/rk3588/ATK_DLRK3588/preinstall/Auto/Android.mk
+deleted file mode 100644
+index 63de041..0000000
+--- a/rk3588/ATK_DLRK3588/preinstall/Auto/Android.mk
++++ /dev/null
+@@ -1,77 +0,0 @@
+-LOCAL_PATH := $(call my-dir)
+-
+-# ========== Auto APK ==========
+-include $(CLEAR_VARS)
+-LOCAL_MODULE := Auto
+-LOCAL_MODULE_CLASS := APPS
+-LOCAL_MODULE_TAGS := optional
+-LOCAL_BUILT_MODULE_STEM := package.apk
+-LOCAL_MODULE_SUFFIX := $(COMMON_ANDROID_PACKAGE_SUFFIX)
+-LOCAL_SRC_FILES := $(LOCAL_MODULE).apk
+-LOCAL_CERTIFICATE := PRESIGNED
+-LOCAL_PREBUILT_JNI_LIBS := \
+-    lib/arm64-v8a/libAmapFreeType.so \
+-    lib/arm64-v8a/libAutoDice.so \
+-    lib/arm64-v8a/libBootLoader.so \
+-    lib/arm64-v8a/libCommon.so \
+-    lib/arm64-v8a/libContentProvider.so \
+-    lib/arm64-v8a/libEaglet.so \
+-    lib/arm64-v8a/libEagletEx.so \
+-    lib/arm64-v8a/libGAdaptor.so \
+-    lib/arm64-v8a/libGAdaptorInterface.so \
+-    lib/arm64-v8a/libGComm3rd.so \
+-    lib/arm64-v8a/libGFrame.so \
+-    lib/arm64-v8a/libGNet.so \
+-    lib/arm64-v8a/libGPlatformInterface.so \
+-    lib/arm64-v8a/libGSQuirrel.so \
+-    lib/arm64-v8a/libGUltraLog.so \
+-    lib/arm64-v8a/libGbl.so \
+-    lib/arm64-v8a/libMainScreen.so \
+-    lib/arm64-v8a/libOSL_MNN.so \
+-    lib/arm64-v8a/libUpdateMng.so \
+-    lib/arm64-v8a/libaim.so \
+-    lib/arm64-v8a/libamsgnss.so \
+-    lib/arm64-v8a/libanr_tool.so \
+-    lib/arm64-v8a/libapssdk.so \
+-    lib/arm64-v8a/libautonavi.so \
+-    lib/arm64-v8a/libbase_utils.so \
+-    lib/arm64-v8a/libc++_shared.so \
+-    lib/arm64-v8a/libcmb_AGroupPackage.so \
+-    lib/arm64-v8a/libcmb_BootScreenPackage.so \
+-    lib/arm64-v8a/libcmb_Common.so \
+-    lib/arm64-v8a/libcmb_DriveReportPackage.so \
+-    lib/arm64-v8a/libcmb_Dupinfo.so \
+-    lib/arm64-v8a/libcmb_FileMerge.so \
+-    lib/arm64-v8a/libcmb_GVersion.so \
+-    lib/arm64-v8a/libcmb_GasServicePackage.so \
+-    lib/arm64-v8a/libcmb_MainPackage.so \
+-    lib/arm64-v8a/libcmb_MyTrackPackage.so \
+-    lib/arm64-v8a/libcmb_OverlayRes.so \
+-    lib/arm64-v8a/libcmb_PhoneConnPackage.so \
+-    lib/arm64-v8a/libcmb_SwitchCardPackage.so \
+-    lib/arm64-v8a/libcmb_TbtPackage.so \
+-    lib/arm64-v8a/libcmb_TripodPackage.so \
+-    lib/arm64-v8a/libcmb_UserInfoPackage.so \
+-    lib/arm64-v8a/libcmb_WechatBindPackage.so \
+-    lib/arm64-v8a/libcmb_font_cn.so \
+-    lib/arm64-v8a/libcmb_style1.so \
+-    lib/arm64-v8a/libcmb_style2.so \
+-    lib/arm64-v8a/libcmb_style3.so \
+-    lib/arm64-v8a/libcmb_style4.so \
+-    lib/arm64-v8a/libcmb_style5.so \
+-    lib/arm64-v8a/libdmojo_support.so \
+-    lib/arm64-v8a/libdumpcrash.so \
+-    lib/arm64-v8a/libgaea.so \
+-    lib/arm64-v8a/libhsl.so \
+-    lib/arm64-v8a/libifly_aime.so \
+-    lib/arm64-v8a/libiksemel.so \
+-    lib/arm64-v8a/libmqtt_jni.so \
+-    lib/arm64-v8a/libneonui_shared.so \
+-    lib/arm64-v8a/libopenssl.so \
+-    lib/arm64-v8a/libsgmain.so \
+-    lib/arm64-v8a/libsgmainso-6.7.260202.so \
+-    lib/arm64-v8a/libsgmainso.version.so \
+-    lib/arm64-v8a/libturbo.so \
+-    lib/arm64-v8a/libwireless.so
+-LOCAL_DEX_PREOPT := false
+-include $(BUILD_PREBUILT)
+diff --git a/rk3588/ATK_DLRK3588/preinstall/TencentAppStore/Android.mk b/rk3588/ATK_DLRK3588/preinstall/TencentAppStore/Android.mk
+deleted file mode 100644
+index a1c3400..0000000
+--- a/rk3588/ATK_DLRK3588/preinstall/TencentAppStore/Android.mk
++++ /dev/null
+@@ -1,11 +0,0 @@
+-LOCAL_PATH := $(call my-dir)
+-include $(CLEAR_VARS)
+-LOCAL_MODULE := TencentAppStore
+-LOCAL_MODULE_CLASS := APPS
+-LOCAL_MODULE_TAGS := optional
+-LOCAL_BUILT_MODULE_STEM := package.apk
+-LOCAL_MODULE_SUFFIX := $(COMMON_ANDROID_PACKAGE_SUFFIX)
+-LOCAL_SRC_FILES := $(LOCAL_MODULE).apk
+-LOCAL_CERTIFICATE := PRESIGNED
+-LOCAL_DEX_PREOPT := false
+-include $(BUILD_PREBUILT)
+diff --git a/rk3588/ATK_DLRK3588/preinstall/preinstall.mk b/rk3588/ATK_DLRK3588/preinstall/preinstall.mk
+deleted file mode 100644
+index 1ba48d6..0000000
+--- a/rk3588/ATK_DLRK3588/preinstall/preinstall.mk
++++ /dev/null
+@@ -1,2 +0,0 @@
+-PRODUCT_PACKAGES += TencentAppStore
+-PRODUCT_PACKAGES += Auto
+diff --git a/rk3588/ATK_DLRK3588/stage/AnExplorer/default-permissions.xml b/rk3588/ATK_DLRK3588/stage/AnExplorer/default-permissions.xml
+new file mode 100644
+index 0000000..54f1bc2
+--- /dev/null
++++ b/rk3588/ATK_DLRK3588/stage/AnExplorer/default-permissions.xml
+@@ -0,0 +1,14 @@
++<?xml version="1.0" encoding="utf-8"?>
++<exceptions>
++    <exception package="dev.dworks.apps.anexplorer">
++        <!-- Runtime dangerous permissions - auto granted on boot -->
++        <permission name="android.permission.MANAGE_EXTERNAL_STORAGE" fixed="true"/>
++        <permission name="android.permission.READ_EXTERNAL_STORAGE" fixed="true"/>
++        <permission name="android.permission.WRITE_EXTERNAL_STORAGE" fixed="true"/>
++        <permission name="android.permission.READ_MEDIA_IMAGES" fixed="true"/>
++        <permission name="android.permission.READ_MEDIA_VIDEO" fixed="true"/>
++        <permission name="android.permission.READ_MEDIA_AUDIO" fixed="true"/>
++        <permission name="android.permission.POST_NOTIFICATIONS" fixed="true"/>
++        <permission name="android.permission.FOREGROUND_SERVICE" fixed="true"/>
++    </exception>
++</exceptions>
+\ No newline at end of file
+diff --git a/rk3588/ATK_DLRK3588/stage/Android.mk b/rk3588/ATK_DLRK3588/stage/Android.mk
+new file mode 100644
+index 0000000..5c5ea1d
+--- /dev/null
++++ b/rk3588/ATK_DLRK3588/stage/Android.mk
+@@ -0,0 +1,79 @@
++LOCAL_PATH := $(call my-dir)
++
++# =============================================================================
++# Stage-only APKs.
++#
++# These large third-party APKs must NOT be installed into the system app dir.
++# They are shipped as plain files under /system/preinstall, then installed
++# into /data/app at first boot by SystemServer.installPreinstalledCarApps()
++# (before AMS starts home), so their unpacked native libs and app data live
++# on the 512G NVMe /data partition.
++#
++# This directory is intentionally named "stage" (not "preinstall") so it is
++# NOT scanned by device/rockchip/common/auto_generator.py, which would
++# otherwise regenerate this Android.mk and preinstall.mk on every build.
++# =============================================================================
++
++include $(CLEAR_VARS)
++LOCAL_MODULE := AutoPreinstall
++LOCAL_MODULE_CLASS := ETC
++LOCAL_MODULE_PATH := $(TARGET_OUT)/preinstall
++LOCAL_MODULE_STEM := Auto.apk
++LOCAL_SRC_FILES := Auto/Auto.apk
++include $(BUILD_PREBUILT)
++
++include $(CLEAR_VARS)
++LOCAL_MODULE := NeteaseCloudMusicPreinstall
++LOCAL_MODULE_CLASS := ETC
++LOCAL_MODULE_PATH := $(TARGET_OUT)/preinstall
++LOCAL_MODULE_STEM := NeteaseCloudMusic.apk
++LOCAL_SRC_FILES := NeteaseCloudMusic/NeteaseCloudMusic.apk
++include $(BUILD_PREBUILT)
++
++include $(CLEAR_VARS)
++LOCAL_MODULE := XimalayaPreinstall
++LOCAL_MODULE_CLASS := ETC
++LOCAL_MODULE_PATH := $(TARGET_OUT)/preinstall
++LOCAL_MODULE_STEM := Ximalaya.apk
++LOCAL_SRC_FILES := Ximalaya/Ximalaya.apk
++include $(BUILD_PREBUILT)
++
++include $(CLEAR_VARS)
++LOCAL_MODULE := DouyinPreinstall
++LOCAL_MODULE_CLASS := ETC
++LOCAL_MODULE_PATH := $(TARGET_OUT)/preinstall
++LOCAL_MODULE_STEM := Douyin.apk
++LOCAL_SRC_FILES := Douyin/Douyin.apk
++include $(BUILD_PREBUILT)
++
++include $(CLEAR_VARS)
++LOCAL_MODULE := BilibiliHDPreinstall
++LOCAL_MODULE_CLASS := ETC
++LOCAL_MODULE_PATH := $(TARGET_OUT)/preinstall
++LOCAL_MODULE_STEM := BilibiliHD.apk
++LOCAL_SRC_FILES := BilibiliHD/BilibiliHD.apk
++include $(BUILD_PREBUILT)
++
++include $(CLEAR_VARS)
++LOCAL_MODULE := EmbyPreinstall
++LOCAL_MODULE_CLASS := ETC
++LOCAL_MODULE_PATH := $(TARGET_OUT)/preinstall
++LOCAL_MODULE_STEM := Emby.apk
++LOCAL_SRC_FILES := Emby/Emby.apk
++include $(BUILD_PREBUILT)
++
++include $(CLEAR_VARS)
++LOCAL_MODULE := WallpaperEnginePreinstall
++LOCAL_MODULE_CLASS := ETC
++LOCAL_MODULE_PATH := $(TARGET_OUT)/preinstall
++LOCAL_MODULE_STEM := WallpaperEngine.apk
++LOCAL_SRC_FILES := WallpaperEngine/WallpaperEngine.apk
++include $(BUILD_PREBUILT)
++
++include $(CLEAR_VARS)
++LOCAL_MODULE := AnExplorerPreinstall
++LOCAL_MODULE_CLASS := ETC
++LOCAL_MODULE_PATH := $(TARGET_OUT)/preinstall
++LOCAL_MODULE_STEM := AnExplorer.apk
++LOCAL_SRC_FILES := AnExplorer/AnExplorer.apk
++include $(BUILD_PREBUILT)
+diff --git a/rk3588/ATK_DLRK3588/preinstall/Auto/default-permissions.xml b/rk3588/ATK_DLRK3588/stage/Auto/default-permissions.xml
+similarity index 100%
+rename from rk3588/ATK_DLRK3588/preinstall/Auto/default-permissions.xml
+rename to rk3588/ATK_DLRK3588/stage/Auto/default-permissions.xml
+diff --git a/rk3588/ATK_DLRK3588/stage/BilibiliHD/default-permissions.xml b/rk3588/ATK_DLRK3588/stage/BilibiliHD/default-permissions.xml
+new file mode 100644
+index 0000000..cccbcfc
+--- /dev/null
++++ b/rk3588/ATK_DLRK3588/stage/BilibiliHD/default-permissions.xml
+@@ -0,0 +1,22 @@
++<?xml version="1.0" encoding="utf-8"?>
++<exceptions>
++    <exception package="tv.danmaku.bilibilihd">
++        <!-- Runtime dangerous permissions - auto granted on boot -->
++        <permission name="android.permission.READ_EXTERNAL_STORAGE" fixed="true"/>
++        <permission name="android.permission.WRITE_EXTERNAL_STORAGE" fixed="true"/>
++        <permission name="android.permission.READ_MEDIA_IMAGES" fixed="true"/>
++        <permission name="android.permission.READ_MEDIA_VIDEO" fixed="true"/>
++        <permission name="android.permission.READ_MEDIA_AUDIO" fixed="true"/>
++        <permission name="android.permission.RECORD_AUDIO" fixed="true"/>
++        <permission name="android.permission.CAMERA" fixed="true"/>
++        <permission name="android.permission.ACCESS_FINE_LOCATION" fixed="true"/>
++        <permission name="android.permission.ACCESS_COARSE_LOCATION" fixed="true"/>
++        <permission name="android.permission.READ_CALENDAR" fixed="true"/>
++        <permission name="android.permission.WRITE_CALENDAR" fixed="true"/>
++        <permission name="android.permission.BLUETOOTH_CONNECT" fixed="true"/>
++        <permission name="android.permission.BLUETOOTH_SCAN" fixed="true"/>
++        <permission name="android.permission.POST_NOTIFICATIONS" fixed="true"/>
++        <permission name="android.permission.FOREGROUND_SERVICE" fixed="true"/>
++        <permission name="android.permission.RECEIVE_BOOT_COMPLETED" fixed="true"/>
++    </exception>
++</exceptions>
+\ No newline at end of file
+diff --git a/rk3588/ATK_DLRK3588/stage/Douyin/default-permissions.xml b/rk3588/ATK_DLRK3588/stage/Douyin/default-permissions.xml
+new file mode 100644
+index 0000000..d4b7a71
+--- /dev/null
++++ b/rk3588/ATK_DLRK3588/stage/Douyin/default-permissions.xml
+@@ -0,0 +1,22 @@
++<?xml version="1.0" encoding="utf-8"?>
++<exceptions>
++    <exception package="com.ss.android.ugc.aweme">
++        <!-- Runtime dangerous permissions - auto granted on boot -->
++        <permission name="android.permission.READ_EXTERNAL_STORAGE" fixed="true"/>
++        <permission name="android.permission.WRITE_EXTERNAL_STORAGE" fixed="true"/>
++        <permission name="android.permission.READ_MEDIA_IMAGES" fixed="true"/>
++        <permission name="android.permission.READ_MEDIA_VIDEO" fixed="true"/>
++        <permission name="android.permission.READ_MEDIA_AUDIO" fixed="true"/>
++        <permission name="android.permission.ACCESS_MEDIA_LOCATION" fixed="true"/>
++        <permission name="android.permission.RECORD_AUDIO" fixed="true"/>
++        <permission name="android.permission.CAMERA" fixed="true"/>
++        <permission name="android.permission.READ_CONTACTS" fixed="true"/>
++        <permission name="android.permission.ACCESS_FINE_LOCATION" fixed="true"/>
++        <permission name="android.permission.ACCESS_COARSE_LOCATION" fixed="true"/>
++        <permission name="android.permission.BLUETOOTH_CONNECT" fixed="true"/>
++        <permission name="android.permission.BLUETOOTH_SCAN" fixed="true"/>
++        <permission name="android.permission.WRITE_CALENDAR" fixed="true"/>
++        <permission name="android.permission.POST_NOTIFICATIONS" fixed="true"/>
++        <permission name="android.permission.FOREGROUND_SERVICE" fixed="true"/>
++    </exception>
++</exceptions>
+diff --git a/rk3588/ATK_DLRK3588/stage/Emby/default-permissions.xml b/rk3588/ATK_DLRK3588/stage/Emby/default-permissions.xml
+new file mode 100644
+index 0000000..6981155
+--- /dev/null
++++ b/rk3588/ATK_DLRK3588/stage/Emby/default-permissions.xml
+@@ -0,0 +1,15 @@
++<?xml version="1.0" encoding="utf-8"?>
++<exceptions>
++    <exception package="com.mb.android">
++        <!-- Runtime dangerous permissions - auto granted on boot -->
++        <permission name="android.permission.READ_EXTERNAL_STORAGE" fixed="true"/>
++        <permission name="android.permission.WRITE_EXTERNAL_STORAGE" fixed="true"/>
++        <permission name="android.permission.READ_MEDIA_IMAGES" fixed="true"/>
++        <permission name="android.permission.READ_MEDIA_VIDEO" fixed="true"/>
++        <permission name="android.permission.READ_MEDIA_AUDIO" fixed="true"/>
++        <permission name="android.permission.RECORD_AUDIO" fixed="true"/>
++        <permission name="android.permission.POST_NOTIFICATIONS" fixed="true"/>
++        <permission name="android.permission.FOREGROUND_SERVICE" fixed="true"/>
++        <permission name="android.permission.RECEIVE_BOOT_COMPLETED" fixed="true"/>
++    </exception>
++</exceptions>
+\ No newline at end of file
+diff --git a/rk3588/ATK_DLRK3588/stage/NeteaseCloudMusic/default-permissions.xml b/rk3588/ATK_DLRK3588/stage/NeteaseCloudMusic/default-permissions.xml
+new file mode 100644
+index 0000000..85ec8be
+--- /dev/null
++++ b/rk3588/ATK_DLRK3588/stage/NeteaseCloudMusic/default-permissions.xml
+@@ -0,0 +1,11 @@
++<?xml version="1.0" encoding="utf-8"?>
++<exceptions>
++    <exception package="com.netease.cloudmusic">
++        <!-- Runtime dangerous permissions - auto granted on boot -->
++        <permission name="android.permission.READ_EXTERNAL_STORAGE" fixed="true"/>
++        <permission name="android.permission.WRITE_EXTERNAL_STORAGE" fixed="true"/>
++        <permission name="android.permission.POST_NOTIFICATIONS" fixed="true"/>
++        <permission name="android.permission.FOREGROUND_SERVICE" fixed="true"/>
++        <permission name="android.permission.RECEIVE_BOOT_COMPLETED" fixed="true"/>
++    </exception>
++</exceptions>
+\ No newline at end of file
+diff --git a/rk3588/ATK_DLRK3588/stage/WallpaperEngine/default-permissions.xml b/rk3588/ATK_DLRK3588/stage/WallpaperEngine/default-permissions.xml
+new file mode 100644
+index 0000000..0ba221a
+--- /dev/null
++++ b/rk3588/ATK_DLRK3588/stage/WallpaperEngine/default-permissions.xml
+@@ -0,0 +1,11 @@
++<?xml version="1.0" encoding="utf-8"?>
++<exceptions>
++    <exception package="io.wallpaperengine.weclient">
++        <!-- Runtime dangerous permissions - auto granted on boot -->
++        <permission name="android.permission.READ_MEDIA_IMAGES" fixed="true"/>
++        <permission name="android.permission.READ_MEDIA_VIDEO" fixed="true"/>
++        <permission name="android.permission.RECORD_AUDIO" fixed="true"/>
++        <permission name="android.permission.POST_NOTIFICATIONS" fixed="true"/>
++        <permission name="android.permission.FOREGROUND_SERVICE" fixed="true"/>
++    </exception>
++</exceptions>
+\ No newline at end of file
+diff --git a/rk3588/ATK_DLRK3588/stage/Ximalaya/default-permissions.xml b/rk3588/ATK_DLRK3588/stage/Ximalaya/default-permissions.xml
+new file mode 100644
+index 0000000..2cd9505
+--- /dev/null
++++ b/rk3588/ATK_DLRK3588/stage/Ximalaya/default-permissions.xml
+@@ -0,0 +1,21 @@
++<?xml version="1.0" encoding="utf-8"?>
++<exceptions>
++    <exception package="com.ximalaya.ting.android">
++        <!-- Runtime dangerous permissions - auto granted on boot -->
++        <permission name="android.permission.READ_EXTERNAL_STORAGE" fixed="true"/>
++        <permission name="android.permission.WRITE_EXTERNAL_STORAGE" fixed="true"/>
++        <permission name="android.permission.RECORD_AUDIO" fixed="true"/>
++        <permission name="android.permission.READ_PHONE_STATE" fixed="true"/>
++        <permission name="android.permission.ACCESS_FINE_LOCATION" fixed="true"/>
++        <permission name="android.permission.ACCESS_COARSE_LOCATION" fixed="true"/>
++        <permission name="android.permission.ACCESS_BACKGROUND_LOCATION" fixed="true"/>
++        <permission name="android.permission.READ_CONTACTS" fixed="true"/>
++        <permission name="android.permission.CAMERA" fixed="true"/>
++        <permission name="android.permission.READ_CALENDAR" fixed="true"/>
++        <permission name="android.permission.WRITE_CALENDAR" fixed="true"/>
++        <permission name="android.permission.BLUETOOTH_CONNECT" fixed="true"/>
++        <permission name="android.permission.BLUETOOTH_SCAN" fixed="true"/>
++        <permission name="android.permission.POST_NOTIFICATIONS" fixed="true"/>
++        <permission name="android.permission.FOREGROUND_SERVICE" fixed="true"/>
++    </exception>
++</exceptions>
+\ No newline at end of file
+diff --git a/rk3588/ATK_DLRK3588/stage/preinstall.mk b/rk3588/ATK_DLRK3588/stage/preinstall.mk
+new file mode 100644
+index 0000000..86248dc
+--- /dev/null
++++ b/rk3588/ATK_DLRK3588/stage/preinstall.mk
+@@ -0,0 +1,8 @@
++PRODUCT_PACKAGES += AutoPreinstall
++PRODUCT_PACKAGES += NeteaseCloudMusicPreinstall
++PRODUCT_PACKAGES += XimalayaPreinstall
++PRODUCT_PACKAGES += DouyinPreinstall
++PRODUCT_PACKAGES += BilibiliHDPreinstall
++PRODUCT_PACKAGES += EmbyPreinstall
++PRODUCT_PACKAGES += WallpaperEnginePreinstall
++PRODUCT_PACKAGES += AnExplorerPreinstall
+-- 
+2.53.0
+

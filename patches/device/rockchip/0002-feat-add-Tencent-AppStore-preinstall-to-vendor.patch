@@ -1,0 +1,69 @@
+From 44b38e7da92b04870de168d04655d42b2647aeb0 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Thu, 30 Jul 2026 14:47:25 +0800
+Subject: [PATCH] feat: add Tencent AppStore preinstall to vendor
+
+    - preinstall/preinstall.mk: define preinstall app list and
+      include per-app build rules
+    - preinstall/TencentAppStore/Android.mk: Tencent AppStore
+      prebuilt vendor module
+    - ATK_DLRK3588.mk: include preinstall/preinstall.mk in product
+      configuration
+---
+ rk3588/ATK_DLRK3588/ATK_DLRK3588.mk                   |  2 ++
+ rk3588/ATK_DLRK3588/preinstall/Android.mk             |  2 ++
+ .../preinstall/TencentAppStore/Android.mk             | 11 +++++++++++
+ rk3588/ATK_DLRK3588/preinstall/preinstall.mk          |  1 +
+ 4 files changed, 16 insertions(+)
+ create mode 100644 rk3588/ATK_DLRK3588/preinstall/Android.mk
+ create mode 100644 rk3588/ATK_DLRK3588/preinstall/TencentAppStore/Android.mk
+ create mode 100644 rk3588/ATK_DLRK3588/preinstall/preinstall.mk
+
+diff --git a/rk3588/ATK_DLRK3588/ATK_DLRK3588.mk b/rk3588/ATK_DLRK3588/ATK_DLRK3588.mk
+index bbbbcb2..09a10f6 100644
+--- a/rk3588/ATK_DLRK3588/ATK_DLRK3588.mk
++++ b/rk3588/ATK_DLRK3588/ATK_DLRK3588.mk
+@@ -21,6 +21,8 @@ PRODUCT_DTBO_TEMPLATE := $(LOCAL_PATH)/dt-overlay.in
+ include device/rockchip/common/build/rockchip/DynamicPartitions.mk
+ include device/rockchip/rk3588/ATK_DLRK3588/BoardConfig.mk
+ include device/rockchip/common/BoardConfig.mk
++include device/rockchip/rk3588/ATK_DLRK3588/preinstall/preinstall.mk
++
+ $(call inherit-product, device/rockchip/rk3588/device.mk)
+ $(call inherit-product, device/rockchip/common/device.mk)
+ $(call inherit-product, frameworks/native/build/tablet-10in-xhdpi-2048-dalvik-heap.mk)
+diff --git a/rk3588/ATK_DLRK3588/preinstall/Android.mk b/rk3588/ATK_DLRK3588/preinstall/Android.mk
+new file mode 100644
+index 0000000..8338432
+--- /dev/null
++++ b/rk3588/ATK_DLRK3588/preinstall/Android.mk
+@@ -0,0 +1,2 @@
++include $(call all-subdir-makefiles)
++
+diff --git a/rk3588/ATK_DLRK3588/preinstall/TencentAppStore/Android.mk b/rk3588/ATK_DLRK3588/preinstall/TencentAppStore/Android.mk
+new file mode 100644
+index 0000000..a1c3400
+--- /dev/null
++++ b/rk3588/ATK_DLRK3588/preinstall/TencentAppStore/Android.mk
+@@ -0,0 +1,11 @@
++LOCAL_PATH := $(call my-dir)
++include $(CLEAR_VARS)
++LOCAL_MODULE := TencentAppStore
++LOCAL_MODULE_CLASS := APPS
++LOCAL_MODULE_TAGS := optional
++LOCAL_BUILT_MODULE_STEM := package.apk
++LOCAL_MODULE_SUFFIX := $(COMMON_ANDROID_PACKAGE_SUFFIX)
++LOCAL_SRC_FILES := $(LOCAL_MODULE).apk
++LOCAL_CERTIFICATE := PRESIGNED
++LOCAL_DEX_PREOPT := false
++include $(BUILD_PREBUILT)
+diff --git a/rk3588/ATK_DLRK3588/preinstall/preinstall.mk b/rk3588/ATK_DLRK3588/preinstall/preinstall.mk
+new file mode 100644
+index 0000000..a27832a
+--- /dev/null
++++ b/rk3588/ATK_DLRK3588/preinstall/preinstall.mk
+@@ -0,0 +1 @@
++PRODUCT_PACKAGES += TencentAppStore
+-- 
+2.53.0
+

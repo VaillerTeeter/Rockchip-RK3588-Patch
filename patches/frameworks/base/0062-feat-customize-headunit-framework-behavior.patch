@@ -1,0 +1,198 @@
+From 248a021bc3bab0af277071743b1922522b4f3048 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Mon, 17 Aug 2026 16:23:21 +0800
+Subject: [PATCH] feat: customize headunit framework behavior
+
+    - core/res/res/values/config.xml: disable all transition animations via
+      config_disableTransitionAnimation
+    - packages/SettingsProvider/res/values/defaults.xml: set default window
+      and transition animation scales to 0%
+    - core/res/AndroidManifest.xml: allow privileged apps to hold
+      MANAGE_ACTIVITY_TASKS
+    - packages/SystemUI/navigationbar/NavigationBarInflaterView.java:
+      regroup navbar into volume, navigation and shortcut clusters
+    - services/java/com/android/server/SystemServer.java: install staged
+      APKs from /system/preinstall before home starts, idempotent via
+      /data/preinstall_done_* markers
+
+Change-Id: I60dc974add44c9f6db4be87f354899068adc6a18
+---
+ core/res/AndroidManifest.xml                  |  2 +-
+ core/res/res/values/config.xml                |  2 +-
+ .../SettingsProvider/res/values/defaults.xml  |  4 +-
+ .../NavigationBarInflaterView.java            |  2 +-
+ .../java/com/android/server/SystemServer.java | 90 ++++++++++++++++++-
+ 5 files changed, 94 insertions(+), 6 deletions(-)
+
+diff --git a/core/res/AndroidManifest.xml b/core/res/AndroidManifest.xml
+index 0e95e30a99b8..18c7579046b0 100644
+--- a/core/res/AndroidManifest.xml
++++ b/core/res/AndroidManifest.xml
+@@ -3106,7 +3106,7 @@
+ 
+     <!-- @SystemApi @TestApi @hide Allows an application to create/manage/remove tasks -->
+     <permission android:name="android.permission.MANAGE_ACTIVITY_TASKS"
+-        android:protectionLevel="signature|recents" />
++        android:protectionLevel="signature|privileged|recents" />
+ 
+     <!-- @SystemApi @TestApi @hide Allows an application to embed other activities -->
+     <permission android:name="android.permission.ACTIVITY_EMBEDDING"
+diff --git a/core/res/res/values/config.xml b/core/res/res/values/config.xml
+index ddf0c97d485b..a236ebd524e4 100644
+--- a/core/res/res/values/config.xml
++++ b/core/res/res/values/config.xml
+@@ -135,7 +135,7 @@
+     <bool name="config_sendAudioBecomingNoisy">true</bool>
+ 
+     <!-- Flag to disable all transition animations -->
+-    <bool name="config_disableTransitionAnimation">false</bool>
++    <bool name="config_disableTransitionAnimation">true</bool>
+ 
+     <!-- The duration (in milliseconds) of a short animation. -->
+     <integer name="config_shortAnimTime">200</integer>
+diff --git a/packages/SettingsProvider/res/values/defaults.xml b/packages/SettingsProvider/res/values/defaults.xml
+index fff49fc6b272..6473df8e6632 100644
+--- a/packages/SettingsProvider/res/values/defaults.xml
++++ b/packages/SettingsProvider/res/values/defaults.xml
+@@ -32,8 +32,8 @@
+     <!-- Default screen brightness, from 0 to 255.  102 is 40%. -->
+     <integer name="def_screen_brightness">102</integer>
+     <bool name="def_screen_brightness_automatic_mode">false</bool>
+-    <fraction name="def_window_animation_scale">50%</fraction>
+-    <fraction name="def_window_transition_scale">50%</fraction>
++    <fraction name="def_window_animation_scale">0%</fraction>
++    <fraction name="def_window_transition_scale">0%</fraction>
+     <bool name="def_haptic_feedback">true</bool>
+ 
+     <bool name="def_bluetooth_on">false</bool>
+diff --git a/packages/SystemUI/src/com/android/systemui/navigationbar/NavigationBarInflaterView.java b/packages/SystemUI/src/com/android/systemui/navigationbar/NavigationBarInflaterView.java
+index ea81c435a9c4..126a90b94cc8 100644
+--- a/packages/SystemUI/src/com/android/systemui/navigationbar/NavigationBarInflaterView.java
++++ b/packages/SystemUI/src/com/android/systemui/navigationbar/NavigationBarInflaterView.java
+@@ -147,7 +147,7 @@ public class NavigationBarInflaterView extends FrameLayout
+     protected String getDefaultLayout() {
+         // Car headunit: force custom 4-button layout (back, home, apps, settings)
+         if (android.os.SystemProperties.getBoolean("persist.sys.headunit_navbar", false)) {
+-            return "space;back,home,nav_volume_down,nav_volume_mute,nav_volume_up,nav_apps,nav_settings;space";
++            return "nav_volume_down,nav_volume_mute,nav_volume_up;back,home;nav_apps,nav_settings";
+         }
+ 
+         final int defaultResource = QuickStepContract.isGesturalMode(mNavBarMode)
+diff --git a/services/java/com/android/server/SystemServer.java b/services/java/com/android/server/SystemServer.java
+index 13071581a1a3..f68bfe4c2710 100644
+--- a/services/java/com/android/server/SystemServer.java
++++ b/services/java/com/android/server/SystemServer.java
+@@ -2251,7 +2251,7 @@ public final class SystemServer implements Dumpable {
+                 Slog.e(TAG, "Failure starting HardwarePropertiesManagerService", e);
+             }
+             t.traceEnd();
+-          
++
+             if (!isWatch) {
+                 t.traceBegin("StartTwilightService");
+                 mSystemServiceManager.startService(TwilightService.class);
+@@ -2737,6 +2737,14 @@ public final class SystemServer implements Dumpable {
+         mPackageManagerService.systemReady();
+         t.traceEnd();
+ 
++        // Car headunit: install large third-party APKs from /system/preinstall
++        // before AMS/systemReady starts home. This keeps the boot animation up
++        // while installing and ensures the apps are already present when the
++        // launcher first appears. Idempotent per APK via /data/preinstall_done_*.
++        t.traceBegin("InstallPreinstalledCarApps");
++        installPreinstalledCarApps();
++        t.traceEnd();
++
+         t.traceBegin("MakeDisplayManagerServiceReady");
+         try {
+             // TODO: use boot phase and communicate these flags some other way
+@@ -3084,6 +3092,86 @@ public final class SystemServer implements Dumpable {
+         t.traceEnd(); // startOtherServices
+     }
+ 
++    /**
++     * Install large third-party APKs staged under /system/preinstall before
++     * AMS/systemReady starts home. This keeps the boot animation up while
++     * installing and ensures the apps are already present when the launcher
++     * first appears.
++     *
++     * Idempotent per APK via /data/preinstall_done_<apkName> markers, so a
++     * newly staged APK is installed on the next boot even when the data
++     * partition is not wiped (no global marker blocking later additions).
++     */
++    private void installPreinstalledCarApps() {
++        File dir = new File("/system/preinstall");
++        if (!dir.isDirectory()) {
++            Slog.w(TAG, "/system/preinstall not found, skip preinstall");
++            return;
++        }
++
++        File[] apks = dir.listFiles();
++        if (apks == null || apks.length == 0) {
++            return;
++        }
++
++        for (File apk : apks) {
++            if (!apk.getName().endsWith(".apk")) {
++                continue;
++            }
++
++            File marker = new File("/data/preinstall_done_" + apk.getName());
++            if (marker.exists()) {
++                Slog.i(TAG, "Already installed: " + apk.getName());
++                continue;
++            }
++
++            Slog.i(TAG, "Installing preinstalled car app: " + apk.getName());
++            boolean installed = false;
++            try {
++                Watchdog.getInstance().pauseWatchingCurrentThread("preinstall");
++                java.lang.Process proc = new ProcessBuilder(
++                        "/system/bin/pm", "install", "-r", "-g",
++                        apk.getAbsolutePath())
++                        .redirectErrorStream(true)
++                        .start();
++                java.io.InputStream in = proc.getInputStream();
++                StringBuilder out = new StringBuilder();
++                byte[] buf = new byte[4096];
++                int n;
++                while ((n = in.read(buf)) > 0) {
++                    out.append(new String(buf, 0, n));
++                }
++                in.close();
++                int ret = proc.waitFor();
++                if (ret != 0) {
++                    Slog.e(TAG, "Failed to install " + apk.getName()
++                            + ": " + out.toString().trim());
++                } else {
++                    Slog.i(TAG, "Installed " + apk.getName());
++                    installed = true;
++                }
++            } catch (IOException e) {
++                Slog.e(TAG, "Exception installing " + apk.getName(), e);
++            } catch (InterruptedException e) {
++                Slog.e(TAG, "Interrupted installing " + apk.getName(), e);
++                Thread.currentThread().interrupt();
++            } finally {
++                Watchdog.getInstance().resumeWatchingCurrentThread("preinstall");
++            }
++
++            if (installed) {
++                try {
++                    if (marker.createNewFile()) {
++                        Slog.i(TAG, "Marked installed: " + apk.getName());
++                    }
++                } catch (IOException e) {
++                    Slog.e(TAG, "Failed to write preinstall marker for "
++                            + apk.getName(), e);
++                }
++            }
++        }
++    }
++
+     /**
+      * Starts system services defined in apexes.
+      *
+-- 
+2.53.0
+

@@ -1,0 +1,131 @@
+From 754f970e13b544ce4b72a278830cbdc4a309fe02 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Mon, 17 Aug 2026 16:33:19 +0800
+Subject: [PATCH] feat: integrate media apps as freeform tiles in headunit
+ launcher
+
+    - DecorCaptionView: suppress freeform caption bar for NeteaseCloudMusic,
+      Ximalaya and Douyin embedded tiles
+    - PhoneWindowManager: block BACK and HOME from reaching the embedded
+      NeteaseCloudMusic, Ximalaya and Douyin windows while keeping volume
+      and media key pass-through
+
+Change-Id: Ie7a50255b22b9c687cfbd51ede4f7bb540cc59d0
+---
+ .../internal/widget/DecorCaptionView.java     | 30 +++++++++++++
+ .../server/policy/PhoneWindowManager.java     | 44 ++++++++++++++++++-
+ 2 files changed, 73 insertions(+), 1 deletion(-)
+
+diff --git a/core/java/com/android/internal/widget/DecorCaptionView.java b/core/java/com/android/internal/widget/DecorCaptionView.java
+index f35d6e4bc938..a9be0a475e8f 100644
+--- a/core/java/com/android/internal/widget/DecorCaptionView.java
++++ b/core/java/com/android/internal/widget/DecorCaptionView.java
+@@ -137,6 +137,24 @@ public class DecorCaptionView extends ViewGroup implements View.OnTouchListener,
+                 owner.getContext().getPackageName())) {
+             mShow = false;
+         }
++        // Suppress freeform caption bar for NeteaseCloudMusic:
++        // Embedded as a music tile in the launcher sidebar.
++        if (mShow && "com.netease.cloudmusic".equals(
++                owner.getContext().getPackageName())) {
++            mShow = false;
++        }
++        // Suppress freeform caption bar for Ximalaya:
++        // Embedded as an audio tile in the launcher sidebar.
++        if (mShow && "com.ximalaya.ting.android".equals(
++                owner.getContext().getPackageName())) {
++            mShow = false;
++        }
++        // Suppress freeform caption bar for Douyin:
++        // Embedded as a video tile in the launcher sidebar.
++        if (mShow && "com.ss.android.ugc.aweme".equals(
++                owner.getContext().getPackageName())) {
++            mShow = false;
++        }
+         mOverlayWithAppContent = owner.isOverlayWithDecorCaptionEnabled();
+         updateCaptionVisibility();
+         // By changing the outline provider to BOUNDS, the window can remove its
+@@ -245,6 +263,18 @@ public class DecorCaptionView extends ViewGroup implements View.OnTouchListener,
+      * @param show True if the caption should be shown.
+      */
+     public void onConfigurationChanged(boolean show) {
++        // Keep freeform caption suppressed for embedded tiles.
++        if (show && mOwner != null
++                && ("com.autonavi.amapauto".equals(
++                        mOwner.getContext().getPackageName())
++                        || "com.netease.cloudmusic".equals(
++                                mOwner.getContext().getPackageName())
++                        || "com.ximalaya.ting.android".equals(
++                                mOwner.getContext().getPackageName())
++                        || "com.ss.android.ugc.aweme".equals(
++                                mOwner.getContext().getPackageName()))) {
++            show = false;
++        }
+         mShow = show;
+         updateCaptionVisibility();
+     }
+diff --git a/services/core/java/com/android/server/policy/PhoneWindowManager.java b/services/core/java/com/android/server/policy/PhoneWindowManager.java
+index 25fca8e5a208..339eb6f74150 100644
+--- a/services/core/java/com/android/server/policy/PhoneWindowManager.java
++++ b/services/core/java/com/android/server/policy/PhoneWindowManager.java
+@@ -916,6 +916,45 @@ public class PhoneWindowManager implements WindowManagerPolicy {
+                 && info.windowTitle.contains("com.autonavi.amapauto");
+     }
+ 
++    /**
++     * Returns true if the focused window belongs to NeteaseCloudMusic.
++     * Used to block key events from reaching the embedded music tile.
++     */
++    private boolean isNeteaseCloudMusicFocused(IBinder focusedToken) {
++        com.android.internal.policy.KeyInterceptionInfo info = mWindowManagerInternal
++                .getKeyInterceptionInfoFromToken(focusedToken);
++        if (info == null)
++            return false;
++        return info.windowTitle != null
++                && info.windowTitle.contains("com.netease.cloudmusic");
++    }
++
++    /**
++     * Returns true if the focused window belongs to Ximalaya.
++     * Used to block key events from reaching the embedded audio tile.
++     */
++    private boolean isXimalayaFocused(IBinder focusedToken) {
++        com.android.internal.policy.KeyInterceptionInfo info = mWindowManagerInternal
++                .getKeyInterceptionInfoFromToken(focusedToken);
++        if (info == null)
++            return false;
++        return info.windowTitle != null
++                && info.windowTitle.contains("com.ximalaya.ting.android");
++    }
++
++    /**
++     * Returns true if the focused window belongs to Douyin.
++     * Used to block key events from reaching the embedded video tile.
++     */
++    private boolean isDouyinFocused(IBinder focusedToken) {
++        com.android.internal.policy.KeyInterceptionInfo info = mWindowManagerInternal
++                .getKeyInterceptionInfoFromToken(focusedToken);
++        if (info == null)
++            return false;
++        return info.windowTitle != null
++                && info.windowTitle.contains("com.ss.android.ugc.aweme");
++    }
++
+     // returns true if the key was handled and should not be passed to the user
+     private boolean backKeyPress() {
+         mLogger.count("key_back_press", 1);
+@@ -2874,7 +2913,10 @@ public class PhoneWindowManager implements WindowManagerPolicy {
+         // Block BACK and HOME from reaching the AmapAuto freeform window.
+         // The map is embedded as a display-only tile in CarHeadunitLauncher;
+         // volume and media keys must pass through for the navigation bar buttons.
+-        if (focusedToken != null && isAmapAutoFocused(focusedToken)) {
++        if (focusedToken != null && (isAmapAutoFocused(focusedToken)
++                || isNeteaseCloudMusicFocused(focusedToken)
++                || isXimalayaFocused(focusedToken)
++                || isDouyinFocused(focusedToken))) {
+             if (event.getKeyCode() == KeyEvent.KEYCODE_BACK
+                     || event.getKeyCode() == KeyEvent.KEYCODE_HOME) {
+                 return -1;
+-- 
+2.53.0
+
