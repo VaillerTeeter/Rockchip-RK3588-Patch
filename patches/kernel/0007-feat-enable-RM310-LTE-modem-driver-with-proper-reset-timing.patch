@@ -1,0 +1,61 @@
+From 13999d460b5c27c9d816f1aa039c0e629a6b71f3 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Mon, 17 Aug 2026 16:40:11 +0800
+Subject: [PATCH] feat: enable RM310 LTE modem driver with proper reset timing
+
+    - Kconfig/Makefile: wire drivers/net/lte into the net subsystem build
+    - lte_rm310: assert reset GPIO with 250-600ms pulse window required
+      by the hardware manual before starting the modem power-on thread
+---
+ drivers/net/Kconfig         | 1 +
+ drivers/net/Makefile        | 1 +
+ drivers/net/lte/lte_rm310.c | 9 +++++++--
+ 3 files changed, 9 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/net/Kconfig b/drivers/net/Kconfig
+index 72d85214e..1299cc24f 100644
+--- a/drivers/net/Kconfig
++++ b/drivers/net/Kconfig
+@@ -566,6 +566,7 @@ config USB4_NET
+ 	  called thunderbolt-net.
+ 
+ source "drivers/net/hyperv/Kconfig"
++source "drivers/net/lte/Kconfig"
+ 
+ config NETDEVSIM
+ 	tristate "Simulated networking device"
+diff --git a/drivers/net/Makefile b/drivers/net/Makefile
+index 64430440c..e784f3b6e 100644
+--- a/drivers/net/Makefile
++++ b/drivers/net/Makefile
+@@ -79,6 +79,7 @@ obj-$(CONFIG_HYPERV_NET) += hyperv/
+ obj-$(CONFIG_NTB_NETDEV) += ntb_netdev.o
+ 
+ obj-$(CONFIG_FUJITSU_ES) += fjes/
++obj-$(CONFIG_LTE) += lte/
+ 
+ thunderbolt-net-y += thunderbolt.o
+ obj-$(CONFIG_USB4_NET) += thunderbolt-net.o
+diff --git a/drivers/net/lte/lte_rm310.c b/drivers/net/lte/lte_rm310.c
+index 37d1ab966..c51e43762 100644
+--- a/drivers/net/lte/lte_rm310.c
++++ b/drivers/net/lte/lte_rm310.c
+@@ -164,8 +164,13 @@ static int lte_probe(struct platform_device *pdev)
+ 	gpdata = pdata;
+ 	pdata->dev = &pdev->dev;
+ 
+-	if (pdata->reset_gpio)
+-		gpiod_direction_output(pdata->reset_gpio, 0);
++  if (pdata->reset_gpio) {
++    gpiod_direction_output(pdata->reset_gpio, 0);
++    msleep(20);
++    gpiod_set_value_cansleep(pdata->reset_gpio, 1);  // 拉高复位
++    msleep(260);  // 根据硬件设计手册要求需要250~600ms之间
++    gpiod_set_value_cansleep(pdata->reset_gpio, 0);  // 拉低结束复位
++  }
+ 	kthread = kthread_run(modem_power_on_thread, NULL,
+ 			      "modem_power_on_thread");
+ 	if (IS_ERR(kthread)) {
+-- 
+2.53.0
+
