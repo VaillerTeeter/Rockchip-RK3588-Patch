@@ -1,0 +1,210 @@
+From c653a9c553f4645092796bc9fbf50468dbb86115 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Mon, 17 Aug 2026 15:26:26 +0800
+Subject: [PATCH] feat: support shuffled multi-file boot video playback
+
+    - BootAnimation.h: change mVideoFile from char* to String8 and
+      declare pickBootVideoFile()
+    - BootAnimation.cpp: scan /product/media/bootanim for *.ts, persist
+      shuffle order and position via persist.sys.bootvideo.order/pos,
+      reshuffle after each full cycle, fall back to legacy single file
+
+Change-Id: I90cc3cfdbc8e48bb34eac325177976fbb1082772
+---
+ cmds/bootanimation/BootAnimation.cpp | 126 +++++++++++++++++++++++++--
+ cmds/bootanimation/BootAnimation.h   |   3 +-
+ 2 files changed, 119 insertions(+), 10 deletions(-)
+
+diff --git a/cmds/bootanimation/BootAnimation.cpp b/cmds/bootanimation/BootAnimation.cpp
+index 23175216b137..b18c688d2597 100644
+--- a/cmds/bootanimation/BootAnimation.cpp
++++ b/cmds/bootanimation/BootAnimation.cpp
+@@ -27,6 +27,10 @@
+ #include <sys/types.h>
+ #include <math.h>
+ #include <fcntl.h>
++#include <dirent.h>
++#include <stdlib.h>
++#include <string.h>
++#include <algorithm>
+ #include <utils/misc.h>
+ #include <signal.h>
+ #include <time.h>
+@@ -89,6 +93,7 @@ static const char BOOTANIM_TIME_DIR_NAME[] = "time";
+ static const char BOOTANIM_TIME_DIR_PATH[] = "/data/bootanim/time";
+ //support boot video
+ static const char PRODUCT_BOOTVIDEO_FILE[] = "/product/media/bootanimation.ts";
++static const char PRODUCT_BOOTVIDEO_DIR[] = "/product/media/bootanim";
+ 
+ static const char CLOCK_FONT_ASSET[] = "images/clock_font.png";
+ static const char CLOCK_FONT_ZIP_NAME[] = "clock_font.png";
+@@ -722,18 +727,20 @@ void BootAnimation::findBootAnimationFile() {
+ 
+     //add for boot video
+     mVideoAnimation = false;
+-    if (access(PRODUCT_BOOTVIDEO_FILE, R_OK) == 0) {
+-        mVideoFile = (char*)PRODUCT_BOOTVIDEO_FILE;
+-    }
+-    property_get("persist.sys.bootvideo.enable", decrypt, "false");
++    mVideoFile.clear();
++    char bootEnable[PROPERTY_VALUE_MAX];
++    property_get("persist.sys.bootvideo.enable", bootEnable, "false");
+     char value[PROPERTY_VALUE_MAX];
+     property_get("persist.sys.bootvideo.showtime", value, "-1");
+-    if (mVideoFile != NULL && !strcmp(decrypt, "true") && (atoi(value) != 0)) {
++    if (!strcmp(bootEnable, "true") && (atoi(value) != 0)) {
++        mVideoFile = pickBootVideoFile();
++    }
++    if (!mVideoFile.isEmpty()) {
+         mVideoAnimation = true;
+-        ALOGD("mVideoAnimation is true");
++        ALOGD("bootvideo: mVideoAnimation is true, selected %s", mVideoFile.string());
+     } else {
+-        ALOGD("bootvideo:No boot video animation,EXIT_VIDEO_NAME:%s, bootvideo.showtime:%s\n",
+-            decrypt, value);
++        ALOGD("bootvideo:No boot video animation, enable:%s, showtime:%s\n",
++            bootEnable, value);
+     }
+     //add end
+ 
+@@ -1967,6 +1974,107 @@ status_t BootAnimation::TimeCheckThread::readyToRun() {
+     return NO_ERROR;
+ }
+ 
++String8 BootAnimation::pickBootVideoFile() {
++    std::vector<std::string> files;
++
++    // 1. Scan the boot video directory for *.ts entries.
++    DIR* dir = opendir(PRODUCT_BOOTVIDEO_DIR);
++    if (dir != nullptr) {
++        struct dirent* de;
++        while ((de = readdir(dir)) != nullptr) {
++            if (de->d_name[0] == '.') {
++                continue;
++            }
++            std::string name(de->d_name);
++            if (name.size() >= 3 && name.compare(name.size() - 3, 3, ".ts") == 0) {
++                files.push_back(std::string(PRODUCT_BOOTVIDEO_DIR) + "/" + name);
++            }
++        }
++        closedir(dir);
++        std::sort(files.begin(), files.end());
++    }
++
++    // 2. Fall back to the legacy single file when the directory is empty/missing.
++    if (files.empty()) {
++        if (access(PRODUCT_BOOTVIDEO_FILE, R_OK) == 0) {
++            return String8(PRODUCT_BOOTVIDEO_FILE);
++        }
++        return String8();
++    }
++
++    const int n = static_cast<int>(files.size());
++
++    // 3. Restore the persisted shuffled order and current position.
++    char order[PROPERTY_VALUE_MAX];
++    property_get("persist.sys.bootvideo.order", order, "");
++    char posbuf[PROPERTY_VALUE_MAX];
++    property_get("persist.sys.bootvideo.pos", posbuf, "0");
++
++    std::vector<int> idx;
++    char* saveptr = nullptr;
++    char* tok = strtok_r(order, ",", &saveptr);
++    while (tok != nullptr) {
++        idx.push_back(atoi(tok));
++        tok = strtok_r(nullptr, ",", &saveptr);
++    }
++
++    int pos = atoi(posbuf);
++
++    // 4. Validate the persisted order; regenerate a fresh shuffle when invalid.
++    bool valid = (idx.size() == static_cast<size_t>(n));
++    if (valid) {
++        std::vector<int> seen(n, 0);
++        for (int v : idx) {
++            if (v < 0 || v >= n || seen[v]) {
++                valid = false;
++                break;
++            }
++            seen[v] = 1;
++        }
++    }
++    if (!valid || pos < 0 || pos >= n) {
++        idx.resize(n);
++        for (int i = 0; i < n; i++) {
++            idx[i] = i;
++        }
++        srand(static_cast<unsigned int>(systemTime()));
++        for (int i = n - 1; i > 0; i--) {
++            int j = rand() % (i + 1);
++            std::swap(idx[i], idx[j]);
++        }
++        pos = 0;
++        std::string orderStr;
++        for (int i = 0; i < n; i++) {
++            if (i) orderStr += ",";
++            orderStr += std::to_string(idx[i]);
++        }
++        property_set("persist.sys.bootvideo.order", orderStr.c_str());
++    }
++
++    int chosen = idx[pos];
++    int nextPos = (pos + 1) % n;
++    if (nextPos == 0) {
++        // Completed a full cycle → reshuffle for the next round so consecutive
++        // cycles use different orders.
++        srand(static_cast<unsigned int>(systemTime()));
++        for (int i = n - 1; i > 0; i--) {
++            int j = rand() % (i + 1);
++            std::swap(idx[i], idx[j]);
++        }
++        std::string orderStr;
++        for (int i = 0; i < n; i++) {
++            if (i) orderStr += ",";
++            orderStr += std::to_string(idx[i]);
++        }
++        property_set("persist.sys.bootvideo.order", orderStr.c_str());
++    }
++    property_set("persist.sys.bootvideo.pos", std::to_string(nextPos).c_str());
++
++    ALOGD("bootvideo: pick index %d of %d files: %s (nextPos=%d)",
++          chosen, n, files[chosen].c_str(), nextPos);
++    return String8(files[chosen].c_str());
++}
++
+ //add for boot video
+ bool BootAnimation::video() {
+     const bool LOOP = false;
+@@ -1994,7 +2102,7 @@ bool BootAnimation::video() {
+     t.setLayer(control, 0x40000001)
+         .apply();
+     sp<Surface> surface = control->getSurface();
+-    mp->setDataSource(httpService, mVideoFile, NULL);
++    mp->setDataSource(httpService, mVideoFile.string(), NULL);
+     mp->setLooping(LOOP);
+     mp->setVideoSurfaceTexture(surface->getIGraphicBufferProducer());
+     mp->prepare();
+diff --git a/cmds/bootanimation/BootAnimation.h b/cmds/bootanimation/BootAnimation.h
+index 64210424081c..12765c9c471d 100644
+--- a/cmds/bootanimation/BootAnimation.h
++++ b/cmds/bootanimation/BootAnimation.h
+@@ -185,6 +185,7 @@ private:
+     bool movie();
+     //add for bootvideo
+     bool video();
++    String8 pickBootVideoFile();
+     void drawText(const char* str, const Font& font, bool bold, int* x, int* y);
+     void drawClock(const Font& font, const int xPos, const int yPos);
+     void drawProgress(int percent, const Font& font, const int xPos, const int yPos);
+@@ -239,7 +240,7 @@ private:
+     bool        mDynamicColorsApplied = false;
+     String8     mZipFileName;
+     bool mVideoAnimation;
+-    char* mVideoFile;
++    String8 mVideoFile;
+     nsecs_t mStartbootanimaTime;
+     int  mBootVideoTime;
+     SortedVector<String8> mLoadedFiles;
+-- 
+2.53.0
+

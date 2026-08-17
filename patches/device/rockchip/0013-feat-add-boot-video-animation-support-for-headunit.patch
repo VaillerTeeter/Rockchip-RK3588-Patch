@@ -1,0 +1,102 @@
+From 7ae82c9512827961a12104f3e8848f78096ef61d Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Mon, 17 Aug 2026 17:27:50 +0800
+Subject: [PATCH] feat: add boot video animation support for headunit
+
+    - ATK_DLRK3588.mk: copy boot_01..07.ts to /product/media/bootanim
+      and enable persist.sys.bootvideo.* runtime properties
+    - bootanim/README.md: document encoding spec, source mapping and
+      runtime properties
+---
+ rk3588/ATK_DLRK3588/ATK_DLRK3588.mk    | 34 ++++++++++++++++++++++++++
+ rk3588/ATK_DLRK3588/bootanim/README.md | 32 ++++++++++++++++++++++++
+ 2 files changed, 66 insertions(+)
+ create mode 100644 rk3588/ATK_DLRK3588/bootanim/README.md
+
+diff --git a/rk3588/ATK_DLRK3588/ATK_DLRK3588.mk b/rk3588/ATK_DLRK3588/ATK_DLRK3588.mk
+index a148168..846c5f0 100644
+--- a/rk3588/ATK_DLRK3588/ATK_DLRK3588.mk
++++ b/rk3588/ATK_DLRK3588/ATK_DLRK3588.mk
+@@ -78,6 +78,40 @@ PRODUCT_PROPERTY_OVERRIDES += persist.vendor.framebuffer.HDMI-A-0=3840x2160@60
+ PRODUCT_PROPERTY_OVERRIDES += persist.vendor.resolution.HDMI-A-1=3840x2160p60
+ PRODUCT_PROPERTY_OVERRIDES += persist.vendor.framebuffer.HDMI-A-1=3840x2160@60
+ 
++# =============================================================================
++# Boot video animation
++#
++#   Replaces the static boot animation with a random video played by the
++#   bootanimation service (frameworks/base/cmds/bootanimation/BootAnimation.cpp).
++#   The service scans /product/media/bootanim/*.ts and rotates through them
++#   using a persisted shuffled order (persist.sys.bootvideo.order/pos), so a
++#   full cycle covers all videos without repetition before reshuffling.
++#
++#   Video sources (transcoded to 1920x1080@60 H.264+AAC .ts, no cropping):
++#     boot_01.ts = cat_chase_29.mp4
++#     boot_02.ts = cat_chase_28.mp4
++#     boot_03.ts = cat_chase_25.mp4
++#     boot_04.ts = camera_play_08.mp4
++#     boot_05.ts = lost_world_01.mp4
++#     boot_06.ts = 16_white_cat_and_cheerful_girl.mp4
++#     boot_07.ts = 15_girl_black_cat_flag_challenge.mp4
++# =============================================================================
++PRODUCT_COPY_FILES += \
++    device/rockchip/rk3588/ATK_DLRK3588/bootanim/boot_01.ts:$(TARGET_COPY_OUT_PRODUCT)/media/bootanim/boot_01.ts \
++    device/rockchip/rk3588/ATK_DLRK3588/bootanim/boot_02.ts:$(TARGET_COPY_OUT_PRODUCT)/media/bootanim/boot_02.ts \
++    device/rockchip/rk3588/ATK_DLRK3588/bootanim/boot_03.ts:$(TARGET_COPY_OUT_PRODUCT)/media/bootanim/boot_03.ts \
++    device/rockchip/rk3588/ATK_DLRK3588/bootanim/boot_04.ts:$(TARGET_COPY_OUT_PRODUCT)/media/bootanim/boot_04.ts \
++    device/rockchip/rk3588/ATK_DLRK3588/bootanim/boot_05.ts:$(TARGET_COPY_OUT_PRODUCT)/media/bootanim/boot_05.ts \
++    device/rockchip/rk3588/ATK_DLRK3588/bootanim/boot_06.ts:$(TARGET_COPY_OUT_PRODUCT)/media/bootanim/boot_06.ts \
++    device/rockchip/rk3588/ATK_DLRK3588/bootanim/boot_07.ts:$(TARGET_COPY_OUT_PRODUCT)/media/bootanim/boot_07.ts
++
++#   persist.sys.bootvideo.enable=true   - enable boot video
++#   persist.sys.bootvideo.showtime=-1   - play the whole video (0=use system exit only)
++#   persist.sys.bootvideo.vol=100       - full volume (set -1 to mute)
++PRODUCT_PROPERTY_OVERRIDES += persist.sys.bootvideo.enable=true
++PRODUCT_PROPERTY_OVERRIDES += persist.sys.bootvideo.showtime=-1
++PRODUCT_PROPERTY_OVERRIDES += persist.sys.bootvideo.vol=100
++
+ # =============================================================================
+ # Navigation Bar
+ #   qemu.hw.mainkeys=0              - no physical keys → enable on-screen nav bar
+diff --git a/rk3588/ATK_DLRK3588/bootanim/README.md b/rk3588/ATK_DLRK3588/bootanim/README.md
+new file mode 100644
+index 0000000..c7ca757
+--- /dev/null
++++ b/rk3588/ATK_DLRK3588/bootanim/README.md
+@@ -0,0 +1,32 @@
++# 开机视频动画
++
++这些 `.ts` 视频文件由 `bootanimation` 服务作为开机动画播放
++（实现见 `frameworks/base/cmds/bootanimation/BootAnimation.cpp`）。
++
++服务会扫描本目录（部署到 `/product/media/bootanim/`），
++用持久化的「洗牌轮转」顺序逐个播放所有 `*.ts` 文件：
++每次开机播一个视频，完整一轮会覆盖全部视频且不重复，
++一轮播完后再重新洗牌进入下一轮。
++
++编码规格：1920x1080 @ 60fps，H.264（High，yuv420p）+ AAC 44.1kHz 双声道，
++MPEG-TS 容器，保持原始宽高比（不裁剪，不足 16:9 的部分用黑边补齐）。
++
++## 视频来源对照
++
++| 部署文件 | 原始来源 |
++| --- | --- |
++| `boot_01.ts` | `TMP/01_cat-chase/cat_chase_29.mp4` |
++| `boot_02.ts` | `TMP/01_cat-chase/cat_chase_28.mp4` |
++| `boot_03.ts` | `TMP/01_cat-chase/cat_chase_25.mp4` |
++| `boot_04.ts` | `TMP/03_camera-play/camera_play_08.mp4` |
++| `boot_05.ts` | `TMP/09_lost-world/lost_world_01.mp4` |
++| `boot_06.ts` | `TMP/11_singles/16_white_cat_and_cheerful_girl.mp4` |
++| `boot_07.ts` | `TMP/11_singles/15_girl_black_cat_flag_challenge.mp4` |
++
++## 运行时属性
++
++在 `device/rockchip/rk3588/ATK_DLRK3588/ATK_DLRK3588.mk` 中设置：
++
++- `persist.sys.bootvideo.enable=true` — 开启开机视频
++- `persist.sys.bootvideo.showtime=-1` — 播放完整视频（0 = 仅由系统退出控制）
++- `persist.sys.bootvideo.vol=100` — 满音量（`-1` = 静音）
+\ No newline at end of file
+-- 
+2.53.0
+
