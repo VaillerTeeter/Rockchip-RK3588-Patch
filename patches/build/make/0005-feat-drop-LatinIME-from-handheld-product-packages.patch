@@ -1,0 +1,28 @@
+From b56ba3555d126b9018088275ece1549588ef9985 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Wed, 19 Aug 2026 00:22:00 +0800
+Subject: [PATCH] feat: drop LatinIME from handheld product packages
+
+    - target/product/handheld_product.mk: remove LatinIME so the headunit
+      build relies on SogouInput as the system input method instead
+
+Change-Id: Ifb39d2ba090dc33a1360d4afe1bb989ebeb2a46f
+---
+ target/product/handheld_product.mk | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/target/product/handheld_product.mk b/target/product/handheld_product.mk
+index 2b723357f..4a155f408 100644
+--- a/target/product/handheld_product.mk
++++ b/target/product/handheld_product.mk
+@@ -22,7 +22,6 @@ $(call inherit-product, $(SRC_TARGET_DIR)/product/media_product.mk)
+ 
+ # /product packages
+ PRODUCT_PACKAGES += \
+-    LatinIME \
+     OneTimeInitializer \
+     preinstalled-packages-platform-handheld-product.xml \
+     SettingsIntelligence \
+-- 
+2.53.0
+

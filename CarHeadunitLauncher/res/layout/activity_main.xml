@@ -336,6 +336,24 @@
                 android:layout_width="match_parent"
                 android:layout_height="match_parent" />
 
+            <!-- 收音机 overlay（顶层，覆盖车况信息） -->
+            <FrameLayout
+                android:id="@+id/cradio_overlay"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent" />
+
+            <!-- 起点读书 overlay（顶层，覆盖车况信息） -->
+            <FrameLayout
+                android:id="@+id/qdreader_overlay"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent" />
+
+            <!-- 番茄小说 overlay（顶层，覆盖车况信息） -->
+            <FrameLayout
+                android:id="@+id/fanqie_overlay"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent" />
+
         </FrameLayout>
 
     </LinearLayout>
@@ -446,6 +464,54 @@
         </FrameLayout>
 
         <FrameLayout
+            android:id="@+id/card_cradio"
+            android:layout_width="140dp"
+            android:layout_height="140dp"
+            android:layout_marginHorizontal="8dp"
+            android:background="@android:color/transparent"
+            android:foreground="?android:attr/selectableItemBackgroundBorderless"
+            android:clickable="true"
+            android:focusable="true">
+            <ImageView
+                android:id="@+id/cradio_app_icon"
+                android:layout_width="72dp"
+                android:layout_height="72dp"
+                android:layout_gravity="center" />
+        </FrameLayout>
+
+        <FrameLayout
+            android:id="@+id/card_qdreader"
+            android:layout_width="140dp"
+            android:layout_height="140dp"
+            android:layout_marginHorizontal="8dp"
+            android:background="@android:color/transparent"
+            android:foreground="?android:attr/selectableItemBackgroundBorderless"
+            android:clickable="true"
+            android:focusable="true">
+            <ImageView
+                android:id="@+id/qdreader_app_icon"
+                android:layout_width="72dp"
+                android:layout_height="72dp"
+                android:layout_gravity="center" />
+        </FrameLayout>
+
+        <FrameLayout
+            android:id="@+id/card_fanqie"
+            android:layout_width="140dp"
+            android:layout_height="140dp"
+            android:layout_marginHorizontal="8dp"
+            android:background="@android:color/transparent"
+            android:foreground="?android:attr/selectableItemBackgroundBorderless"
+            android:clickable="true"
+            android:focusable="true">
+            <ImageView
+                android:id="@+id/fanqie_app_icon"
+                android:layout_width="72dp"
+                android:layout_height="72dp"
+                android:layout_gravity="center" />
+        </FrameLayout>
+
+        <FrameLayout
             android:id="@+id/card_douyin"
             android:layout_width="140dp"
             android:layout_height="140dp"
@@ -462,51 +528,11 @@
         </FrameLayout>
 
         <FrameLayout
-            android:id="@+id/card_bilibili"
-            android:layout_width="140dp"
-            android:layout_height="140dp"
-            android:layout_marginHorizontal="8dp"
-            android:background="@android:color/transparent"
-            android:foreground="?android:attr/selectableItemBackgroundBorderless"
-            android:clickable="true"
-            android:focusable="true">
-            <ImageView
-                android:id="@+id/bilibili_app_icon"
-                android:layout_width="72dp"
-                android:layout_height="72dp"
-                android:layout_gravity="center" />
-        </FrameLayout>
-
-        <FrameLayout
-            android:id="@+id/card_emby"
-            android:layout_width="140dp"
-            android:layout_height="140dp"
-            android:layout_marginHorizontal="8dp"
-            android:background="@android:color/transparent"
-            android:foreground="?android:attr/selectableItemBackgroundBorderless"
-            android:clickable="true"
-            android:focusable="true">
-            <ImageView
-                android:id="@+id/emby_app_icon"
-                android:layout_width="72dp"
-                android:layout_height="72dp"
-                android:layout_gravity="center" />
-        </FrameLayout>
-
-        <FrameLayout
             android:id="@+id/card_1"
             android:layout_width="0dp"
             android:layout_height="140dp"
             android:layout_weight="1"
             android:layout_marginHorizontal="8dp"
-            android:background="@drawable/card_bg" />
-
-        <FrameLayout
-            android:id="@+id/card_2"
-            android:layout_width="0dp"
-            android:layout_height="140dp"
-            android:layout_weight="1"
-            android:layout_marginStart="8dp"
             android:background="@drawable/card_bg" />
 
     </LinearLayout>

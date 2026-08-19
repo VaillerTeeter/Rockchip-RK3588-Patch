@@ -1,0 +1,220 @@
+From 7801ac1994a3a6c91537bf68a7dc5f5ded91b52e Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Wed, 19 Aug 2026 00:07:41 +0800
+Subject: [PATCH] feat: add Sogou input method and preinstall reading apps
+
+    - SogouInput: add as system app IME with pre-granted runtime
+      permissions and a presigned APK
+    - stage: add FanqieNovel, QDReader and yunting preinstall APKs
+      with default-permissions files
+    - ATK_DLRK3588.mk: register SogouInput and the new stage apps
+---
+ rk3588/ATK_DLRK3588/ATK_DLRK3588.mk           |  7 +++++-
+ rk3588/ATK_DLRK3588/SogouInput/Android.mk     | 25 +++++++++++++++++++
+ .../SogouInput/default-permissions.xml        | 16 ++++++++++++
+ rk3588/ATK_DLRK3588/stage/Android.mk          | 24 ++++++++++++++++++
+ .../stage/FanqieNovel/default-permissions.xml | 21 ++++++++++++++++
+ .../stage/QDReader/default-permissions.xml    | 18 +++++++++++++
+ rk3588/ATK_DLRK3588/stage/preinstall.mk       |  3 +++
+ .../stage/yunting/default-permissions.xml     |  8 ++++++
+ 8 files changed, 121 insertions(+), 1 deletion(-)
+ create mode 100644 rk3588/ATK_DLRK3588/SogouInput/Android.mk
+ create mode 100644 rk3588/ATK_DLRK3588/SogouInput/default-permissions.xml
+ create mode 100644 rk3588/ATK_DLRK3588/stage/FanqieNovel/default-permissions.xml
+ create mode 100644 rk3588/ATK_DLRK3588/stage/QDReader/default-permissions.xml
+ create mode 100644 rk3588/ATK_DLRK3588/stage/yunting/default-permissions.xml
+
+diff --git a/rk3588/ATK_DLRK3588/ATK_DLRK3588.mk b/rk3588/ATK_DLRK3588/ATK_DLRK3588.mk
+index 846c5f0..a5a3fbb 100644
+--- a/rk3588/ATK_DLRK3588/ATK_DLRK3588.mk
++++ b/rk3588/ATK_DLRK3588/ATK_DLRK3588.mk
+@@ -45,6 +45,7 @@ PRODUCT_PROPERTY_OVERRIDES += persist.bt.power.down=true
+ # Prebuilt packages
+ # =============================================================================
+ PRODUCT_PACKAGES += CarHeadunitLauncher
++PRODUCT_PACKAGES += SogouInput
+ 
+ # Pre-granted runtime permissions for staged third-party APKs.
+ # First-boot installation is handled by SystemServer (installPreinstalledCarApps)
+@@ -58,7 +59,11 @@ PRODUCT_COPY_FILES += \
+     device/rockchip/rk3588/ATK_DLRK3588/stage/BilibiliHD/default-permissions.xml:$(TARGET_COPY_OUT_SYSTEM)/etc/default-permissions/default-permissions-bilibilihd.xml \
+     device/rockchip/rk3588/ATK_DLRK3588/stage/Emby/default-permissions.xml:$(TARGET_COPY_OUT_SYSTEM)/etc/default-permissions/default-permissions-emby.xml \
+     device/rockchip/rk3588/ATK_DLRK3588/stage/WallpaperEngine/default-permissions.xml:$(TARGET_COPY_OUT_SYSTEM)/etc/default-permissions/default-permissions-wallpaperengine.xml \
+-    device/rockchip/rk3588/ATK_DLRK3588/stage/AnExplorer/default-permissions.xml:$(TARGET_COPY_OUT_SYSTEM)/etc/default-permissions/default-permissions-anexplorer.xml
++    device/rockchip/rk3588/ATK_DLRK3588/stage/AnExplorer/default-permissions.xml:$(TARGET_COPY_OUT_SYSTEM)/etc/default-permissions/default-permissions-anexplorer.xml \
++    device/rockchip/rk3588/ATK_DLRK3588/stage/FanqieNovel/default-permissions.xml:$(TARGET_COPY_OUT_SYSTEM)/etc/default-permissions/default-permissions-fanqienovel.xml \
++    device/rockchip/rk3588/ATK_DLRK3588/stage/QDReader/default-permissions.xml:$(TARGET_COPY_OUT_SYSTEM)/etc/default-permissions/default-permissions-qdreader.xml \
++    device/rockchip/rk3588/ATK_DLRK3588/stage/yunting/default-permissions.xml:$(TARGET_COPY_OUT_SYSTEM)/etc/default-permissions/default-permissions-yunting.xml \
++    device/rockchip/rk3588/ATK_DLRK3588/SogouInput/default-permissions.xml:$(TARGET_COPY_OUT_SYSTEM)/etc/default-permissions/default-permissions-sogou.xml
+ 
+ # =============================================================================
+ # Display: 2x HiDPI scaling
+diff --git a/rk3588/ATK_DLRK3588/SogouInput/Android.mk b/rk3588/ATK_DLRK3588/SogouInput/Android.mk
+new file mode 100644
+index 0000000..670ab8c
+--- /dev/null
++++ b/rk3588/ATK_DLRK3588/SogouInput/Android.mk
+@@ -0,0 +1,25 @@
++LOCAL_PATH := $(call my-dir)
++
++# =============================================================================
++# SogouInput — system app IME.
++#
++# Installed into /system/app so it is flagged FLAG_SYSTEM and thus eligible to
++# become the default/enabled input method (InputMethodUtils only auto-enables
++# isSystem() IMEs).
++#
++# IMPORTANT: do NOT set LOCAL_PREBUILT_JNI_LIBS here. BUILD_PREBUILT re-zips
++# the APK when native libs are pre-extracted, which strips the vendor's
++# v2/v3 signature. Since this APK targets SDK 33 (>= 30), PackageManager
++# rejects a v1-only APK on boot. Keep the APK byte-for-byte intact; its .so
++# libraries are extracted at install time by installd.
++# =============================================================================
++include $(CLEAR_VARS)
++LOCAL_MODULE := SogouInput
++LOCAL_MODULE_CLASS := APPS
++LOCAL_MODULE_TAGS := optional
++LOCAL_BUILT_MODULE_STEM := package.apk
++LOCAL_MODULE_SUFFIX := $(COMMON_ANDROID_PACKAGE_SUFFIX)
++LOCAL_SRC_FILES := SogouInput.apk
++LOCAL_CERTIFICATE := PRESIGNED
++LOCAL_DEX_PREOPT := false
++include $(BUILD_PREBUILT)
+\ No newline at end of file
+diff --git a/rk3588/ATK_DLRK3588/SogouInput/default-permissions.xml b/rk3588/ATK_DLRK3588/SogouInput/default-permissions.xml
+new file mode 100644
+index 0000000..ff619c9
+--- /dev/null
++++ b/rk3588/ATK_DLRK3588/SogouInput/default-permissions.xml
+@@ -0,0 +1,16 @@
++<?xml version="1.0" encoding="utf-8"?>
++<exceptions>
++    <exception package="com.sohu.inputmethod.sogou">
++        <!-- Runtime dangerous permissions - auto granted on boot -->
++        <permission name="android.permission.RECORD_AUDIO" fixed="true"/>
++        <permission name="android.permission.CAMERA" fixed="true"/>
++        <permission name="android.permission.READ_EXTERNAL_STORAGE" fixed="true"/>
++        <permission name="android.permission.WRITE_EXTERNAL_STORAGE" fixed="true"/>
++        <permission name="android.permission.READ_MEDIA_IMAGES" fixed="true"/>
++        <permission name="android.permission.READ_MEDIA_VIDEO" fixed="true"/>
++        <permission name="android.permission.READ_MEDIA_AUDIO" fixed="true"/>
++        <permission name="android.permission.WRITE_CALENDAR" fixed="true"/>
++        <permission name="android.permission.POST_NOTIFICATIONS" fixed="true"/>
++        <permission name="android.permission.FOREGROUND_SERVICE" fixed="true"/>
++    </exception>
++</exceptions>
+\ No newline at end of file
+diff --git a/rk3588/ATK_DLRK3588/stage/Android.mk b/rk3588/ATK_DLRK3588/stage/Android.mk
+index 5c5ea1d..8d4b760 100644
+--- a/rk3588/ATK_DLRK3588/stage/Android.mk
++++ b/rk3588/ATK_DLRK3588/stage/Android.mk
+@@ -77,3 +77,27 @@ LOCAL_MODULE_PATH := $(TARGET_OUT)/preinstall
+ LOCAL_MODULE_STEM := AnExplorer.apk
+ LOCAL_SRC_FILES := AnExplorer/AnExplorer.apk
+ include $(BUILD_PREBUILT)
++
++include $(CLEAR_VARS)
++LOCAL_MODULE := FanqieNovelPreinstall
++LOCAL_MODULE_CLASS := ETC
++LOCAL_MODULE_PATH := $(TARGET_OUT)/preinstall
++LOCAL_MODULE_STEM := FanqieNovel.apk
++LOCAL_SRC_FILES := FanqieNovel/FanqieNovel.apk
++include $(BUILD_PREBUILT)
++
++include $(CLEAR_VARS)
++LOCAL_MODULE := QDReaderPreinstall
++LOCAL_MODULE_CLASS := ETC
++LOCAL_MODULE_PATH := $(TARGET_OUT)/preinstall
++LOCAL_MODULE_STEM := QDReader.apk
++LOCAL_SRC_FILES := QDReader/QDReader.apk
++include $(BUILD_PREBUILT)
++
++include $(CLEAR_VARS)
++LOCAL_MODULE := YuntingPreinstall
++LOCAL_MODULE_CLASS := ETC
++LOCAL_MODULE_PATH := $(TARGET_OUT)/preinstall
++LOCAL_MODULE_STEM := yunting.apk
++LOCAL_SRC_FILES := yunting/yunting.apk
++include $(BUILD_PREBUILT)
+diff --git a/rk3588/ATK_DLRK3588/stage/FanqieNovel/default-permissions.xml b/rk3588/ATK_DLRK3588/stage/FanqieNovel/default-permissions.xml
+new file mode 100644
+index 0000000..c4556d9
+--- /dev/null
++++ b/rk3588/ATK_DLRK3588/stage/FanqieNovel/default-permissions.xml
+@@ -0,0 +1,21 @@
++<?xml version="1.0" encoding="utf-8"?>
++<exceptions>
++    <exception package="com.dragon.read">
++        <!-- Runtime dangerous permissions - auto granted on boot -->
++        <permission name="android.permission.READ_EXTERNAL_STORAGE" fixed="true"/>
++        <permission name="android.permission.WRITE_EXTERNAL_STORAGE" fixed="true"/>
++        <permission name="android.permission.MANAGE_EXTERNAL_STORAGE" fixed="true"/>
++        <permission name="android.permission.READ_MEDIA_IMAGES" fixed="true"/>
++        <permission name="android.permission.READ_MEDIA_VIDEO" fixed="true"/>
++        <permission name="android.permission.READ_MEDIA_AUDIO" fixed="true"/>
++        <permission name="android.permission.RECORD_AUDIO" fixed="true"/>
++        <permission name="android.permission.CAMERA" fixed="true"/>
++        <permission name="android.permission.ACCESS_FINE_LOCATION" fixed="true"/>
++        <permission name="android.permission.ACCESS_COARSE_LOCATION" fixed="true"/>
++        <permission name="android.permission.READ_CONTACTS" fixed="true"/>
++        <permission name="android.permission.GET_ACCOUNTS" fixed="true"/>
++        <permission name="android.permission.WRITE_CALENDAR" fixed="true"/>
++        <permission name="android.permission.POST_NOTIFICATIONS" fixed="true"/>
++        <permission name="android.permission.FOREGROUND_SERVICE" fixed="true"/>
++    </exception>
++</exceptions>
+\ No newline at end of file
+diff --git a/rk3588/ATK_DLRK3588/stage/QDReader/default-permissions.xml b/rk3588/ATK_DLRK3588/stage/QDReader/default-permissions.xml
+new file mode 100644
+index 0000000..2d66cf0
+--- /dev/null
++++ b/rk3588/ATK_DLRK3588/stage/QDReader/default-permissions.xml
+@@ -0,0 +1,18 @@
++<?xml version="1.0" encoding="utf-8"?>
++<exceptions>
++    <exception package="com.qidian.QDReader">
++        <!-- Runtime dangerous permissions - auto granted on boot -->
++        <permission name="android.permission.READ_EXTERNAL_STORAGE" fixed="true"/>
++        <permission name="android.permission.WRITE_EXTERNAL_STORAGE" fixed="true"/>
++        <permission name="android.permission.MANAGE_EXTERNAL_STORAGE" fixed="true"/>
++        <permission name="android.permission.READ_MEDIA_IMAGES" fixed="true"/>
++        <permission name="android.permission.READ_MEDIA_VIDEO" fixed="true"/>
++        <permission name="android.permission.READ_MEDIA_AUDIO" fixed="true"/>
++        <permission name="android.permission.RECORD_AUDIO" fixed="true"/>
++        <permission name="android.permission.CAMERA" fixed="true"/>
++        <permission name="android.permission.READ_CALENDAR" fixed="true"/>
++        <permission name="android.permission.WRITE_CALENDAR" fixed="true"/>
++        <permission name="android.permission.POST_NOTIFICATIONS" fixed="true"/>
++        <permission name="android.permission.FOREGROUND_SERVICE" fixed="true"/>
++    </exception>
++</exceptions>
+\ No newline at end of file
+diff --git a/rk3588/ATK_DLRK3588/stage/preinstall.mk b/rk3588/ATK_DLRK3588/stage/preinstall.mk
+index 86248dc..64904df 100644
+--- a/rk3588/ATK_DLRK3588/stage/preinstall.mk
++++ b/rk3588/ATK_DLRK3588/stage/preinstall.mk
+@@ -6,3 +6,6 @@ PRODUCT_PACKAGES += BilibiliHDPreinstall
+ PRODUCT_PACKAGES += EmbyPreinstall
+ PRODUCT_PACKAGES += WallpaperEnginePreinstall
+ PRODUCT_PACKAGES += AnExplorerPreinstall
++PRODUCT_PACKAGES += FanqieNovelPreinstall
++PRODUCT_PACKAGES += QDReaderPreinstall
++PRODUCT_PACKAGES += YuntingPreinstall
+diff --git a/rk3588/ATK_DLRK3588/stage/yunting/default-permissions.xml b/rk3588/ATK_DLRK3588/stage/yunting/default-permissions.xml
+new file mode 100644
+index 0000000..618f55a
+--- /dev/null
++++ b/rk3588/ATK_DLRK3588/stage/yunting/default-permissions.xml
+@@ -0,0 +1,8 @@
++<?xml version="1.0" encoding="utf-8"?>
++<exceptions>
++    <exception package="com.shinyv.cnr">
++        <!-- Runtime dangerous permissions - auto granted on boot -->
++        <permission name="android.permission.POST_NOTIFICATIONS" fixed="true"/>
++        <permission name="android.permission.FOREGROUND_SERVICE" fixed="true"/>
++    </exception>
++</exceptions>
+\ No newline at end of file
+-- 
+2.53.0
+

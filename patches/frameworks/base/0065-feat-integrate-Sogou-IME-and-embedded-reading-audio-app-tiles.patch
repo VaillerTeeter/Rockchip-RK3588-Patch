@@ -1,0 +1,245 @@
+From f9b23860df38d5f1800fbeb3604d0840c082cbf9 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Wed, 19 Aug 2026 00:15:56 +0800
+Subject: [PATCH] feat: integrate Sogou IME and embedded reading/audio app
+ tiles
+
+    - ApkSignatureVerifier.java: relax the minimum signature scheme to JAR
+      so the v1-only Sogou prebuilt can be scanned
+    - ScanPackageUtils.java: skip the minimum-signature check for Sogou
+    - InputMethodManagerService.java: force-enable Sogou and select it as
+      the default IME on first boot
+    - DecorCaptionView.java: hide the freeform caption bar for the yunting,
+      qdreader and fanqie embedded tiles
+    - AppListActivity.java: replace the BilibiliHD and Emby entries with the
+      yunting, qdreader and fanqie embedded tiles
+    - PhoneWindowManager.java: block BACK/HOME for the yunting, qdreader
+      and fanqie embedded tiles
+
+Change-Id: I9a248e8990410b6af12f114c062e18359eef987a
+---
+ .../util/apk/ApkSignatureVerifier.java        | 16 +++++++
+ .../internal/widget/DecorCaptionView.java     | 24 ++++++++++
+ .../systemui/applist/AppListActivity.java     |  6 ++-
+ .../InputMethodManagerService.java            | 23 ++++++++++
+ .../android/server/pm/ScanPackageUtils.java   |  6 +++
+ .../server/policy/PhoneWindowManager.java     | 44 ++++++++++++++++++-
+ 6 files changed, 116 insertions(+), 3 deletions(-)
+
+diff --git a/core/java/android/util/apk/ApkSignatureVerifier.java b/core/java/android/util/apk/ApkSignatureVerifier.java
+index d2a18dd84313..1b76c98fc502 100644
+--- a/core/java/android/util/apk/ApkSignatureVerifier.java
++++ b/core/java/android/util/apk/ApkSignatureVerifier.java
+@@ -107,6 +107,14 @@ public class ApkSignatureVerifier {
+             String apkPath, @SignatureSchemeVersion int minSignatureSchemeVersion,
+             boolean verifyFull) {
+ 
++        // Headunit workaround: SogouInput is a vendor prebuilt that only carries a
++        // v1 (JAR) signature. Android 13 requires targetSdk >= 30 apps to be v2-signed,
++        // but this IME has no v2/v3 block. Force the minimum scheme to JAR for it so
++        // verification falls through to v1 and the package can be scanned.
++        if (isSogouInputApk(apkPath)) {
++            minSignatureSchemeVersion = SignatureSchemeVersion.JAR;
++        }
++
+         if (minSignatureSchemeVersion > SignatureSchemeVersion.SIGNING_BLOCK_V4) {
+             // V4 and before are older than the requested minimum signing version
+             return input.error(INSTALL_PARSE_FAILED_NO_CERTIFICATES,
+@@ -518,6 +526,14 @@ public class ApkSignatureVerifier {
+         return SignatureSchemeVersion.JAR;
+     }
+ 
++    /**
++     * Headunit-specific: whether the given APK is the Sogou input method prebuilt.
++     * Identified by the module directory/file name "SogouInput".
++     */
++    private static boolean isSogouInputApk(String apkPath) {
++        return apkPath != null && apkPath.contains("SogouInput");
++    }
++
+     /**
+      * Result of a successful APK verification operation.
+      */
+diff --git a/core/java/com/android/internal/widget/DecorCaptionView.java b/core/java/com/android/internal/widget/DecorCaptionView.java
+index a9be0a475e8f..68a0b2715271 100644
+--- a/core/java/com/android/internal/widget/DecorCaptionView.java
++++ b/core/java/com/android/internal/widget/DecorCaptionView.java
+@@ -155,6 +155,24 @@ public class DecorCaptionView extends ViewGroup implements View.OnTouchListener,
+                 owner.getContext().getPackageName())) {
+             mShow = false;
+         }
++        // Suppress freeform caption bar for Yunting (radio):
++        // Embedded as an audio tile in the launcher sidebar.
++        if (mShow && "com.shinyv.cnr".equals(
++                owner.getContext().getPackageName())) {
++            mShow = false;
++        }
++        // Suppress freeform caption bar for Qdreader:
++        // Embedded as a reading tile in the launcher sidebar.
++        if (mShow && "com.qidian.QDReader".equals(
++                owner.getContext().getPackageName())) {
++            mShow = false;
++        }
++        // Suppress freeform caption bar for Fanqie:
++        // Embedded as a reading tile in the launcher sidebar.
++        if (mShow && "com.dragon.read".equals(
++                owner.getContext().getPackageName())) {
++            mShow = false;
++        }
+         mOverlayWithAppContent = owner.isOverlayWithDecorCaptionEnabled();
+         updateCaptionVisibility();
+         // By changing the outline provider to BOUNDS, the window can remove its
+@@ -272,6 +290,12 @@ public class DecorCaptionView extends ViewGroup implements View.OnTouchListener,
+                         || "com.ximalaya.ting.android".equals(
+                                 mOwner.getContext().getPackageName())
+                         || "com.ss.android.ugc.aweme".equals(
++                                mOwner.getContext().getPackageName())
++                        || "com.shinyv.cnr".equals(
++                                mOwner.getContext().getPackageName())
++                        || "com.qidian.QDReader".equals(
++                                mOwner.getContext().getPackageName())
++                        || "com.dragon.read".equals(
+                                 mOwner.getContext().getPackageName()))) {
+             show = false;
+         }
+diff --git a/packages/SystemUI/src/com/android/systemui/applist/AppListActivity.java b/packages/SystemUI/src/com/android/systemui/applist/AppListActivity.java
+index b31115fad176..5e22f8de00ad 100644
+--- a/packages/SystemUI/src/com/android/systemui/applist/AppListActivity.java
++++ b/packages/SystemUI/src/com/android/systemui/applist/AppListActivity.java
+@@ -75,9 +75,11 @@ public class AppListActivity extends Activity {
+                         .equals(info.activityInfo.packageName)
+                 || "com.ss.android.ugc.aweme"
+                         .equals(info.activityInfo.packageName)
+-                || "tv.danmaku.bilibilihd"
++                || "com.shinyv.cnr"
+                         .equals(info.activityInfo.packageName)
+-                || "com.mb.android"
++                || "com.qidian.QDReader"
++                        .equals(info.activityInfo.packageName)
++                || "com.dragon.read"
+                         .equals(info.activityInfo.packageName));
+         Collections.sort(apps, (a, b) -> {
+             String nameA = a.loadLabel(mPm).toString();
+diff --git a/services/core/java/com/android/server/inputmethod/InputMethodManagerService.java b/services/core/java/com/android/server/inputmethod/InputMethodManagerService.java
+index cbbee5dc5755..50feb99a9a3d 100644
+--- a/services/core/java/com/android/server/inputmethod/InputMethodManagerService.java
++++ b/services/core/java/com/android/server/inputmethod/InputMethodManagerService.java
+@@ -5231,6 +5231,25 @@ public final class InputMethodManagerService extends IInputMethodManager.Stub
+         return false;
+     }
+ 
++    /**
++     * Headunit-specific: force-enable the Sogou input method and make it the
++     * default IME on first boot (i.e. when no IME has been selected yet).
++     */
++    @GuardedBy("ImfLock.class")
++    private void forceEnableAndSelectHeadunitSogouImeLocked() {
++        final String sogouPackage = "com.sohu.inputmethod.sogou";
++        for (int i = 0; i < mMethodList.size(); i++) {
++            final InputMethodInfo imi = mMethodList.get(i);
++            if (sogouPackage.equals(imi.getPackageName())) {
++                setInputMethodEnabledLocked(imi.getId(), true);
++                if (TextUtils.isEmpty(mSettings.getSelectedInputMethod())) {
++                    resetSelectedInputMethodAndSubtypeLocked(imi.getId());
++                }
++                return;
++            }
++        }
++    }
++
+     static void queryInputMethodServicesInternal(Context context,
+             @UserIdInt int userId, ArrayMap<String, List<InputMethodSubtype>> additionalSubtypeMap,
+             ArrayMap<String, InputMethodInfo> methodMap, ArrayList<InputMethodInfo> methodList,
+@@ -5373,6 +5392,10 @@ public final class InputMethodManagerService extends IInputMethodManager.Stub
+             }
+         }
+ 
++        // Headunit: force-enable Sogou and auto-select it as the default IME
++        // on first boot.
++        forceEnableAndSelectHeadunitSogouImeLocked();
++
+         final String defaultImiId = mSettings.getSelectedInputMethod();
+         if (!TextUtils.isEmpty(defaultImiId)) {
+             if (!mMethodMap.containsKey(defaultImiId)) {
+diff --git a/services/core/java/com/android/server/pm/ScanPackageUtils.java b/services/core/java/com/android/server/pm/ScanPackageUtils.java
+index 93ffcf816c1b..cfb8ae038354 100644
+--- a/services/core/java/com/android/server/pm/ScanPackageUtils.java
++++ b/services/core/java/com/android/server/pm/ScanPackageUtils.java
+@@ -712,6 +712,12 @@ final class ScanPackageUtils {
+ 
+     public static void assertMinSignatureSchemeIsValid(AndroidPackage pkg,
+             @ParsingPackageUtils.ParseFlags int parseFlags) throws PackageManagerException {
++        // Headunit workaround: Sogou input method is a vendor prebuilt that carries only
++        // a v1 (JAR) signature while targeting SDK 33 (>= 30). Skip the minimum-signature
++        // check so it can still be scanned and installed as a system IME.
++        if ("com.sohu.inputmethod.sogou".equals(pkg.getPackageName())) {
++            return;
++        }
+         int minSignatureSchemeVersion =
+                 ApkSignatureVerifier.getMinimumSignatureSchemeVersionForTargetSdk(
+                         pkg.getTargetSdkVersion());
+diff --git a/services/core/java/com/android/server/policy/PhoneWindowManager.java b/services/core/java/com/android/server/policy/PhoneWindowManager.java
+index 339eb6f74150..06175e2230a5 100644
+--- a/services/core/java/com/android/server/policy/PhoneWindowManager.java
++++ b/services/core/java/com/android/server/policy/PhoneWindowManager.java
+@@ -955,6 +955,45 @@ public class PhoneWindowManager implements WindowManagerPolicy {
+                 && info.windowTitle.contains("com.ss.android.ugc.aweme");
+     }
+ 
++    /**
++     * Returns true if the focused window belongs to Yunting.
++     * Used to block key events from reaching the embedded audio tile.
++     */
++    private boolean isYuntingFocused(IBinder focusedToken) {
++        com.android.internal.policy.KeyInterceptionInfo info = mWindowManagerInternal
++                .getKeyInterceptionInfoFromToken(focusedToken);
++        if (info == null)
++            return false;
++        return info.windowTitle != null
++                && info.windowTitle.contains("com.shinyv.cnr");
++    }
++
++    /**
++     * Returns true if the focused window belongs to Qdreader.
++     * Used to block key events from reaching the embedded reading tile.
++     */
++    private boolean isQdreaderFocused(IBinder focusedToken) {
++        com.android.internal.policy.KeyInterceptionInfo info = mWindowManagerInternal
++                .getKeyInterceptionInfoFromToken(focusedToken);
++        if (info == null)
++            return false;
++        return info.windowTitle != null
++                && info.windowTitle.contains("com.qidian.QDReader");
++    }
++
++    /**
++     * Returns true if the focused window belongs to Fanqie.
++     * Used to block key events from reaching the embedded reading tile.
++     */
++    private boolean isFanqieFocused(IBinder focusedToken) {
++        com.android.internal.policy.KeyInterceptionInfo info = mWindowManagerInternal
++                .getKeyInterceptionInfoFromToken(focusedToken);
++        if (info == null)
++            return false;
++        return info.windowTitle != null
++                && info.windowTitle.contains("com.dragon.read");
++    }
++
+     // returns true if the key was handled and should not be passed to the user
+     private boolean backKeyPress() {
+         mLogger.count("key_back_press", 1);
+@@ -2916,7 +2955,10 @@ public class PhoneWindowManager implements WindowManagerPolicy {
+         if (focusedToken != null && (isAmapAutoFocused(focusedToken)
+                 || isNeteaseCloudMusicFocused(focusedToken)
+                 || isXimalayaFocused(focusedToken)
+-                || isDouyinFocused(focusedToken))) {
++                || isDouyinFocused(focusedToken)
++                || isYuntingFocused(focusedToken)
++                || isQdreaderFocused(focusedToken)
++                || isFanqieFocused(focusedToken))) {
+             if (event.getKeyCode() == KeyEvent.KEYCODE_BACK
+                     || event.getKeyCode() == KeyEvent.KEYCODE_HOME) {
+                 return -1;
+-- 
+2.53.0
+

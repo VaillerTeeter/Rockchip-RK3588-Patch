@@ -41,13 +41,17 @@ public class MainActivity extends Activity {
     private static final String CLOUDMUSIC_PACKAGE = "com.netease.cloudmusic";
     private static final String XIMALAYA_PACKAGE = "com.ximalaya.ting.android";
     private static final String DOUYIN_PACKAGE = "com.ss.android.ugc.aweme";
-    private static final String BILIBILI_PACKAGE = "tv.danmaku.bilibilihd";
-    private static final String EMBY_PACKAGE = "com.mb.android";
+    private static final String YUNTING_PACKAGE = "com.shinyv.cnr";
+    private static final String QDREADER_PACKAGE = "com.qidian.QDReader";
+    private static final String FANQIE_PACKAGE = "com.dragon.read";
 
     private boolean mMapLaunched = false;
     private boolean mMusicLaunched = false;
     private boolean mXimalayaLaunched = false;
     private boolean mDouyinLaunched = false;
+    private boolean mYuntingLaunched = false;
+    private boolean mQdreaderLaunched = false;
+    private boolean mFanqieLaunched = false;
     /**
      * True while the embedded freeform windows are (or are about to be)
      * occluded by a fullscreen window — set in onStop() and before raising
@@ -62,8 +66,9 @@ public class MainActivity extends Activity {
     private ImageView mMusicAppIcon;
     private ImageView mXimalayaAppIcon;
     private ImageView mDouyinAppIcon;
-    private ImageView mBilibiliAppIcon;
-    private ImageView mEmbyAppIcon;
+    private ImageView mYuntingAppIcon;
+    private ImageView mQdreaderAppIcon;
+    private ImageView mFanqieAppIcon;
     private AudioManager mAudioManager;
     private MediaSessionManager mMediaSessionManager;
     private TextView mMediaAppLabel;
@@ -128,7 +133,6 @@ public class MainActivity extends Activity {
                 // Music is visible — hide it, show vehicle info
                 hideCloudMusic();
             } else {
-                // Music not visible — launch into sidebar
                 // Mutual exclusion: hide Ximalaya first if open.
                 if (mXimalayaLaunched) {
                     hideXimalaya();
@@ -136,6 +140,18 @@ public class MainActivity extends Activity {
                 // Mutual exclusion: hide Douyin first if open.
                 if (mDouyinLaunched) {
                     hideDouyin();
+                }
+                // Mutual exclusion: hide Yunting first if open.
+                if (mYuntingLaunched) {
+                    hideYunting();
+                }
+                // Mutual exclusion: hide Qdreader first if open.
+                if (mQdreaderLaunched) {
+                    hideQdreader();
+                }
+                // Mutual exclusion: hide Fanqie first if open.
+                if (mFanqieLaunched) {
+                    hideFanqie();
                 }
                 setControlPackage(CLOUDMUSIC_PACKAGE);
                 musicOverlay.post(() -> launchMusicInBounds(musicOverlay));
@@ -165,6 +181,18 @@ public class MainActivity extends Activity {
                 if (mDouyinLaunched) {
                     hideDouyin();
                 }
+                // Mutual exclusion: hide Yunting first if open.
+                if (mYuntingLaunched) {
+                    hideYunting();
+                }
+                // Mutual exclusion: hide Qdreader first if open.
+                if (mQdreaderLaunched) {
+                    hideQdreader();
+                }
+                // Mutual exclusion: hide Fanqie first if open.
+                if (mFanqieLaunched) {
+                    hideFanqie();
+                }
                 setControlPackage(XIMALAYA_PACKAGE);
                 ximalayaOverlay.post(() -> launchXimalayaInBounds(ximalayaOverlay));
             }
@@ -193,34 +221,142 @@ public class MainActivity extends Activity {
                 if (mXimalayaLaunched) {
                     hideXimalaya();
                 }
+                // Mutual exclusion: hide Yunting first if open.
+                if (mYuntingLaunched) {
+                    hideYunting();
+                }
+                // Mutual exclusion: hide Qdreader first if open.
+                if (mQdreaderLaunched) {
+                    hideQdreader();
+                }
+                // Mutual exclusion: hide Fanqie first if open.
+                if (mFanqieLaunched) {
+                    hideFanqie();
+                }
                 setControlPackage(DOUYIN_PACKAGE);
                 douyinOverlay.post(() -> launchDouyinInBounds(douyinOverlay));
             }
         });
 
-        // Bilibili icon card — load app icon and wire fullscreen launch.
-        mBilibiliAppIcon = findViewById(R.id.bilibili_app_icon);
+        // Yunting icon card — load app icon and wire click toggle
+        mYuntingAppIcon = findViewById(R.id.cradio_app_icon);
         try {
-            mBilibiliAppIcon.setImageDrawable(
-                    pm.getApplicationIcon(BILIBILI_PACKAGE));
+            mYuntingAppIcon.setImageDrawable(
+                    pm.getApplicationIcon(YUNTING_PACKAGE));
         } catch (PackageManager.NameNotFoundException e) {
             // App not installed; leave placeholder
         }
 
-        final View cardBilibili = findViewById(R.id.card_bilibili);
-        cardBilibili.setOnClickListener(v -> launchBilibiliFullscreen());
+        final View yuntingOverlay = findViewById(R.id.cradio_overlay);
+        final View cardYunting = findViewById(R.id.card_cradio);
+        cardYunting.setOnClickListener(v -> {
+            if (mYuntingLaunched) {
+                hideYunting();
+            } else {
+                // Mutual exclusion: hide CloudMusic first if open.
+                if (mMusicLaunched) {
+                    hideCloudMusic();
+                }
+                // Mutual exclusion: hide Ximalaya first if open.
+                if (mXimalayaLaunched) {
+                    hideXimalaya();
+                }
+                // Mutual exclusion: hide Douyin first if open.
+                if (mDouyinLaunched) {
+                    hideDouyin();
+                }
+                // Mutual exclusion: hide Qdreader first if open.
+                if (mQdreaderLaunched) {
+                    hideQdreader();
+                }
+                // Mutual exclusion: hide Fanqie first if open.
+                if (mFanqieLaunched) {
+                    hideFanqie();
+                }
+                setControlPackage(YUNTING_PACKAGE);
+                yuntingOverlay.post(() -> launchYuntingInBounds(yuntingOverlay));
+            }
+        });
 
-        // Emby icon card — load app icon and wire fullscreen launch.
-        mEmbyAppIcon = findViewById(R.id.emby_app_icon);
+        // Qdreader icon card — load app icon and wire click toggle
+        mQdreaderAppIcon = findViewById(R.id.qdreader_app_icon);
         try {
-            mEmbyAppIcon.setImageDrawable(
-                    pm.getApplicationIcon(EMBY_PACKAGE));
+            mQdreaderAppIcon.setImageDrawable(
+                    pm.getApplicationIcon(QDREADER_PACKAGE));
         } catch (PackageManager.NameNotFoundException e) {
             // App not installed; leave placeholder
         }
 
-        final View cardEmby = findViewById(R.id.card_emby);
-        cardEmby.setOnClickListener(v -> launchEmbyFullscreen());
+        final View qdreaderOverlay = findViewById(R.id.qdreader_overlay);
+        final View cardQdreader = findViewById(R.id.card_qdreader);
+        cardQdreader.setOnClickListener(v -> {
+            if (mQdreaderLaunched) {
+                hideQdreader();
+            } else {
+                // Mutual exclusion: hide CloudMusic first if open.
+                if (mMusicLaunched) {
+                    hideCloudMusic();
+                }
+                // Mutual exclusion: hide Ximalaya first if open.
+                if (mXimalayaLaunched) {
+                    hideXimalaya();
+                }
+                // Mutual exclusion: hide Douyin first if open.
+                if (mDouyinLaunched) {
+                    hideDouyin();
+                }
+                // Mutual exclusion: hide Yunting first if open.
+                if (mYuntingLaunched) {
+                    hideYunting();
+                }
+                // Mutual exclusion: hide Fanqie first if open.
+                if (mFanqieLaunched) {
+                    hideFanqie();
+                }
+                setControlPackage(QDREADER_PACKAGE);
+                qdreaderOverlay.post(() -> launchQdreaderInBounds(qdreaderOverlay));
+            }
+        });
+
+        // Fanqie icon card — load app icon and wire click toggle
+        mFanqieAppIcon = findViewById(R.id.fanqie_app_icon);
+        try {
+            mFanqieAppIcon.setImageDrawable(
+                    pm.getApplicationIcon(FANQIE_PACKAGE));
+        } catch (PackageManager.NameNotFoundException e) {
+            // App not installed; leave placeholder
+        }
+
+        final View fanqieOverlay = findViewById(R.id.fanqie_overlay);
+        final View cardFanqie = findViewById(R.id.card_fanqie);
+        cardFanqie.setOnClickListener(v -> {
+            if (mFanqieLaunched) {
+                hideFanqie();
+            } else {
+                // Mutual exclusion: hide CloudMusic first if open.
+                if (mMusicLaunched) {
+                    hideCloudMusic();
+                }
+                // Mutual exclusion: hide Ximalaya first if open.
+                if (mXimalayaLaunched) {
+                    hideXimalaya();
+                }
+                // Mutual exclusion: hide Douyin first if open.
+                if (mDouyinLaunched) {
+                    hideDouyin();
+                }
+                // Mutual exclusion: hide Yunting first if open.
+                if (mYuntingLaunched) {
+                    hideYunting();
+                }
+                // Mutual exclusion: hide Qdreader first if open.
+                if (mQdreaderLaunched) {
+                    hideQdreader();
+                }
+                setControlPackage(FANQIE_PACKAGE);
+                fanqieOverlay.post(() -> launchFanqieInBounds(fanqieOverlay));
+            }
+        });
 
         // Media playback controls
         mAudioManager = (AudioManager) getSystemService(AUDIO_SERVICE);
@@ -473,6 +609,36 @@ public class MainActivity extends Activity {
                     launchDouyinInBounds(douyinOverlay);
                 } else {
                     douyinOverlay.post(() -> launchDouyinInBounds(douyinOverlay));
+                }
+            }
+        }
+        if (mYuntingLaunched) {
+            final View yuntingOverlay = findViewById(R.id.cradio_overlay);
+            if (yuntingOverlay != null) {
+                if (yuntingOverlay.getWidth() > 0) {
+                    launchYuntingInBounds(yuntingOverlay);
+                } else {
+                    yuntingOverlay.post(() -> launchYuntingInBounds(yuntingOverlay));
+                }
+            }
+        }
+        if (mQdreaderLaunched) {
+            final View qdreaderOverlay = findViewById(R.id.qdreader_overlay);
+            if (qdreaderOverlay != null) {
+                if (qdreaderOverlay.getWidth() > 0) {
+                    launchQdreaderInBounds(qdreaderOverlay);
+                } else {
+                    qdreaderOverlay.post(() -> launchQdreaderInBounds(qdreaderOverlay));
+                }
+            }
+        }
+        if (mFanqieLaunched) {
+            final View fanqieOverlay = findViewById(R.id.fanqie_overlay);
+            if (fanqieOverlay != null) {
+                if (fanqieOverlay.getWidth() > 0) {
+                    launchFanqieInBounds(fanqieOverlay);
+                } else {
+                    fanqieOverlay.post(() -> launchFanqieInBounds(fanqieOverlay));
                 }
             }
         }
@@ -856,28 +1022,289 @@ public class MainActivity extends Activity {
         startActivity(home);
     }
 
-    private void launchBilibiliFullscreen() {
+    private void launchYuntingInBounds(View container) {
+        int[] location = new int[2];
+        container.getLocationOnScreen(location);
+        int left = location[0];
+        int top = location[1];
+        int right = left + container.getWidth();
+        int bottom = top + container.getHeight();
+
+        Rect bounds = new Rect(left, top, right, bottom);
+
+        if (relaunchTaskInBounds(YUNTING_PACKAGE, bounds)) {
+            mYuntingLaunched = true;
+            return;
+        }
+
         Intent intent = getPackageManager()
-                .getLaunchIntentForPackage(BILIBILI_PACKAGE);
+                .getLaunchIntentForPackage(YUNTING_PACKAGE);
         if (intent == null)
             return;
 
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+                | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
                 | Intent.FLAG_ACTIVITY_NO_ANIMATION);
 
-        startActivity(intent);
+        ActivityOptions options = ActivityOptions.makeBasic();
+        options.setLaunchWindowingMode(5);
+        options.setLaunchBounds(bounds);
+
+        startActivity(intent, options.toBundle());
+        mYuntingLaunched = true;
+        reapplyBounds(YUNTING_PACKAGE, bounds, 5);
     }
 
-    private void launchEmbyFullscreen() {
+    /**
+     * Hide the Yunting freeform window without killing the process.
+     */
+    private void hideYunting() {
+        mYuntingLaunched = false;
+        if (!sendYuntingTaskToBack()) {
+            hideYuntingViaHome();
+        }
+    }
+
+    /**
+     * Move the Yunting task to the bottom of the display's task stack.
+     *
+     * @return true if the reorder transaction was applied, false to use
+     *         the home-intent fallback instead.
+     */
+    private boolean sendYuntingTaskToBack() {
+        try {
+            List<ActivityManager.RunningTaskInfo> tasks = ActivityTaskManager
+                    .getService().getTasks(50, false, false,
+                            Display.DEFAULT_DISPLAY);
+            if (tasks == null) {
+                Log.w(TAG, "sendYuntingTaskToBack: getTasks returned null");
+                return false;
+            }
+            for (ActivityManager.RunningTaskInfo task : tasks) {
+                ComponentName name = task.topActivity != null
+                        ? task.topActivity : task.baseActivity;
+                if (name != null
+                        && YUNTING_PACKAGE.equals(name.getPackageName())) {
+                    WindowContainerTransaction wct =
+                            new WindowContainerTransaction();
+                    wct.reorder(task.token, false /* onTop */);
+                    new WindowOrganizer().applyTransaction(wct);
+                    return true;
+                }
+            }
+            Log.w(TAG, "sendYuntingTaskToBack: yunting task not found");
+        } catch (Exception e) {
+            // Hidden API blocked, permission denied, or task lookup
+            // failed — caller falls back to the home-intent approach.
+            Log.w(TAG, "sendYuntingTaskToBack failed, using home-intent"
+                    + " fallback", e);
+        }
+        return false;
+    }
+
+    /**
+     * Fallback for {@link #hideYunting()}: cover the audio window with
+     * the fullscreen home window.
+     */
+    private void hideYuntingViaHome() {
+        // Home is about to occlude every embedded freeform window.
+        mWindowsCovered = true;
+
+        Intent home = new Intent(Intent.ACTION_MAIN);
+        home.addCategory(Intent.CATEGORY_HOME);
+        home.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+                | Intent.FLAG_ACTIVITY_NO_ANIMATION);
+        startActivity(home);
+    }
+
+    private void launchQdreaderInBounds(View container) {
+        int[] location = new int[2];
+        container.getLocationOnScreen(location);
+        int left = location[0];
+        int top = location[1];
+        int right = left + container.getWidth();
+        int bottom = top + container.getHeight();
+
+        Rect bounds = new Rect(left, top, right, bottom);
+
+        if (relaunchTaskInBounds(QDREADER_PACKAGE, bounds)) {
+            mQdreaderLaunched = true;
+            return;
+        }
+
         Intent intent = getPackageManager()
-                .getLaunchIntentForPackage(EMBY_PACKAGE);
+                .getLaunchIntentForPackage(QDREADER_PACKAGE);
         if (intent == null)
             return;
 
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+                | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
                 | Intent.FLAG_ACTIVITY_NO_ANIMATION);
 
-        startActivity(intent);
+        ActivityOptions options = ActivityOptions.makeBasic();
+        options.setLaunchWindowingMode(5);
+        options.setLaunchBounds(bounds);
+
+        startActivity(intent, options.toBundle());
+        mQdreaderLaunched = true;
+        reapplyBounds(QDREADER_PACKAGE, bounds, 5);
+    }
+
+    /**
+     * Hide the Qdreader freeform window without killing the process.
+     */
+    private void hideQdreader() {
+        mQdreaderLaunched = false;
+        if (!sendQdreaderTaskToBack()) {
+            hideQdreaderViaHome();
+        }
+    }
+
+    /**
+     * Move the Qdreader task to the bottom of the display's task stack.
+     *
+     * @return true if the reorder transaction was applied, false to use
+     *         the home-intent fallback instead.
+     */
+    private boolean sendQdreaderTaskToBack() {
+        try {
+            List<ActivityManager.RunningTaskInfo> tasks = ActivityTaskManager
+                    .getService().getTasks(50, false, false,
+                            Display.DEFAULT_DISPLAY);
+            if (tasks == null) {
+                Log.w(TAG, "sendQdreaderTaskToBack: getTasks returned null");
+                return false;
+            }
+            for (ActivityManager.RunningTaskInfo task : tasks) {
+                ComponentName name = task.topActivity != null
+                        ? task.topActivity : task.baseActivity;
+                if (name != null
+                        && QDREADER_PACKAGE.equals(name.getPackageName())) {
+                    WindowContainerTransaction wct =
+                            new WindowContainerTransaction();
+                    wct.reorder(task.token, false /* onTop */);
+                    new WindowOrganizer().applyTransaction(wct);
+                    return true;
+                }
+            }
+            Log.w(TAG, "sendQdreaderTaskToBack: qdreader task not found");
+        } catch (Exception e) {
+            // Hidden API blocked, permission denied, or task lookup
+            // failed — caller falls back to the home-intent approach.
+            Log.w(TAG, "sendQdreaderTaskToBack failed, using home-intent"
+                    + " fallback", e);
+        }
+        return false;
+    }
+
+    /**
+     * Fallback for {@link #hideQdreader()}: cover the reading window with
+     * the fullscreen home window.
+     */
+    private void hideQdreaderViaHome() {
+        // Home is about to occlude every embedded freeform window.
+        mWindowsCovered = true;
+
+        Intent home = new Intent(Intent.ACTION_MAIN);
+        home.addCategory(Intent.CATEGORY_HOME);
+        home.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+                | Intent.FLAG_ACTIVITY_NO_ANIMATION);
+        startActivity(home);
+    }
+
+    private void launchFanqieInBounds(View container) {
+        int[] location = new int[2];
+        container.getLocationOnScreen(location);
+        int left = location[0];
+        int top = location[1];
+        int right = left + container.getWidth();
+        int bottom = top + container.getHeight();
+
+        Rect bounds = new Rect(left, top, right, bottom);
+
+        if (relaunchTaskInBounds(FANQIE_PACKAGE, bounds)) {
+            mFanqieLaunched = true;
+            return;
+        }
+
+        Intent intent = getPackageManager()
+                .getLaunchIntentForPackage(FANQIE_PACKAGE);
+        if (intent == null)
+            return;
+
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+                | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+                | Intent.FLAG_ACTIVITY_NO_ANIMATION);
+
+        ActivityOptions options = ActivityOptions.makeBasic();
+        options.setLaunchWindowingMode(5);
+        options.setLaunchBounds(bounds);
+
+        startActivity(intent, options.toBundle());
+        mFanqieLaunched = true;
+        reapplyBounds(FANQIE_PACKAGE, bounds, 5);
+    }
+
+    /**
+     * Hide the Fanqie freeform window without killing the process.
+     */
+    private void hideFanqie() {
+        mFanqieLaunched = false;
+        if (!sendFanqieTaskToBack()) {
+            hideFanqieViaHome();
+        }
+    }
+
+    /**
+     * Move the Fanqie task to the bottom of the display's task stack.
+     *
+     * @return true if the reorder transaction was applied, false to use
+     *         the home-intent fallback instead.
+     */
+    private boolean sendFanqieTaskToBack() {
+        try {
+            List<ActivityManager.RunningTaskInfo> tasks = ActivityTaskManager
+                    .getService().getTasks(50, false, false,
+                            Display.DEFAULT_DISPLAY);
+            if (tasks == null) {
+                Log.w(TAG, "sendFanqieTaskToBack: getTasks returned null");
+                return false;
+            }
+            for (ActivityManager.RunningTaskInfo task : tasks) {
+                ComponentName name = task.topActivity != null
+                        ? task.topActivity : task.baseActivity;
+                if (name != null
+                        && FANQIE_PACKAGE.equals(name.getPackageName())) {
+                    WindowContainerTransaction wct =
+                            new WindowContainerTransaction();
+                    wct.reorder(task.token, false /* onTop */);
+                    new WindowOrganizer().applyTransaction(wct);
+                    return true;
+                }
+            }
+            Log.w(TAG, "sendFanqieTaskToBack: fanqie task not found");
+        } catch (Exception e) {
+            // Hidden API blocked, permission denied, or task lookup
+            // failed — caller falls back to the home-intent approach.
+            Log.w(TAG, "sendFanqieTaskToBack failed, using home-intent"
+                    + " fallback", e);
+        }
+        return false;
+    }
+
+    /**
+     * Fallback for {@link #hideFanqie()}: cover the reading window with
+     * the fullscreen home window.
+     */
+    private void hideFanqieViaHome() {
+        // Home is about to occlude every embedded freeform window.
+        mWindowsCovered = true;
+
+        Intent home = new Intent(Intent.ACTION_MAIN);
+        home.addCategory(Intent.CATEGORY_HOME);
+        home.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+                | Intent.FLAG_ACTIVITY_NO_ANIMATION);
+        startActivity(home);
     }
 
     @Override
