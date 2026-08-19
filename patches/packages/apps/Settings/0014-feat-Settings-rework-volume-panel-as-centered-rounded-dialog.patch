@@ -1,0 +1,336 @@
+From 31ba88f61921f7838b65fb97a30b8256202f2f77 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Tue, 18 Aug 2026 23:55:08 +0800
+Subject: [PATCH] feat: Settings: rework volume panel as centered rounded
+ dialog
+
+    - panel_layout.xml: give the panel full rounded corners and bottom padding,
+      and remove the see_more/done button row
+    - panel_slice_list.xml: size the slice list to its content and drop the
+      vertical scrollbar (portrait and landscape)
+    - PanelFragment.java: make the slice list non-scrollable, hide empty titles,
+      and remove button wiring and max-height clamping
+    - SettingsPanelActivity.java: center the panel and clear background dim
+    - VolumePanel.java: return an empty title instead of "Sound & vibration"
+    - themes.xml: disable panel window animation
+    - strings.xml: add an empty panel title string
+
+Change-Id: I1db35891e5eb06d5b5711405868270ad7f537e6e
+---
+ ...gs_panel_rounded_top_corner_background.xml |  4 +-
+ res/layout-land/panel_slice_list.xml          |  5 +-
+ res/layout/panel_layout.xml                   | 36 ++---------
+ res/layout/panel_slice_list.xml               |  6 +-
+ res/values/strings.xml                        |  2 +
+ res/values/themes.xml                         |  1 +
+ .../android/settings/panel/PanelFragment.java | 61 +++++--------------
+ .../settings/panel/SettingsPanelActivity.java |  6 +-
+ .../android/settings/panel/VolumePanel.java   |  2 +-
+ 9 files changed, 34 insertions(+), 89 deletions(-)
+
+diff --git a/res/drawable/settings_panel_rounded_top_corner_background.xml b/res/drawable/settings_panel_rounded_top_corner_background.xml
+index 1c234cca9b..b747d29926 100644
+--- a/res/drawable/settings_panel_rounded_top_corner_background.xml
++++ b/res/drawable/settings_panel_rounded_top_corner_background.xml
+@@ -19,8 +19,8 @@
+         <corners
+             android:topLeftRadius="@dimen/settings_panel_corner_radius"
+             android:topRightRadius="@dimen/settings_panel_corner_radius"
+-            android:bottomLeftRadius="0dp"
+-            android:bottomRightRadius="0dp"/>
++            android:bottomLeftRadius="@dimen/settings_panel_corner_radius"
++            android:bottomRightRadius="@dimen/settings_panel_corner_radius"/>
+         <solid android:color="?android:attr/colorBackground" />
+     </shape>
+ </inset>
+\ No newline at end of file
+diff --git a/res/layout-land/panel_slice_list.xml b/res/layout-land/panel_slice_list.xml
+index ea7d8281a1..ba614c5924 100644
+--- a/res/layout-land/panel_slice_list.xml
++++ b/res/layout-land/panel_slice_list.xml
+@@ -18,7 +18,6 @@
+ <androidx.recyclerview.widget.RecyclerView
+     xmlns:android="http://schemas.android.com/apk/res/android"
+     android:id="@+id/panel_parent_layout"
+-    android:scrollbars="vertical"
+     android:layout_width="match_parent"
+-    android:layout_height="0dp"
+-    android:layout_weight="1"/>
+\ No newline at end of file
++    android:layout_height="wrap_content"
++    android:overScrollMode="never"/>
+diff --git a/res/layout/panel_layout.xml b/res/layout/panel_layout.xml
+index fd8d55f135..909483a716 100644
+--- a/res/layout/panel_layout.xml
++++ b/res/layout/panel_layout.xml
+@@ -22,12 +22,14 @@
+     android:layout_height="wrap_content"
+     android:fitsSystemWindows="true"
+     android:layout_gravity="center_horizontal"
+-    android:background="@drawable/settings_panel_rounded_top_corner_background" >
++    android:background="@drawable/settings_panel_rounded_top_corner_background"
++    android:clipToOutline="true" >
+ 
+     <LinearLayout
+         android:layout_width="match_parent"
+         android:layout_height="wrap_content"
+-        android:orientation="vertical">
++        android:orientation="vertical"
++        android:paddingBottom="18dp">
+ 
+         <LinearLayout
+             android:id="@+id/panel_header"
+@@ -105,35 +107,5 @@
+ 
+         <!-- Note: There is a landscape version of panel_slice_list which supports scrolling. -->
+         <include layout="@layout/panel_slice_list"/>
+-
+-        <LinearLayout
+-            android:layout_width="match_parent"
+-            android:layout_height="wrap_content"
+-            android:orientation="horizontal"
+-            android:layout_marginTop="16dp"
+-            android:layout_marginHorizontal="24dp"
+-            android:layout_marginBottom="18dp">
+-
+-            <Button
+-                android:id="@+id/see_more"
+-                style="@style/PanelOptionRoundedOutlinedButton"
+-                android:layout_width="wrap_content"
+-                android:layout_height="wrap_content"
+-                android:minWidth="0dp"
+-                android:text="@string/settings_button"/>
+-
+-            <Space
+-                android:layout_weight="1"
+-                android:layout_width="0dp"
+-                android:layout_height="match_parent" />
+-
+-            <Button
+-                android:id="@+id/done"
+-                style="@style/PanelOptionRoundedSolidButton"
+-                android:layout_width="wrap_content"
+-                android:layout_height="wrap_content"
+-                android:minWidth="0dp"
+-                android:text="@string/done"/>
+-        </LinearLayout>
+     </LinearLayout>
+ </FrameLayout>
+\ No newline at end of file
+diff --git a/res/layout/panel_slice_list.xml b/res/layout/panel_slice_list.xml
+index 28d589475c..ba614c5924 100644
+--- a/res/layout/panel_slice_list.xml
++++ b/res/layout/panel_slice_list.xml
+@@ -18,8 +18,6 @@
+ <androidx.recyclerview.widget.RecyclerView
+     xmlns:android="http://schemas.android.com/apk/res/android"
+     android:id="@+id/panel_parent_layout"
+-    android:scrollbars="vertical"
+     android:layout_width="match_parent"
+-    android:layout_height="0dp"
+-    android:layout_weight="1"
+-    android:overScrollMode="never"/>
+\ No newline at end of file
++    android:layout_height="wrap_content"
++    android:overScrollMode="never"/>
+diff --git a/res/values/strings.xml b/res/values/strings.xml
+index 59460a94db..5a9627c313 100644
+--- a/res/values/strings.xml
++++ b/res/values/strings.xml
+@@ -3034,6 +3034,8 @@
+     <string name="display_settings_title">Display</string>
+     <!-- Sound and vibration settings screen heading. [CHAR LIMIT=30] -->
+     <string name="sound_settings">Sound &amp; vibration</string>
++    <!-- Empty title used to hide the volume panel header. -->
++    <string name="panel_title_empty" translatable="false"></string>
+     <!-- DO NOT TRANSLATE Summary placeholder -->
+     <string name="summary_placeholder" translatable="false">&#160;</string>
+     <!-- DO NOT TRANSLATE Summary placeholder reserving 2 lines -->
+diff --git a/res/values/themes.xml b/res/values/themes.xml
+index e6c0510dbb..ca9e2ac200 100644
+--- a/res/values/themes.xml
++++ b/res/values/themes.xml
+@@ -232,6 +232,7 @@
+         <item name="android:windowTranslucentNavigation">true</item>
+         <item name="android:dividerHorizontal">@*android:drawable/list_divider_material</item>
+         <item name="android:windowNoTitle">true</item>
++        <item name="android:windowAnimationStyle">@null</item>
+         <item name="android:listDivider">@*android:drawable/list_divider_material</item>
+         <item name="android:fontFamily">@*android:string/config_headlineFontFamilyMedium</item>
+     </style>
+diff --git a/src/com/android/settings/panel/PanelFragment.java b/src/com/android/settings/panel/PanelFragment.java
+index 5bc0cc8d63..ca69358c1c 100644
+--- a/src/com/android/settings/panel/PanelFragment.java
++++ b/src/com/android/settings/panel/PanelFragment.java
+@@ -32,7 +32,6 @@ import android.view.View;
+ import android.view.ViewGroup;
+ import android.view.ViewTreeObserver;
+ import android.view.animation.DecelerateInterpolator;
+-import android.widget.Button;
+ import android.widget.ImageView;
+ import android.widget.LinearLayout;
+ import android.widget.ProgressBar;
+@@ -88,8 +87,6 @@ public class PanelFragment extends Fragment {
+     @VisibleForTesting
+     View mLayoutView;
+     private TextView mTitleView;
+-    private Button mSeeMoreButton;
+-    private Button mDoneButton;
+     private RecyclerView mPanelSlices;
+     private PanelContent mPanel;
+     private MetricsFeatureProvider mMetricsProvider;
+@@ -100,7 +97,6 @@ public class PanelFragment extends Fragment {
+     private LinearLayout mHeaderLayout;
+     private TextView mHeaderTitle;
+     private TextView mHeaderSubtitle;
+-    private int mMaxHeight;
+     private boolean mPanelCreating;
+     private ProgressBar mProgressBar;
+ 
+@@ -113,23 +109,11 @@ public class PanelFragment extends Fragment {
+         return false;
+     };
+ 
+-    private final ViewTreeObserver.OnGlobalLayoutListener mPanelLayoutListener =
+-            new ViewTreeObserver.OnGlobalLayoutListener() {
+-                @Override
+-                public void onGlobalLayout() {
+-                    if (mLayoutView.getHeight() > mMaxHeight) {
+-                        final ViewGroup.LayoutParams params = mLayoutView.getLayoutParams();
+-                        params.height = mMaxHeight;
+-                        mLayoutView.setLayoutParams(params);
+-                    }
+-                }
+-            };
+-
+     private final ViewTreeObserver.OnGlobalLayoutListener mOnGlobalLayoutListener =
+             new ViewTreeObserver.OnGlobalLayoutListener() {
+                 @Override
+                 public void onGlobalLayout() {
+-                    animateIn();
++                    mLayoutView.getViewTreeObserver().removeOnPreDrawListener(mOnPreDrawListener);
+                     if (mPanelSlices != null) {
+                         mPanelSlices.getViewTreeObserver().removeOnGlobalLayoutListener(this);
+                     }
+@@ -144,9 +128,6 @@ public class PanelFragment extends Fragment {
+     public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container,
+             @Nullable Bundle savedInstanceState) {
+         mLayoutView = inflater.inflate(R.layout.panel_layout, container, false);
+-        mLayoutView.getViewTreeObserver()
+-                .addOnGlobalLayoutListener(mPanelLayoutListener);
+-        mMaxHeight = getResources().getDimensionPixelSize(R.dimen.output_switcher_slice_max_height);
+         mPanelCreating = true;
+         createPanelContent();
+         return mLayoutView;
+@@ -200,8 +181,6 @@ public class PanelFragment extends Fragment {
+         mLayoutView.setLayoutParams(params);
+ 
+         mPanelSlices = mLayoutView.findViewById(R.id.panel_parent_layout);
+-        mSeeMoreButton = mLayoutView.findViewById(R.id.see_more);
+-        mDoneButton = mLayoutView.findViewById(R.id.done);
+         mTitleView = mLayoutView.findViewById(R.id.panel_title);
+         mPanelHeader = mLayoutView.findViewById(R.id.panel_header);
+         mTitleIcon = mLayoutView.findViewById(R.id.title_icon);
+@@ -239,7 +218,13 @@ public class PanelFragment extends Fragment {
+ 
+         updateProgressBar();
+ 
+-        mPanelSlices.setLayoutManager(new LinearLayoutManager((activity)));
++        mPanelSlices.setLayoutManager(new LinearLayoutManager(activity) {
++            @Override
++            public boolean canScrollVertically() {
++                // The panel should never scroll vertically; it adapts its height to its content.
++                return false;
++            }
++        });
+         // Add predraw listener to remove the animation and while we wait for Slices to load.
+         mLayoutView.getViewTreeObserver().addOnPreDrawListener(mOnPreDrawListener);
+ 
+@@ -256,15 +241,6 @@ public class PanelFragment extends Fragment {
+             enableTitle(title);
+         }
+ 
+-        mSeeMoreButton.setOnClickListener(getSeeMoreListener());
+-        mDoneButton.setOnClickListener(getCloseListener());
+-
+-        if (mPanel.isCustomizedButtonUsed()) {
+-            enableCustomizedButton();
+-        } else if (mPanel.getSeeMoreIntent() == null) {
+-            // If getSeeMoreIntent() is null hide the mSeeMoreButton.
+-            mSeeMoreButton.setVisibility(View.GONE);
+-        }
+ 
+         // Log panel opened.
+         mMetricsProvider.action(
+@@ -303,19 +279,17 @@ public class PanelFragment extends Fragment {
+ 
+     private void enableTitle(CharSequence title) {
+         mPanelHeader.setVisibility(View.GONE);
+-        mTitleView.setVisibility(View.VISIBLE);
+-        mTitleView.setAccessibilityPaneTitle(title);
+-        mTitleView.setText(title);
++        if (TextUtils.isEmpty(title)) {
++            mTitleView.setVisibility(View.GONE);
++        } else {
++            mTitleView.setVisibility(View.VISIBLE);
++            mTitleView.setAccessibilityPaneTitle(title);
++            mTitleView.setText(title);
++        }
+     }
+ 
+     private void enableCustomizedButton() {
+-        final CharSequence customTitle = mPanel.getCustomizedButtonTitle();
+-        if (TextUtils.isEmpty(customTitle)) {
+-            mSeeMoreButton.setVisibility(View.GONE);
+-        } else {
+-            mSeeMoreButton.setVisibility(View.VISIBLE);
+-            mSeeMoreButton.setText(customTitle);
+-        }
++        // The customized "see more" button was removed from the panel layout.
+     }
+ 
+     private void updateProgressBar() {
+@@ -472,9 +446,6 @@ public class PanelFragment extends Fragment {
+             mPanelClosedKey = PanelClosedKeys.KEY_OTHERS;
+         }
+ 
+-        if (mLayoutView != null) {
+-            mLayoutView.getViewTreeObserver().removeOnGlobalLayoutListener(mPanelLayoutListener);
+-        }
+         if (mPanel != null) {
+             mMetricsProvider.action(
+                     0 /* attribution */,
+diff --git a/src/com/android/settings/panel/SettingsPanelActivity.java b/src/com/android/settings/panel/SettingsPanelActivity.java
+index 60b8f88793..f91d4e01ab 100644
+--- a/src/com/android/settings/panel/SettingsPanelActivity.java
++++ b/src/com/android/settings/panel/SettingsPanelActivity.java
+@@ -142,9 +142,11 @@ public class SettingsPanelActivity extends FragmentActivity {
+         } else {
+             setContentView(R.layout.settings_panel);
+ 
+-            // Move the window to the bottom of screen, and make it take up the entire screen width.
+             final Window window = getWindow();
+-            window.setGravity(Gravity.BOTTOM);
++            // Do not dim the background when the panel is shown.
++            window.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
++            // Center the panel horizontally and vertically.
++            window.setGravity(Gravity.CENTER);
+             window.setLayout(WindowManager.LayoutParams.MATCH_PARENT,
+                     WindowManager.LayoutParams.WRAP_CONTENT);
+             setupNavigationBar();
+diff --git a/src/com/android/settings/panel/VolumePanel.java b/src/com/android/settings/panel/VolumePanel.java
+index 938ee9d38a..432b2cad2f 100644
+--- a/src/com/android/settings/panel/VolumePanel.java
++++ b/src/com/android/settings/panel/VolumePanel.java
+@@ -124,7 +124,7 @@ public class VolumePanel implements PanelContent, LifecycleObserver {
+ 
+     @Override
+     public CharSequence getTitle() {
+-        return mContext.getText(R.string.sound_settings);
++        return mContext.getText(R.string.panel_title_empty);
+     }
+ 
+     /**
+-- 
+2.53.0
+

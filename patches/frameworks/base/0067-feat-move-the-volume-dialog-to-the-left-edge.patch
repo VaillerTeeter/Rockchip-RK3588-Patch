@@ -1,0 +1,31 @@
+From bbc4b6dd915bb630ac6930311129f5f92f167a2e Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Wed, 19 Aug 2026 00:17:28 +0800
+Subject: [PATCH] feat: move the volume dialog to the left edge
+
+    - SystemUI: change volume_dialog_gravity from RIGHT|CENTER_VERTICAL (21)
+      to LEFT|CENTER_VERTICAL (19)
+
+Change-Id: Ie1218048e74a0fb8c3a298ef81ea754977111f66
+---
+ packages/SystemUI/res/values/integers.xml | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/packages/SystemUI/res/values/integers.xml b/packages/SystemUI/res/values/integers.xml
+index 8d4431520c75..fcf7bef9ebee 100644
+--- a/packages/SystemUI/res/values/integers.xml
++++ b/packages/SystemUI/res/values/integers.xml
+@@ -23,8 +23,8 @@
+ 
+     <!-- The position of the volume dialog on the screen.
+          See com.android.systemui.volume.VolumeDialogImpl.
+-         Value 21 corresponds to RIGHT|CENTER_VERTICAL. -->
+-    <integer name="volume_dialog_gravity">21</integer>
++         Value 19 corresponds to LEFT|CENTER_VERTICAL. -->
++    <integer name="volume_dialog_gravity">19</integer>
+ 
+     <!-- The time it takes for the over scroll release animation to complete, in milli seconds.  -->
+     <integer name="lockscreen_shade_over_scroll_release_duration">0</integer>
+-- 
+2.53.0
+
