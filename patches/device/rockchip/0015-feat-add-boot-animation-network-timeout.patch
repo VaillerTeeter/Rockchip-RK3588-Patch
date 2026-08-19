@@ -1,0 +1,31 @@
+From 342f1b136dbf53e2c6e326ff7375de49d1247b33 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Wed, 19 Aug 2026 00:08:52 +0800
+Subject: [PATCH] feat: add boot animation network timeout
+
+    - ATK_DLRK3588.mk: default persist.sys.bootanim.net_timeout to 120
+      seconds so the boot video force-exits once network validation times out
+---
+ rk3588/ATK_DLRK3588/ATK_DLRK3588.mk | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/rk3588/ATK_DLRK3588/ATK_DLRK3588.mk b/rk3588/ATK_DLRK3588/ATK_DLRK3588.mk
+index a5a3fbb..f3d2a98 100644
+--- a/rk3588/ATK_DLRK3588/ATK_DLRK3588.mk
++++ b/rk3588/ATK_DLRK3588/ATK_DLRK3588.mk
+@@ -113,9 +113,12 @@ PRODUCT_COPY_FILES += \
+ #   persist.sys.bootvideo.enable=true   - enable boot video
+ #   persist.sys.bootvideo.showtime=-1   - play the whole video (0=use system exit only)
+ #   persist.sys.bootvideo.vol=100       - full volume (set -1 to mute)
++#   persist.sys.bootanim.net_timeout=120 - max seconds to wait for a validated
++#     network before force-exiting the boot animation
+ PRODUCT_PROPERTY_OVERRIDES += persist.sys.bootvideo.enable=true
+ PRODUCT_PROPERTY_OVERRIDES += persist.sys.bootvideo.showtime=-1
+ PRODUCT_PROPERTY_OVERRIDES += persist.sys.bootvideo.vol=100
++PRODUCT_PROPERTY_OVERRIDES += persist.sys.bootanim.net_timeout=120
+ 
+ # =============================================================================
+ # Navigation Bar
+-- 
+2.53.0
+

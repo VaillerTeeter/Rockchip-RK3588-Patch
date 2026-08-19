@@ -1,0 +1,221 @@
+From e0ab5563324388212e75f939bb974b0b8eb41318 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Wed, 19 Aug 2026 00:17:01 +0800
+Subject: [PATCH] feat: gate boot animation exit on network readiness
+
+    - WindowManagerService.java: wait for a validated network (falling back
+      to persist.sys.bootanim.net_timeout) before setting service.bootanim.exit
+    - BootAnimation.cpp: loop the boot video when showtime==-1 so it plays
+      until the system requests exit instead of stopping once
+
+Change-Id: I8cb3e3435913f77878e63c61a5e3812a9fa44afb
+---
+ cmds/bootanimation/BootAnimation.cpp          |   4 +-
+ .../server/wm/WindowManagerService.java       | 148 +++++++++++++++++-
+ 2 files changed, 144 insertions(+), 8 deletions(-)
+
+diff --git a/cmds/bootanimation/BootAnimation.cpp b/cmds/bootanimation/BootAnimation.cpp
+index b18c688d2597..e5c4e837c0cf 100644
+--- a/cmds/bootanimation/BootAnimation.cpp
++++ b/cmds/bootanimation/BootAnimation.cpp
+@@ -2077,7 +2077,6 @@ String8 BootAnimation::pickBootVideoFile() {
+ 
+ //add for boot video
+ bool BootAnimation::video() {
+-    const bool LOOP = false;
+     const float CHECK_DELAY = 500*1000;//500ms
+     int duration = 0;
+     char delay[64];
+@@ -2088,6 +2087,9 @@ bool BootAnimation::video() {
+     int bootvideo_time = atoi(value);//s
+     if(bootvideo_time > 120)
+         bootvideo_time = 120;
++    // Loop the video when showtime==-1 (play until the system decides to exit,
++    // e.g. waiting for network); otherwise play once for the configured seconds.
++    const bool LOOP = (bootvideo_time == -1);
+ 
+     //add delaytime set ,default 0.
+     property_get("persist.sys.bootvideo.delaytime", value, "0");
+diff --git a/services/core/java/com/android/server/wm/WindowManagerService.java b/services/core/java/com/android/server/wm/WindowManagerService.java
+index 6a75d8a8368a..5fd23c3cb956 100644
+--- a/services/core/java/com/android/server/wm/WindowManagerService.java
++++ b/services/core/java/com/android/server/wm/WindowManagerService.java
+@@ -190,6 +190,10 @@ import android.hardware.configstore.V1_1.ISurfaceFlingerConfigs;
+ import android.hardware.display.DisplayManager;
+ import android.hardware.display.DisplayManagerInternal;
+ import android.hardware.input.InputManager;
++import android.net.ConnectivityManager;
++import android.net.Network;
++import android.net.NetworkCapabilities;
++import android.net.NetworkRequest;
+ import android.net.Uri;
+ import android.os.Binder;
+ import android.os.Build;
+@@ -669,6 +673,12 @@ public class WindowManagerService extends IWindowManager.Stub
+     boolean mShowingBootMessages = false;
+     boolean mSystemReady = false;
+     boolean mBootAnimationStopped = false;
++    /** Whether the boot animation exit has been requested (once network is ready / timeout). */
++    private boolean mBootAnimExitRequested = false;
++    /** Network callback used to delay boot animation exit until connectivity is established. */
++    private ConnectivityManager.NetworkCallback mBootAnimNetworkCallback;
++    /** Timeout runnable that forces boot animation exit if no network arrives in time. */
++    private Runnable mBootAnimTimeoutRunnable;
+     long mBootWaitForWindowsStartTime = -1;
+ 
+     /** Dump of the windows and app tokens at the time of the last ANR. Cleared after
+@@ -3783,13 +3793,12 @@ public class WindowManagerService extends IWindowManager.Stub
+ 
+         //box:skip FallbackHome to fix 2-3s black screen before launcher.
+         if (!"box".equals(SystemProperties.get("ro.target.product"))) {
+-            if (!mBootAnimationStopped) {
+-                Trace.asyncTraceBegin(TRACE_TAG_WINDOW_MANAGER, "Stop bootanim", 0);
+-                // stop boot animation
+-                // formerly we would just kill the process, but we now ask it to exit so it
+-                // can choose where to stop the animation.
+-                SystemProperties.set("service.bootanim.exit", "1");
+-                mBootAnimationStopped = true;
++            // Wait until a validated network is available (headunit needs internet after boot)
++            // before asking the boot animation to exit; a timeout fallback avoids getting stuck.
++            if (!mBootAnimExitRequested && !requestBootAnimExitWhenNetworkReadyLocked()) {
++                Slog.i(TAG_WM,
++                        "performEnableScreen: Waiting for network before exiting boot anim");
++                return;
+             }
+ 
+             if (!mForceDisplayEnabled && !checkBootAnimationCompleteLocked()) {
+@@ -3844,6 +3853,131 @@ public class WindowManagerService extends IWindowManager.Stub
+         return true;
+     }
+ 
++    /**
++     * Performs the boot animation exit action: sets {@code service.bootanim.exit=1} so the
++     * bootanimation process (which may be playing a boot video) exits gracefully.
++     *
++     * <p>Must be called while holding {@link #mGlobalLock}.
++     */
++    private void performBootAnimExitLocked() {
++        if (mBootAnimExitRequested) {
++            return;
++        }
++        mBootAnimExitRequested = true;
++        Trace.asyncTraceBegin(TRACE_TAG_WINDOW_MANAGER, "Stop bootanim", 0);
++        // stop boot animation
++        // formerly we would just kill the process, but we now ask it to exit so it
++        // can choose where to stop the animation.
++        SystemProperties.set("service.bootanim.exit", "1");
++        mBootAnimationStopped = true;
++    }
++
++    /**
++     * Unregisters the network callback and cancels the timeout runnable.
++     *
++     * <p>Must be called while holding {@link #mGlobalLock}.
++     */
++    private void unregisterBootAnimNetworkCallbackLocked() {
++        if (mBootAnimNetworkCallback != null) {
++            final ConnectivityManager cm = mContext.getSystemService(ConnectivityManager.class);
++            try {
++                cm.unregisterNetworkCallback(mBootAnimNetworkCallback);
++            } catch (IllegalArgumentException e) {
++                // Already unregistered; ignore.
++            }
++            if (mBootAnimTimeoutRunnable != null) {
++                mH.removeCallbacks(mBootAnimTimeoutRunnable);
++                mBootAnimTimeoutRunnable = null;
++            }
++            mBootAnimNetworkCallback = null;
++        }
++    }
++
++    /**
++     * Exits the boot animation immediately if a VALIDATED network is already present; otherwise
++     * registers a {@link ConnectivityManager} callback that exits as soon as connectivity is
++     * established, or after {@code persist.sys.bootanim.net_timeout} seconds (default 120) at the
++     * latest, to avoid leaving the boot animation up forever without a network.
++     *
++     * @return true if the exit action was performed synchronously (network already VALIDATED);
++     *         false if we are now waiting for connectivity.
++     *
++     * <p>Must be called while holding {@link #mGlobalLock}.
++     */
++    private boolean requestBootAnimExitWhenNetworkReadyLocked() {
++        final ConnectivityManager cm = mContext.getSystemService(ConnectivityManager.class);
++        final Network activeNetwork = cm.getActiveNetwork();
++        final NetworkCapabilities caps = activeNetwork != null
++                ? cm.getNetworkCapabilities(activeNetwork) : null;
++        if (caps != null && caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) {
++            Slog.i(TAG_WM, "performEnableScreen: network available (INTERNET), exit boot anim");
++            performBootAnimExitLocked();
++            return true;
++        }
++
++        if (mBootAnimNetworkCallback == null) {
++            Slog.i(TAG_WM,
++                    "performEnableScreen: no validated network, waiting before exiting boot anim");
++            mBootAnimNetworkCallback = new ConnectivityManager.NetworkCallback() {
++                @Override
++                public void onAvailable(Network network) {
++                    maybeExitBootAnimWhenNetworkReady(network);
++                }
++
++                @Override
++                public void onCapabilitiesChanged(Network network,
++                        NetworkCapabilities networkCapabilities) {
++                    maybeExitBootAnimWhenNetworkReady(network);
++                }
++            };
++            final NetworkRequest request = new NetworkRequest.Builder()
++                    .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
++                    .build();
++            cm.registerNetworkCallback(request, mBootAnimNetworkCallback, mH);
++
++            final int timeoutSeconds =
++                    SystemProperties.getInt("persist.sys.bootanim.net_timeout", 120);
++            if (timeoutSeconds > 0) {
++                mBootAnimTimeoutRunnable = () -> {
++                    synchronized (mGlobalLock) {
++                        if (!mBootAnimExitRequested) {
++                            Slog.w(TAG_WM,
++                                    "performEnableScreen: boot anim network timeout ("
++                                            + timeoutSeconds + "s), forcing exit");
++                            unregisterBootAnimNetworkCallbackLocked();
++                            performBootAnimExitLocked();
++                            mH.sendEmptyMessage(H.ENABLE_SCREEN);
++                        }
++                    }
++                };
++                mH.postDelayed(mBootAnimTimeoutRunnable, timeoutSeconds * 1000L);
++            }
++        }
++        return false;
++    }
++
++    /**
++     * Called on the {@link #mH} thread from the network callback; exits the boot animation once
++     * the given network is validated and schedules another pass of {@link #performEnableScreen()}.
++     */
++    private void maybeExitBootAnimWhenNetworkReady(Network network) {
++        synchronized (mGlobalLock) {
++            if (mBootAnimExitRequested) {
++                return;
++            }
++            final ConnectivityManager cm = mContext.getSystemService(ConnectivityManager.class);
++            final NetworkCapabilities caps = cm.getNetworkCapabilities(network);
++            if (caps != null && caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) {
++                Slog.i(TAG_WM,
++                        "performEnableScreen: network available (INTERNET), exit boot anim");
++                unregisterBootAnimNetworkCallbackLocked();
++                performBootAnimExitLocked();
++                mH.sendEmptyMessage(H.ENABLE_SCREEN);
++            }
++            // Keep waiting if the network is not yet validated.
++        }
++    }
++
+     public void showBootMessage(final CharSequence msg, final boolean always) {
+         boolean first = false;
+         synchronized (mGlobalLock) {
+-- 
+2.53.0
+
