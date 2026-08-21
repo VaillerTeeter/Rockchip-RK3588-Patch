@@ -1,0 +1,54 @@
+From f8de800d5185d24946f9b5e995cde6f79b94c901 Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 21 Aug 2026 16:13:43 +0800
+Subject: [PATCH] feat: enable GNSS HAL service and GPS board config for
+ ATK_DLRK3588
+
+    - device/rockchip: add android.hardware.gnss@2.1-service to product
+      packages, satisfying Android 13 FCM 7 (needs gnss 2.0-1)
+    - device/rockchip: set BOARD_HAS_GPS=true to install
+      android.hardware.location.gps.xml and enable ro.factory.hasGPS
+---
+ rk3588/ATK_DLRK3588/ATK_DLRK3588.mk | 10 ++++++++++
+ rk3588/ATK_DLRK3588/BoardConfig.mk  |  4 ++++
+ 2 files changed, 14 insertions(+)
+
+diff --git a/rk3588/ATK_DLRK3588/ATK_DLRK3588.mk b/rk3588/ATK_DLRK3588/ATK_DLRK3588.mk
+index f3d2a98..902720f 100644
+--- a/rk3588/ATK_DLRK3588/ATK_DLRK3588.mk
++++ b/rk3588/ATK_DLRK3588/ATK_DLRK3588.mk
+@@ -47,6 +47,16 @@ PRODUCT_PROPERTY_OVERRIDES += persist.bt.power.down=true
+ PRODUCT_PACKAGES += CarHeadunitLauncher
+ PRODUCT_PACKAGES += SogouInput
+ 
++# =============================================================================
++# GNSS (Quectel LC29H on /dev/ttyUSB0)
++#   android.hardware.gnss@2.1-service - AOSP default 2.1 HIDL service (mock)
++#       - 满足 Android 13 VINTF：FCM 7 只允许 gnss 2.0-1（1.0 已 deprecated）
++#       - 自带 vintf fragment（android.hardware.gnss@2.1-service.xml），
++#         无需手写 DEVICE_MANIFEST_FILE
++#       - 真定位：后续把 NmeaSerialReader 串口解析组件接入该服务
++# =============================================================================
++PRODUCT_PACKAGES += android.hardware.gnss@2.1-service
++
+ # Pre-granted runtime permissions for staged third-party APKs.
+ # First-boot installation is handled by SystemServer (installPreinstalledCarApps)
+ # in frameworks/base; the APKs themselves are staged via BUILD_PREBUILT
+diff --git a/rk3588/ATK_DLRK3588/BoardConfig.mk b/rk3588/ATK_DLRK3588/BoardConfig.mk
+index b9512aa..32e894e 100644
+--- a/rk3588/ATK_DLRK3588/BoardConfig.mk
++++ b/rk3588/ATK_DLRK3588/BoardConfig.mk
+@@ -16,6 +16,10 @@
+ include device/rockchip/rk3588/BoardConfig.mk
+ BUILD_WITH_GO_OPT := false
+ 
++# GNSS: Quectel LC29H serial NMEA on /dev/ttyUSB0
++# Installs android.hardware.location.gps.xml and sets ro.factory.hasGPS=true
++BOARD_HAS_GPS := true
++
+ # AB image definition
+ BOARD_USES_AB_IMAGE := false
+ BOARD_ROCKCHIP_VIRTUAL_AB_ENABLE := false
+-- 
+2.53.0
+

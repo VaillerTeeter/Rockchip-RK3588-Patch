@@ -1,0 +1,58 @@
+From c0538521551afe4d055bcacf7e15e500c6e1e88f Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 21 Aug 2026 16:34:40 +0800
+Subject: [PATCH] feat: enable CH341 USB-serial adapter for onboard GNSS module
+
+    - defconfig: enable CONFIG_USB_SERIAL_CH341
+    - ch341: default to 115200 8N1 raw mode for serial devices
+---
+ arch/arm64/configs/rockchip_defconfig |  1 +
+ drivers/usb/serial/ch341.c            | 12 ++++++++++--
+ 2 files changed, 11 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm64/configs/rockchip_defconfig b/arch/arm64/configs/rockchip_defconfig
+index 64d18d3a0..723291f23 100644
+--- a/arch/arm64/configs/rockchip_defconfig
++++ b/arch/arm64/configs/rockchip_defconfig
+@@ -842,6 +842,7 @@ CONFIG_USB_DWC2=y
+ CONFIG_USB_SERIAL=y
+ CONFIG_USB_SERIAL_GENERIC=y
+ CONFIG_USB_SERIAL_OPTION=y
++CONFIG_USB_SERIAL_CH341=y
+ CONFIG_USB_TRANCEVIBRATOR=y
+ CONFIG_USB_GADGET=y
+ CONFIG_USB_GADGET_DEBUG_FILES=y
+diff --git a/drivers/usb/serial/ch341.c b/drivers/usb/serial/ch341.c
+index 97a250e75..16356852b 100644
+--- a/drivers/usb/serial/ch341.c
++++ b/drivers/usb/serial/ch341.c
+@@ -21,7 +21,7 @@
+ #include <linux/serial.h>
+ #include <asm/unaligned.h>
+ 
+-#define DEFAULT_BAUD_RATE 9600
++#define DEFAULT_BAUD_RATE 115200
+ #define DEFAULT_TIMEOUT   1000
+ 
+ /* flags for IO-Bits */
+@@ -478,8 +478,16 @@ static int ch341_open(struct tty_struct *tty, struct usb_serial_port *port)
+ 	struct ch341_private *priv = usb_get_serial_port_data(port);
+ 	int r;
+ 
+-	if (tty)
++	if (tty) {
++		tty_encode_baud_rate(tty, DEFAULT_BAUD_RATE, DEFAULT_BAUD_RATE);
++		tty->termios.c_iflag &= ~(IGNBRK | BRKINT | PARMRK | ISTRIP |
++					  INLCR | IGNCR | ICRNL | IXON);
++		tty->termios.c_oflag &= ~OPOST;
++		tty->termios.c_lflag &= ~(ECHO | ECHONL | ICANON | ISIG | IEXTEN);
++		tty->termios.c_cflag &= ~(CSIZE | PARENB);
++		tty->termios.c_cflag |= CS8;
+ 		ch341_set_termios(tty, port, NULL);
++	}
+ 
+ 	dev_dbg(&port->dev, "%s - submitting interrupt urb\n", __func__);
+ 	r = usb_submit_urb(port->interrupt_in_urb, GFP_KERNEL);
+-- 
+2.53.0
+

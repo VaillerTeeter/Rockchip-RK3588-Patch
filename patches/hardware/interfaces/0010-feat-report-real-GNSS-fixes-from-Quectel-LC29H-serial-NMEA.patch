@@ -1,0 +1,1855 @@
+From a3ea5636442b3a223f2d7210289c3a5e29b3560b Mon Sep 17 00:00:00 2001
+From: Vaciller <wyc_19533480830@outlook.com>
+Date: Fri, 21 Aug 2026 16:38:39 +0800
+Subject: [PATCH] feat: report real GNSS fixes from Quectel LC29H serial NMEA
+
+    - gnss/2.1: add NmeaSerialReader to open /dev/ttyUSB0 and parse
+      GGA/RMC/GSA/GSV sentences into typed records
+    - gnss/2.1: subclass GnssTemplate with Gnss to compose and report
+      location and SV status via HIDL callbacks
+    - gnss/2.1: expose report methods as protected, add radio group to
+      vendor.gnss-2-1 service, and build the new sources
+
+Change-Id: I6cfe18f9a3b8daedb1391b20908ad44d72596bc1
+---
+ gnss/2.1/default/Android.bp                   |   2 +
+ gnss/2.1/default/Gnss.cpp                     | 338 +++++++
+ gnss/2.1/default/Gnss.h                       |  66 ++
+ gnss/2.1/default/NmeaSerialReader.cpp         | 822 ++++++++++++++++++
+ gnss/2.1/default/NmeaSerialReader.h           | 494 +++++++++++
+ .../android.hardware.gnss@2.1-service.rc      |   2 +-
+ gnss/2.1/default/service.cpp                  |   7 +-
+ .../utils/default/include/v2_1/GnssTemplate.h |   6 +-
+ 8 files changed, 1732 insertions(+), 5 deletions(-)
+ create mode 100644 gnss/2.1/default/Gnss.cpp
+ create mode 100644 gnss/2.1/default/Gnss.h
+ create mode 100644 gnss/2.1/default/NmeaSerialReader.cpp
+ create mode 100644 gnss/2.1/default/NmeaSerialReader.h
+
+diff --git a/gnss/2.1/default/Android.bp b/gnss/2.1/default/Android.bp
+index 2979f5c9b..d3d55f7e5 100644
+--- a/gnss/2.1/default/Android.bp
++++ b/gnss/2.1/default/Android.bp
+@@ -31,6 +31,8 @@ cc_binary {
+     vintf_fragments: ["android.hardware.gnss@2.1-service.xml"],
+     srcs: [
+         "service.cpp",
++        "Gnss.cpp",
++        "NmeaSerialReader.cpp",
+     ],
+     shared_libs: [
+         "libcutils",
+diff --git a/gnss/2.1/default/Gnss.cpp b/gnss/2.1/default/Gnss.cpp
+new file mode 100644
+index 000000000..ac2278a25
+--- /dev/null
++++ b/gnss/2.1/default/Gnss.cpp
+@@ -0,0 +1,338 @@
++/*
++ * Copyright (C) 2019 The Android Open Source Project
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++#define LOG_TAG "android.hardware.gnss@2.1-service"
++
++#include "Gnss.h"
++
++#include <errno.h>
++#include <string.h>
++#include <time.h>
++
++#include <log/log.h>
++#include <utils/SystemClock.h>
++
++#include <map>
++#include <set>
++
++#include "NmeaSerialReader.h"
++
++namespace android {
++namespace hardware {
++namespace gnss {
++namespace V2_1 {
++namespace implementation {
++
++using ::android::hardware::gnss::V2_1::nmea::GGA;
++using ::android::hardware::gnss::V2_1::nmea::GSA;
++using ::android::hardware::gnss::V2_1::nmea::GSV;
++using ::android::hardware::gnss::V2_1::nmea::RMC;
++using ::android::hardware::gnss::V2_1::nmea::SERIAL_DEV_DEFAULT;
++using ::android::hardware::gnss::V2_1::nmea::nmea_serial_close;
++using ::android::hardware::gnss::V2_1::nmea::nmea_serial_open;
++using ::android::hardware::gnss::V2_1::nmea::nmea_serial_read_loop;
++
++/* ============================================================================================
++ * 上报用辅助函数
++ * ========================================================================================== */
++
++/* 节 → 米/秒 的换算系数。RMC 报的是节，HAL 定位结构用的是 米/秒。 */
++static constexpr float kKnotsToMps = 0.514444f;
++
++/* 把 GSV 语句的 talker 前缀（"GP"/"GL"/"GA"/"GB"/"GQ"）映射成 HAL 的星座枚举。
++ * 用在卫星上报时区分每颗卫星属于哪个导航系统。 */
++static V2_0::GnssConstellationType talkerToConstellation(const char* talker) {
++    if (strncmp(talker, "GP", 2) == 0) return V2_0::GnssConstellationType::GPS;
++    if (strncmp(talker, "GL", 2) == 0) return V2_0::GnssConstellationType::GLONASS;
++    if (strncmp(talker, "GA", 2) == 0) return V2_0::GnssConstellationType::GALILEO;
++    if (strncmp(talker, "GB", 2) == 0) return V2_0::GnssConstellationType::BEIDOU;
++    if (strncmp(talker, "GQ", 2) == 0) return V2_0::GnssConstellationType::QZSS;
++    return V2_0::GnssConstellationType::UNKNOWN;
++}
++
++/* 把 GSA 语句的 system_id（1=GPS 2=GLONASS 3=Galileo 4=BeiDou 5=QZSS）映射成 HAL 星座枚举。
++ * 用于把参与解算的卫星号按星座归类，再和 GSV 的卫星对应起来标 USE_IN_FIX。 */
++static V2_0::GnssConstellationType gsaSystemToConstellation(int systemId) {
++    switch (systemId) {
++        case 1: return V2_0::GnssConstellationType::GPS;
++        case 2: return V2_0::GnssConstellationType::GLONASS;
++        case 3: return V2_0::GnssConstellationType::GALILEO;
++        case 4: return V2_0::GnssConstellationType::BEIDOU;
++        case 5: return V2_0::GnssConstellationType::QZSS;
++        default: return V2_0::GnssConstellationType::UNKNOWN;
++    }
++}
++
++/* 把 NMEA 的日期（ddmmyy）和时间（hhmmss.sss）合成 epoch 毫秒（UTC 时间戳）。
++ * 用作定位结构里的 timestamp 字段。日期或时间字段缺失/过短时返回 0。 */
++static int64_t nmeaPartsToUtcMs(const char* timeStr, const char* dateStr) {
++    if (timeStr == nullptr || dateStr == nullptr || strlen(dateStr) < 6 || strlen(timeStr) < 6) {
++        return 0;
++    }
++
++    struct tm tm = {};
++    tm.tm_mday = (dateStr[0] - '0') * 10 + (dateStr[1] - '0');
++    tm.tm_mon = (dateStr[2] - '0') * 10 + (dateStr[3] - '0') - 1;
++    tm.tm_year = (dateStr[4] - '0') * 10 + (dateStr[5] - '0') + 100;  // 自 1900 计
++    tm.tm_hour = (timeStr[0] - '0') * 10 + (timeStr[1] - '0');
++    tm.tm_min = (timeStr[2] - '0') * 10 + (timeStr[3] - '0');
++    tm.tm_sec = (timeStr[4] - '0') * 10 + (timeStr[5] - '0');
++
++    /* timegm 按 UTC 解释，不需再减本地时区偏移 */
++    return static_cast<int64_t>(timegm(&tm)) * 1000;
++}
++
++/* 用 GGA（位置/海拔/HDOP）和 RMC（速度/航向/时间戳）合成一个 HAL 定位结构。
++ * 经纬度直接用 GGA 已换算并带 N/S、E/W 符号的十进制度；速度由节转米/秒。 */
++static V2_0::GnssLocation makeLocation(const GGA& gga, const RMC& rmc) {
++    /* 定位事件对应的 elapsedRealtime 时钟（Android 开机以来的纳秒） */
++    V2_0::ElapsedRealtime elapsed = {
++            .flags = V2_0::ElapsedRealtimeFlags::HAS_TIMESTAMP_NS |
++                     V2_0::ElapsedRealtimeFlags::HAS_TIME_UNCERTAINTY_NS,
++            .timestampNs = static_cast<uint64_t>(::android::elapsedRealtimeNano()),
++            .timeUncertaintyNs = 1000000};
++
++    /* 标明本次定位有哪些字段有效 */
++    V1_0::GnssLocationFlags flags =
++            static_cast<V1_0::GnssLocationFlags>(
++                    V1_0::GnssLocationFlags::HAS_LAT_LONG |
++                    V1_0::GnssLocationFlags::HAS_ALTITUDE |
++                    V1_0::GnssLocationFlags::HAS_SPEED |
++                    V1_0::GnssLocationFlags::HAS_BEARING |
++                    V1_0::GnssLocationFlags::HAS_HORIZONTAL_ACCURACY);
++
++    V1_0::GnssLocation v1 = {
++            .gnssLocationFlags = static_cast<uint16_t>(flags),
++            .latitudeDegrees = gga.latitude,
++            .longitudeDegrees = gga.longitude,
++            .altitudeMeters = static_cast<double>(gga.altitude),
++            .speedMetersPerSec = rmc.speed_knots * kKnotsToMps,
++            .bearingDegrees = rmc.course_deg,
++            .horizontalAccuracyMeters = gga.hdop,
++            .verticalAccuracyMeters = 0.0f,
++            .speedAccuracyMetersPerSecond = 0.0f,
++            .bearingAccuracyDegrees = 0.0f,
++            .timestamp = nmeaPartsToUtcMs(rmc.utc_time, rmc.date)};
++
++    return V2_0::GnssLocation{.v1_0 = v1, .elapsedRealtime = elapsed};
++}
++
++/* 用 GSV 里的一颗卫星字段构造 HAL 卫星结构。
++ * - 基础字段（svid/仰角/方位角/载噪比）来自卫星自身上报；
++ * - 星座类型由调用方传入；
++ * - usedInFix 决定是否打 USED_IN_FIX 标志（来自 GSA 参与解算卫星集合）。 */
++static V2_1::IGnssCallback::GnssSvInfo makeSvInfo(
++        const nmea::GSVSatellite& sat, V2_0::GnssConstellationType cons, bool usedInFix) {
++    V2_1::IGnssCallback::GnssSvInfo info;
++
++    info.v2_0.v1_0.svid = static_cast<int16_t>(sat.svid);
++    /* v1_0.constellation 在 2.0 起已废弃，真正生效的是下方的 v2_0.constellation */
++    info.v2_0.v1_0.constellation = V1_0::GnssConstellationType::UNKNOWN;
++    info.v2_0.v1_0.cN0Dbhz = static_cast<float>(sat.cno);
++    info.v2_0.v1_0.elevationDegrees = static_cast<float>(sat.elevation);
++    info.v2_0.v1_0.azimuthDegrees = static_cast<float>(sat.azimuth);
++    info.v2_0.v1_0.carrierFrequencyHz = 0.0f;  // 0 表示主频（如 GPS L1），未细分信号
++    info.v2_0.v1_0.svFlag =
++            usedInFix ? static_cast<uint8_t>(V1_0::IGnssCallback::GnssSvFlags::USED_IN_FIX)
++                      : static_cast<uint8_t>(V1_0::IGnssCallback::GnssSvFlags::NONE);
++
++    info.v2_0.constellation = cons;
++    info.basebandCN0DbHz = static_cast<double>(sat.cno);
++
++    return info;
++}
++
++/* ============================================================================================
++ * 串口读取线程的累计状态
++ *
++ * 该结构体只在串口线程内被读写，无需额外加锁。makeNmeaCallbacks 返回的回调会通过引用
++ * 修改这里的状态，并按需组装 HAL 结构上报。
++ * ========================================================================================== */
++
++struct Gnss::ReportState {
++    /* 定位：缓存最新 GGA 和 RMC，两条都到且 RMC 有效时才合成上报 */
++    bool hasGga = false;
++    bool hasRmc = false;
++    GGA latestGga{};
++    RMC latestRmc{};
++
++    /* 卫星：按星座聚合最新卫星；再按星座记录参与解算的卫星号集合 */
++    std::map<V2_0::GnssConstellationType,
++             std::map<int16_t, V2_1::IGnssCallback::GnssSvInfo>> svByConstellation;
++    std::map<V2_0::GnssConstellationType, std::set<int16_t>> usedPrnByConstellation;
++};
++
++/* 把当前累积的卫星汇总上报一次，并清空累积表。
++ * 以 GGA 为周期边界：新的 GGA 到达时说明上一轮数据已凑齐，调用本函数把上轮完整卫星上报。 */
++void Gnss::flushSvReport(ReportState& state) {
++    size_t total = 0;
++    for (const auto& kv : state.svByConstellation) {
++        total += kv.second.size();
++    }
++
++    if (total > 0) {
++        hidl_vec<V2_1::IGnssCallback::GnssSvInfo> svInfoList(total);
++        size_t idx = 0;
++        for (const auto& kv : state.svByConstellation) {
++            for (const auto& svEntry : kv.second) {
++                svInfoList[idx++] = svEntry.second;
++            }
++        }
++        ALOGI("serial thread: report sv status count=%zu", svInfoList.size());
++        this->reportSvStatus(svInfoList);
++    }
++
++    /* 清空聚合表，开始新一轮累积 */
++    state.svByConstellation.clear();
++}
++
++/* 构造 NMEA 解析回调。返回的回调会读/写 state，并在数据齐全时调用 reportLocation /
++ * reportSvStatus 上报给 framework。 */
++nmea::NmeaCallbacks Gnss::makeNmeaCallbacks(ReportState& state) {
++    nmea::NmeaCallbacks cb;
++
++    /* 收到 GGA：只缓存，等 RMC 到达后合成定位。
++     * 卫星的上报时机不在这里，而是等一包数据静默结束后由 onIdle 触发。 */
++    cb.onGga = [&state](const GGA& gga) {
++        state.latestGga = gga;
++        state.hasGga = true;
++    };
++
++    /* 收到 RMC：缓存，并在定位有效且已有 GGA 时合成上报 */
++    cb.onRmc = [this, &state](const RMC& rmc) {
++        state.latestRmc = rmc;
++        state.hasRmc = true;
++        if (state.hasGga && rmc.status == 'A') {
++            const V2_0::GnssLocation location = makeLocation(state.latestGga, state.latestRmc);
++            ALOGI("serial thread: report location lat=%.7f lon=%.7f alt=%.2f spd=%.3f",
++                  location.v1_0.latitudeDegrees, location.v1_0.longitudeDegrees,
++                  location.v1_0.altitudeMeters, location.v1_0.speedMetersPerSec);
++            this->reportLocation(location);
++        }
++    };
++
++    /* 收到 GSA：刷新该星座参与解算的卫星号集合，供给卫星打 USED_IN_FIX */
++    cb.onGsa = [&state](const GSA& gsa) {
++        const V2_0::GnssConstellationType cons = gsaSystemToConstellation(gsa.system_id);
++        auto& usedPrn = state.usedPrnByConstellation[cons];
++        usedPrn.clear();
++        for (int i = 0; i < 12; ++i) {
++            if (gsa.prn[i] > 0) {
++                usedPrn.insert(static_cast<int16_t>(gsa.prn[i]));
++            }
++        }
++    };
++
++    /* 收到 GSV：把本帧卫星按 (星座, svid) 覆盖累积。
++     * 同一星座不同频段（L1/L5 等）发出的同号卫星会被自动去重覆盖；
++     * 本回调不上报也不清空，上报时机由 onIdle 触发。 */
++    cb.onGsv = [&state](const GSV& gsv) {
++        const V2_0::GnssConstellationType cons = talkerToConstellation(gsv.talker);
++        auto& svMap = state.svByConstellation[cons];
++        for (int i = 0; i < gsv.satellite_count; ++i) {
++            const nmea::GSVSatellite& sat = gsv.satellites[i];
++            if (sat.svid == 0) {
++                continue;
++            }
++            const bool used = state.usedPrnByConstellation[cons].count(sat.svid) > 0;
++            svMap[static_cast<int16_t>(sat.svid)] = makeSvInfo(sat, cons, used);
++        }
++    };
++
++    /* 串口 100ms 无数据：一包 NMEA 已结束，把本包累积的卫星上报一次并清空。 */
++    cb.onIdle = [this, &state]() {
++        this->flushSvReport(state);
++    };
++
++    return cb;
++}
++
++Gnss::Gnss() : mIsActive(false), mSerialFd(-1) {
++    ALOGI("Gnss constructed");
++}
++
++Gnss::~Gnss() {
++    ALOGI("Gnss destructor");
++    stop();
++}
++
++Return<bool> Gnss::start() {
++    ALOGI("Gnss::start() called");
++    if (mIsActive) {
++        ALOGW("Gnss has started. Restarting...");
++        stop();
++    }
++
++    mIsActive = true;
++    ALOGI("Gnss::start() reporting SESSION_BEGIN");
++    this->reportGnssStatusValue(V1_0::IGnssCallback::GnssStatusValue::SESSION_BEGIN);
++
++    mThread = std::thread([this]() {
++        ALOGI("serial thread: opening %s", SERIAL_DEV_DEFAULT);
++        mSerialFd = nmea_serial_open(SERIAL_DEV_DEFAULT);
++        if (mSerialFd < 0) {
++            ALOGE("serial thread: open %s failed, serial thread exiting", SERIAL_DEV_DEFAULT);
++            return;
++        }
++        ALOGI("serial thread: %s opened, entering read loop (fd=%d)", SERIAL_DEV_DEFAULT,
++              mSerialFd.load());
++
++        /* 线程内累计状态 + 回调，解析结果在此组装并上报 */
++        ReportState state;
++        const nmea::NmeaCallbacks cb = makeNmeaCallbacks(state);
++
++        const int ret = nmea_serial_read_loop(mSerialFd, cb);
++        ALOGW("serial thread: read loop exited with ret=%d (errno=%d, %s)", ret, errno,
++              strerror(errno));
++
++        nmea_serial_close(mSerialFd);
++        mSerialFd = -1;
++        ALOGI("serial thread: %s closed", SERIAL_DEV_DEFAULT);
++    });
++
++    ALOGI("Gnss::start() done");
++    return true;
++}
++
++Return<bool> Gnss::stop() {
++    ALOGI("Gnss::stop() called");
++    mIsActive = false;
++
++    // Closing the fd unblocks the blocking read() inside nmea_serial_read_loop,
++    // letting the thread wind down and join() return.
++    if (mSerialFd >= 0) {
++        ALOGI("Gnss::stop() closing serial fd=%d", mSerialFd.load());
++        nmea_serial_close(mSerialFd);
++        mSerialFd = -1;
++    }
++
++    if (mThread.joinable()) {
++        ALOGI("Gnss::stop() joining serial thread");
++        mThread.join();
++        ALOGI("Gnss::stop() serial thread joined");
++    }
++
++    ALOGI("Gnss::stop() reporting SESSION_END");
++    this->reportGnssStatusValue(V1_0::IGnssCallback::GnssStatusValue::SESSION_END);
++    ALOGI("Gnss::stop() done");
++    return true;
++}
++
++}  // namespace implementation
++}  // namespace V2_1
++}  // namespace gnss
++}  // namespace hardware
++}  // namespace android
+\ No newline at end of file
+diff --git a/gnss/2.1/default/Gnss.h b/gnss/2.1/default/Gnss.h
+new file mode 100644
+index 000000000..5399b74d3
+--- /dev/null
++++ b/gnss/2.1/default/Gnss.h
+@@ -0,0 +1,66 @@
++/*
++ * Copyright (C) 2019 The Android Open Source Project
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++#ifndef ANDROID_HARDWARE_GNSS_V2_1_GNSS_H
++#define ANDROID_HARDWARE_GNSS_V2_1_GNSS_H
++
++#include <android/hardware/gnss/2.1/IGnss.h>
++#include <hidl/Status.h>
++#include <atomic>
++#include <thread>
++
++#include <v2_1/GnssTemplate.h>
++
++#include "NmeaSerialReader.h"
++
++namespace android {
++namespace hardware {
++namespace gnss {
++namespace V2_1 {
++namespace implementation {
++
++using ::android::hardware::gnss::common::implementation::GnssTemplate;
++
++struct Gnss : public GnssTemplate<IGnss> {
++    Gnss();
++    ~Gnss();
++
++    // Methods from V1_0::IGnss (re-implemented to drive the serial port).
++    Return<bool> start() override;
++    Return<bool> stop() override;
++
++  private:
++    /* 串口读取线程的累计状态（缓存最新 GGA/RMC/卫星等），完整定义在 Gnss.cpp */
++    struct ReportState;
++
++    /* 构造 NMEA 解析回调：把解析结果组装成 HAL 定位/卫星数据并上报 */
++    nmea::NmeaCallbacks makeNmeaCallbacks(ReportState& state);
++
++    /* 把当前累积的卫星汇总上报一次，并清空累积表（在下一轮 GGA 到来时调用） */
++    void flushSvReport(ReportState& state);
++
++    std::atomic<bool> mIsActive;
++    std::atomic<int> mSerialFd;
++    std::thread mThread;
++};
++
++}  // namespace implementation
++}  // namespace V2_1
++}  // namespace gnss
++}  // namespace hardware
++}  // namespace android
++
++#endif  // ANDROID_HARDWARE_GNSS_V2_1_GNSS_H
+\ No newline at end of file
+diff --git a/gnss/2.1/default/NmeaSerialReader.cpp b/gnss/2.1/default/NmeaSerialReader.cpp
+new file mode 100644
+index 000000000..a0d565edd
+--- /dev/null
++++ b/gnss/2.1/default/NmeaSerialReader.cpp
+@@ -0,0 +1,822 @@
++/*
++ * NmeaSerialReader.cpp
++ *
++ * 串口读写实现：打开 / 关闭 / 读取原始字节。
++ */
++
++#define LOG_TAG "android.hardware.gnss@2.1-service"
++// #define GNSS_DEBUG   true
++#define GNSS_DEBUG_2 true
++
++#include "NmeaSerialReader.h"
++
++#include <errno.h>
++#include <fcntl.h>
++#include <math.h>
++#include <stdlib.h>
++#include <string.h>
++#include <termios.h>
++#include <unistd.h>
++
++#include <log/log.h>
++
++namespace android {
++namespace hardware {
++namespace gnss {
++namespace V2_1 {
++namespace nmea {
++
++/* 行切分状态：累积半行，遇 '\n' 切出完整一行 */
++char g_line_buf[NMEA_LINE_MAX];
++size_t g_line_len = 0;
++
++int nmea_serial_open(const char* dev) {
++    if (dev == nullptr) {
++        ALOGE("%s: null device path", __func__);
++        return -1;
++    }
++
++    /* O_NONBLOCK 仅用于打开阶段：避免对端无载波（DCD）时 open 阻塞。 */
++    int fd = open(dev, SERIAL_OPEN_FLAGS);
++    if (fd < 0) {
++        ALOGE("%s: open %s failed: %s", __func__, dev, strerror(errno));
++        return -1;
++    }
++
++    struct termios tio;
++    memset(&tio, 0, sizeof(tio));
++
++    /* 波特率：115200 */
++    if (cfsetispeed(&tio, SERIAL_BAUD_RATE) != 0 ||
++        cfsetospeed(&tio, SERIAL_BAUD_RATE) != 0) {
++        ALOGE("%s: cfset speed failed: %s", __func__, strerror(errno));
++        close(fd);
++        return -1;
++    }
++
++    /* 8N1 raw：8 数据位、无校验、1 停止位，忽略 Modem 控制线，使能接收 */
++    tio.c_cflag = SERIAL_C_CFLAG;
++
++    /* 关闭软件/硬件流控与回显，原始字节流 */
++    tio.c_iflag = 0;
++    tio.c_oflag = 0;
++    tio.c_lflag = 0;
++
++    /* 阻塞读语义：有数据立即返回；无数据最多等 100ms */
++    tio.c_cc[VMIN] = SERIAL_VMIN;
++    tio.c_cc[VTIME] = SERIAL_VTIME;
++
++    tcflush(fd, TCIOFLUSH);
++    if (tcsetattr(fd, TCSANOW, &tio) != 0) {
++        ALOGE("%s: tcsetattr failed: %s", __func__, strerror(errno));
++        close(fd);
++        return -1;
++    }
++
++    /* 打开阶段结束，清掉 O_NONBLOCK 恢复阻塞读，使 VTIME 生效 */
++    if (fcntl(fd, F_SETFL, 0) != 0) {
++        ALOGE("%s: fcntl(F_SETFL) failed: %s", __func__, strerror(errno));
++        close(fd);
++        return -1;
++    }
++
++    ALOGI("%s: opened %s", __func__, dev);
++    return fd;
++}
++
++void nmea_serial_close(int fd) {
++    if (fd >= 0) {
++        close(fd);
++    }
++}
++
++/* 单次阻塞读取原始字节（不切行、不解析）。 */
++int nmea_serial_read(int fd, char* buf, int len) {
++    if (fd < 0 || buf == nullptr || len <= 0) {
++        ALOGE("%s: invalid param (fd=%d buf=%p len=%d)", __func__, fd,
++              static_cast<const void*>(buf), len);
++        return -1;
++    }
++
++    /* 阻塞 read：有数据立即返回，无数据最多等 100ms（open 时配置）。
++     * EINTR（信号打断）原样返回，由调用方决定是否重试。 */
++    return read(fd, buf, len);
++}
++#ifdef GNSS_DEBUG
++/* 供 %c 打印：空字符字段返回 '-'，避免向日志写入 '\0' 截断后续输出
++ * （一点信号都没、字段全空时也不会出问题）。 */
++static char log_char(char c) {
++    return c == '\0' ? '-' : c;
++}
++#endif
++/* 把一块字节累积进行缓冲，遇 '\n' 切一行给 on_line（去掉行尾 '\r'）
++ * 文件内部辅助函数，仅被 nmea_serial_read_loop 调用。 */
++static void line_feed(const char* data, int len,
++                      const std::function<void(const char* line, int len)>& on_line) {
++    if (data == nullptr || len <= 0) {
++        ALOGE("%s: invalid param (data=%p len=%d)", __func__,
++              static_cast<const void*>(data), len);
++        return;
++    }
++
++    for (int i = 0; i < len; ++i) {
++        const char c = data[i];
++        if (c == '\n') {
++            size_t line_len = g_line_len;
++            /* NMEA 行以 \r\n 结尾，去掉 '\r' */
++            if (line_len > 0 && g_line_buf[line_len - 1] == '\r') {
++                --line_len;
++            }
++            if (line_len > 0 && on_line != nullptr) {
++                on_line(g_line_buf, static_cast<int>(line_len));
++            }
++            g_line_len = 0;
++        } else if (g_line_len < sizeof(g_line_buf) - 1) {
++            g_line_buf[g_line_len++] = c;
++        } else {
++            /* 缓冲满仍未到换行：丢弃该行，防异常数据 */
++            ALOGW("%s: line buffer overflow, dropping line (len=%zu)", __func__, g_line_len);
++            g_line_len = 0;
++        }
++    }
++}
++
++/* 取第 idx 个逗号分隔字段，返回其起始指针与长度；字段不存在返回 nullptr。
++ * 例：line="$GNGGA,072655.000,3200.892919,N,..."，idx=1 → "072655.000"。 */
++static const char* field_at(const char* line, int idx, size_t* out_len) {
++    int cur = 0;
++    const char* p = line;
++    while (cur < idx) {
++        if (*p == '\0') {
++            return nullptr;
++        }
++        if (*p++ == ',') {
++            cur++;
++        }
++    }
++    const char* start = p;
++    /* ',' 结束一个字段；'*' 是 NMEA 校验和分隔符，也视为字段结束，
++     * 避免把 '*hh'（如 "*4C"）误并入最后一个字段。 */
++    while (*p != '\0' && *p != ',' && *p != '*') {
++        p++;
++    }
++    *out_len = (size_t)(p - start);
++    return start;
++}
++
++/* 提取 *hh 校验和到 out[3]（含结尾 '\0'）；无 '*' 或缺两位时填空串。 */
++static void nmea_checksum(const char* line, char out[3]) {
++    out[0] = out[1] = out[2] = '\0';
++    if (line == nullptr) {
++        return;
++    }
++    const char* p = strchr(line, '*');
++    if (p == nullptr || p[1] == '\0') {
++        return;
++    }
++    out[0] = p[1];
++    if (p[2] != '\0' && p[2] != '\r' && p[2] != '\n') {
++        out[1] = p[2];
++    }
++}
++
++/* 字段转整数（字段为空返回 0）。 */
++static int field_to_int(const char* s, size_t len) {
++    if (s == nullptr || len == 0) {
++        return 0;  /* 空字段合法（NMEA 允许），不视为错误 */
++    }
++    if (len >= 32) {
++        ALOGW("%s: field too long (%zu), skipping", __func__, len);
++        return 0;
++    }
++    char tmp[32];
++    memcpy(tmp, s, len);
++    tmp[len] = '\0';
++    return atoi(tmp);
++}
++
++/* 字段转浮点数（字段为空返回 0.0）。 */
++static double field_to_double(const char* s, size_t len) {
++    if (s == nullptr || len == 0) {
++        return 0.0;  /* 空字段合法（NMEA 允许），不视为错误 */
++    }
++    if (len >= 32) {
++        ALOGW("%s: field too long (%zu), skipping", __func__, len);
++        return 0.0;
++    }
++    char tmp[32];
++    memcpy(tmp, s, len);
++    tmp[len] = '\0';
++    return strtod(tmp, nullptr);
++}
++
++/* ddmm.mmmm → 十进制度。例 "3200.892919" → 32.01488198... */
++static double nmea_to_degrees(const char* s, size_t len) {
++    double raw = field_to_double(s, len);
++    double deg = (int)(raw / 100.0);
++    double min = raw - deg * 100.0;
++    return deg + min / 60.0;
++}
++
++/* 解析 $GNGGA / $GPGGA：按 GGAField 逐个取字段填入 GGA 结构体。
++ * 除语句标识 TALKER_ID(0) 外，字段 1~14 全部存储，不做差别。 */
++static void parse_gga(const char* line, int len, GGA* gga) {
++    if (line == nullptr || gga == nullptr) {
++        ALOGE("%s: null param (line=%p gga=%p)", __func__,
++              static_cast<const void*>(line), static_cast<void*>(gga));
++        return;
++    }
++    (void)len;
++    memset(gga, 0, sizeof(GGA));
++
++    for (int idx = GGA_FIELD_UTC_TIME; idx <= GGA_FIELD_DIFF_STATION; ++idx) {
++        size_t f_len = 0;
++        const char* f = field_at(line, idx, &f_len);
++        if (f == nullptr) {
++            /* 字段不足（畸形/截断语句） */
++            ALOGW("%s: field %d missing, truncated line: %.*s", __func__, idx, (int)strlen(line),
++                  line);
++            break;
++        }
++
++        switch (idx) {
++            case GGA_FIELD_UTC_TIME:
++                if (f_len < sizeof(gga->utc_time)) {
++                    memcpy(gga->utc_time, f, f_len);
++                    gga->utc_time[f_len] = '\0';
++                }
++                break;
++            case GGA_FIELD_LATITUDE:
++                gga->latitude = nmea_to_degrees(f, f_len);
++                break;
++            case GGA_FIELD_NS_INDICATOR:
++                if (f_len > 0) {
++                    gga->ns = f[0];
++                }
++                break;
++            case GGA_FIELD_LONGITUDE:
++                gga->longitude = nmea_to_degrees(f, f_len);
++                break;
++            case GGA_FIELD_EW_INDICATOR:
++                if (f_len > 0) {
++                    gga->ew = f[0];
++                }
++                break;
++            case GGA_FIELD_FIX_QUALITY:
++                gga->fix_quality = field_to_int(f, f_len);
++                break;
++            case GGA_FIELD_SATELLITES_USED:
++                gga->sats_used = field_to_int(f, f_len);
++                break;
++            case GGA_FIELD_HDOP:
++                gga->hdop = (float)field_to_double(f, f_len);
++                break;
++            case GGA_FIELD_ALTITUDE:
++                gga->altitude = (float)field_to_double(f, f_len);
++                break;
++            case GGA_FIELD_ALT_UNIT:
++                if (f_len > 0) {
++                    gga->alt_unit = f[0];
++                }
++                break;
++            case GGA_FIELD_GEOID_SEP:
++                gga->geoid_sep = (float)field_to_double(f, f_len);
++                break;
++            case GGA_FIELD_GEOID_UNIT:
++                if (f_len > 0) {
++                    gga->geoid_unit = f[0];
++                }
++                break;
++            case GGA_FIELD_DIFF_AGE:
++                if (f_len < sizeof(gga->diff_age)) {
++                    memcpy(gga->diff_age, f, f_len);
++                    gga->diff_age[f_len] = '\0';
++                }
++                break;
++            case GGA_FIELD_DIFF_STATION:
++                if (f_len < sizeof(gga->diff_station)) {
++                    memcpy(gga->diff_station, f, f_len);
++                    gga->diff_station[f_len] = '\0';
++                }
++                break;
++            default:
++                break;
++        }
++    }
++
++    /* 南纬取负、西经取负 */
++    if (gga->ns == 'S') {
++        gga->latitude = -gga->latitude;
++    }
++    if (gga->ew == 'W') {
++        gga->longitude = -gga->longitude;
++    }
++    nmea_checksum(line, gga->checksum);
++}
++
++/* 解析 $GNRMC / $GPRMC：按 RMCField 逐个取字段填入 RMC 结构体。
++ * 除语句标识 TALKER_ID(0) 外，字段 1~13 全部存储，不做差别。 */
++static void parse_rmc(const char* line, int len, RMC* rmc) {
++    if (line == nullptr || rmc == nullptr) {
++        ALOGE("%s: null param (line=%p rmc=%p)", __func__,
++              static_cast<const void*>(line), static_cast<void*>(rmc));
++        return;
++    }
++    (void)len;
++    memset(rmc, 0, sizeof(RMC));
++
++    for (int idx = RMC_FIELD_UTC_TIME; idx <= RMC_FIELD_NAV_STATUS; ++idx) {
++        size_t f_len = 0;
++        const char* f = field_at(line, idx, &f_len);
++        if (f == nullptr) {
++            /* 字段不足（畸形/截断语句） */
++            ALOGW("%s: field %d missing, truncated line: %.*s", __func__, idx,
++                  (int)strlen(line), line);
++            break;
++        }
++
++        switch (idx) {
++            case RMC_FIELD_UTC_TIME:
++                if (f_len < sizeof(rmc->utc_time)) {
++                    memcpy(rmc->utc_time, f, f_len);
++                    rmc->utc_time[f_len] = '\0';
++                }
++                break;
++            case RMC_FIELD_STATUS:
++                if (f_len > 0) {
++                    rmc->status = f[0];
++                }
++                break;
++            case RMC_FIELD_LATITUDE:
++                rmc->latitude = nmea_to_degrees(f, f_len);
++                break;
++            case RMC_FIELD_NS_INDICATOR:
++                if (f_len > 0) {
++                    rmc->ns = f[0];
++                }
++                break;
++            case RMC_FIELD_LONGITUDE:
++                rmc->longitude = nmea_to_degrees(f, f_len);
++                break;
++            case RMC_FIELD_EW_INDICATOR:
++                if (f_len > 0) {
++                    rmc->ew = f[0];
++                }
++                break;
++            case RMC_FIELD_SPEED:
++                rmc->speed_knots = (float)field_to_double(f, f_len);
++                break;
++            case RMC_FIELD_COURSE:
++                rmc->course_deg = (float)field_to_double(f, f_len);
++                break;
++            case RMC_FIELD_DATE:
++                if (f_len < sizeof(rmc->date)) {
++                    memcpy(rmc->date, f, f_len);
++                    rmc->date[f_len] = '\0';
++                }
++                break;
++            case RMC_FIELD_MAG_VAR:
++                if (f_len < sizeof(rmc->mag_var)) {
++                    memcpy(rmc->mag_var, f, f_len);
++                    rmc->mag_var[f_len] = '\0';
++                }
++                break;
++            case RMC_FIELD_MAG_VAR_EW:
++                if (f_len > 0) {
++                    rmc->mag_var_ew = f[0];
++                }
++                break;
++            case RMC_FIELD_MODE:
++                if (f_len > 0) {
++                    rmc->mode = f[0];
++                }
++                break;
++            case RMC_FIELD_NAV_STATUS:
++                if (f_len > 0) {
++                    rmc->nav_status = f[0];
++                }
++                break;
++            default:
++                break;
++        }
++    }
++
++    /* 南纬取负、西经取负 */
++    if (rmc->ns == 'S') {
++        rmc->latitude = -rmc->latitude;
++    }
++    if (rmc->ew == 'W') {
++        rmc->longitude = -rmc->longitude;
++    }
++    nmea_checksum(line, rmc->checksum);
++}
++
++/* 解析 $GNGLL / $GPGLL：按 GLLField 逐个取字段填入 GLL 结构体。
++ * 除语句标识 TALKER_ID(0) 外，字段 1~7 全部存储，不做差别。 */
++static void parse_gll(const char* line, int len, GLL* gll) {
++    if (line == nullptr || gll == nullptr) {
++        ALOGE("%s: null param (line=%p gll=%p)", __func__,
++              static_cast<const void*>(line), static_cast<void*>(gll));
++        return;
++    }
++    (void)len;
++    memset(gll, 0, sizeof(GLL));
++
++    for (int idx = GLL_FIELD_LATITUDE; idx <= GLL_FIELD_MODE; ++idx) {
++        size_t f_len = 0;
++        const char* f = field_at(line, idx, &f_len);
++        if (f == nullptr) {
++            /* 字段不足（畸形/截断语句） */
++            ALOGW("%s: field %d missing, truncated line: %.*s", __func__, idx,
++                  (int)strlen(line), line);
++            break;
++        }
++
++        switch (idx) {
++            case GLL_FIELD_LATITUDE:
++                gll->latitude = nmea_to_degrees(f, f_len);
++                break;
++            case GLL_FIELD_NS_INDICATOR:
++                if (f_len > 0) {
++                    gll->ns = f[0];
++                }
++                break;
++            case GLL_FIELD_LONGITUDE:
++                gll->longitude = nmea_to_degrees(f, f_len);
++                break;
++            case GLL_FIELD_EW_INDICATOR:
++                if (f_len > 0) {
++                    gll->ew = f[0];
++                }
++                break;
++            case GLL_FIELD_UTC_TIME:
++                if (f_len < sizeof(gll->utc_time)) {
++                    memcpy(gll->utc_time, f, f_len);
++                    gll->utc_time[f_len] = '\0';
++                }
++                break;
++            case GLL_FIELD_STATUS:
++                if (f_len > 0) {
++                    gll->status = f[0];
++                }
++                break;
++            case GLL_FIELD_MODE:
++                if (f_len > 0) {
++                    gll->mode = f[0];
++                }
++                break;
++            default:
++                break;
++        }
++    }
++
++    /* 南纬取负、西经取负 */
++    if (gll->ns == 'S') {
++        gll->latitude = -gll->latitude;
++    }
++    if (gll->ew == 'W') {
++        gll->longitude = -gll->longitude;
++    }
++    nmea_checksum(line, gll->checksum);
++}
++
++/* 解析 $GNVTG / $GPVTG：按 VTGField 逐个取字段填入 VTG 结构体。
++ * 除语句标识 TALKER_ID(0) 外，字段 1~9 全部存储，不做差别。 */
++static void parse_vtg(const char* line, int len, VTG* vtg) {
++    if (line == nullptr || vtg == nullptr) {
++        ALOGE("%s: null param (line=%p vtg=%p)", __func__,
++              static_cast<const void*>(line), static_cast<void*>(vtg));
++        return;
++    }
++    (void)len;
++    memset(vtg, 0, sizeof(VTG));
++
++    for (int idx = VTG_FIELD_COURSE_TRUE; idx <= VTG_FIELD_MODE; ++idx) {
++        size_t f_len = 0;
++        const char* f = field_at(line, idx, &f_len);
++        if (f == nullptr) {
++            /* 字段不足（畸形/截断语句） */
++            ALOGW("%s: field %d missing, truncated line: %.*s", __func__, idx,
++                  (int)strlen(line), line);
++            break;
++        }
++
++        switch (idx) {
++            case VTG_FIELD_COURSE_TRUE:
++                vtg->course_true = (float)field_to_double(f, f_len);
++                break;
++            case VTG_FIELD_COURSE_TRUE_UNIT:
++                if (f_len > 0) {
++                    vtg->course_true_unit = f[0];
++                }
++                break;
++            case VTG_FIELD_COURSE_MAG:
++                if (f_len < sizeof(vtg->course_mag)) {
++                    memcpy(vtg->course_mag, f, f_len);
++                    vtg->course_mag[f_len] = '\0';
++                }
++                break;
++            case VTG_FIELD_COURSE_MAG_UNIT:
++                if (f_len > 0) {
++                    vtg->course_mag_unit = f[0];
++                }
++                break;
++            case VTG_FIELD_SPEED_KNOTS:
++                vtg->speed_knots = (float)field_to_double(f, f_len);
++                break;
++            case VTG_FIELD_SPEED_KNOTS_UNIT:
++                if (f_len > 0) {
++                    vtg->speed_knots_unit = f[0];
++                }
++                break;
++            case VTG_FIELD_SPEED_KMH:
++                vtg->speed_kmh = (float)field_to_double(f, f_len);
++                break;
++            case VTG_FIELD_SPEED_KMH_UNIT:
++                if (f_len > 0) {
++                    vtg->speed_kmh_unit = f[0];
++                }
++                break;
++            case VTG_FIELD_MODE:
++                if (f_len > 0) {
++                    vtg->mode = f[0];
++                }
++                break;
++            default:
++                break;
++        }
++    }
++    nmea_checksum(line, vtg->checksum);
++}
++
++/* 解析 $GNGSA / $GPGSA：按 GSAField 逐个取字段填入 GSA 结构体。
++ * 除语句标识 TALKER_ID(0) 外，字段 1~18 全部存储，不做差别。
++ * 注：每个星座各一条 GSA（system_id 区分 1~5），字段 3~14 为空时照存 0。 */
++static void parse_gsa(const char* line, int len, GSA* gsa) {
++    if (line == nullptr || gsa == nullptr) {
++        ALOGE("%s: null param (line=%p gsa=%p)", __func__,
++              static_cast<const void*>(line), static_cast<void*>(gsa));
++        return;
++    }
++    (void)len;
++    memset(gsa, 0, sizeof(GSA));
++
++    for (int idx = GSA_FIELD_MODE1; idx <= GSA_FIELD_SYSTEM_ID; ++idx) {
++        size_t f_len = 0;
++        const char* f = field_at(line, idx, &f_len);
++        if (f == nullptr) {
++            /* 字段不足（畸形/截断语句） */
++            ALOGW("%s: field %d missing, truncated line: %.*s", __func__, idx,
++                  (int)strlen(line), line);
++            break;
++        }
++
++        switch (idx) {
++            case GSA_FIELD_MODE1:
++                if (f_len > 0) {
++                    gsa->mode1 = f[0];
++                }
++                break;
++            case GSA_FIELD_MODE2:
++                gsa->mode2 = field_to_int(f, f_len);
++                break;
++            case GSA_FIELD_PRN_1:
++            case GSA_FIELD_PRN_2:
++            case GSA_FIELD_PRN_3:
++            case GSA_FIELD_PRN_4:
++            case GSA_FIELD_PRN_5:
++            case GSA_FIELD_PRN_6:
++            case GSA_FIELD_PRN_7:
++            case GSA_FIELD_PRN_8:
++            case GSA_FIELD_PRN_9:
++            case GSA_FIELD_PRN_10:
++            case GSA_FIELD_PRN_11:
++            case GSA_FIELD_PRN_12:
++                gsa->prn[idx - GSA_FIELD_PRN_1] = field_to_int(f, f_len);
++                break;
++            case GSA_FIELD_PDOP:
++                gsa->pdop = (float)field_to_double(f, f_len);
++                break;
++            case GSA_FIELD_HDOP:
++                gsa->hdop = (float)field_to_double(f, f_len);
++                break;
++            case GSA_FIELD_VDOP:
++                gsa->vdop = (float)field_to_double(f, f_len);
++                break;
++            case GSA_FIELD_SYSTEM_ID:
++                gsa->system_id = field_to_int(f, f_len);
++                break;
++            default:
++                break;
++        }
++    }
++    nmea_checksum(line, gsa->checksum);
++}
++
++/* 解析 $GPGSV/$GLGSV/$GAGSV/$GBGSV/$GQGSV：按 GSVField 逐段取字段填入 GSV 结构体。
++ * - talker（line[1..2]）记录来源星座（GP/GL/GA/GB/GQ）；
++ * - 固定头：总帧数/当前帧号/本星座可见卫星数；
++ * - 卫星块：一帧最多 4 颗，每颗 svid/elevation/azimuth/cno 4 字段；
++ * - 尾部（NMEA 4.1）：信号 ID。 */
++static void parse_gsv(const char* line, int len, GSV* gsv) {
++    if (line == nullptr || gsv == nullptr) {
++        ALOGE("%s: null param (line=%p gsv=%p)", __func__,
++              static_cast<const void*>(line), static_cast<void*>(gsv));
++        return;
++    }
++    (void)len;
++    memset(gsv, 0, sizeof(GSV));
++
++    /* talker：line[1..2]，如 "$GPGSV" → "GP" */
++    if (strlen(line) >= 3) {
++        gsv->talker[0] = line[1];
++        gsv->talker[1] = line[2];
++        gsv->talker[2] = '\0';
++    }
++
++    size_t f_len = 0;
++
++    /* 固定头：总帧数 / 当前帧号 / 本星座可见卫星数 */
++    {
++        const char* f = field_at(line, GSV_FIELD_TOTAL_MSG, &f_len);
++        gsv->total_messages = field_to_int(f, f_len);
++        f = field_at(line, GSV_FIELD_MSG_NUM, &f_len);
++        gsv->message_number = field_to_int(f, f_len);
++        f = field_at(line, GSV_FIELD_SATS_IN_VIEW, &f_len);
++        gsv->satellites_in_view = field_to_int(f, f_len);
++    }
++
++    /* 卫星块：本帧卫星数 = 总可见 - 前几帧已报，每帧最多 4 颗；
++     * 不足 4 颗时只读实际颗数，避免把信号 ID 误当卫星。 */
++    int remaining = gsv->satellites_in_view - (gsv->message_number - 1) * 4;
++    int sats_this_frame = remaining > 4 ? 4 : remaining;
++    if (sats_this_frame < 0) {
++        sats_this_frame = 0;
++    }
++
++    for (int i = 0; i < sats_this_frame; ++i) {
++        const int base = GSV_FIELD_SAT1_SVID + i * 4;
++        gsv->satellites[i].svid = field_to_int(field_at(line, base, &f_len), f_len);
++        gsv->satellites[i].elevation = field_to_int(field_at(line, base + 1, &f_len), f_len);
++        gsv->satellites[i].azimuth = field_to_int(field_at(line, base + 2, &f_len), f_len);
++        gsv->satellites[i].cno = field_to_int(field_at(line, base + 3, &f_len), f_len);
++    }
++    gsv->satellite_count = sats_this_frame;
++
++    /* 尾部信号 ID（NMEA 4.1）：紧跟本帧全部卫星块之后 */
++    {
++        const int signal_idx = GSV_FIELD_SAT1_SVID + sats_this_frame * 4;
++        const char* f = field_at(line, signal_idx, &f_len);
++        gsv->signal_id = field_to_int(f, f_len);
++    }
++    nmea_checksum(line, gsv->checksum);
++}
++
++/* 语句分发：识别语句类型并调用对应解析、打印、回调。
++ * 整行只判断一次 '$' 与长度，else-if 命中即返回，避免多条 strncmp 重复扫描。 */
++static void handle_line(const char* line, int len, const NmeaCallbacks& cb) {
++    if (line == nullptr || len < 6 || line[0] != '$') {
++        return;
++    }
++
++    /* 语句标识位于 "$" + 2 字符 talker（GN/GP/GL/GA/GB/GQ）之后 */
++    const char* tag = line + 3;
++
++    if (strncmp(tag, NMEA_TAG_GGA, 3) == 0) {
++        GGA gga;
++        parse_gga(line, len, &gga);
++        if (cb.onGga) {
++            cb.onGga(gga);
++        }
++#ifdef GNSS_DEBUG
++        /* 打印 GGA 解析出的全部 14 个字段（与 GGAField 1~14 一一对应，中文便于调试） */
++        ALOGD("[GGA] 时间=%s 纬度=%.7f 北南=%c 经度=%.7f 东西=%c "
++              "定位质量=%d 卫星数=%d HDOP=%.2f "
++              "海拔=%.2f 海拔单位=%c 水准面差=%.2f 水准面单位=%c "
++              "差分龄期=%s 差分站ID=%s 校验和=*%s",
++              gga.utc_time, gga.latitude, log_char(gga.ns),
++              gga.longitude, log_char(gga.ew),
++              gga.fix_quality, gga.sats_used, gga.hdop,
++              gga.altitude, log_char(gga.alt_unit),
++              gga.geoid_sep, log_char(gga.geoid_unit),
++              gga.diff_age, gga.diff_station, gga.checksum);
++#endif
++    } else if (strncmp(tag, NMEA_TAG_RMC, 3) == 0) {
++        RMC rmc;
++        parse_rmc(line, len, &rmc);
++        if (cb.onRmc) {
++            cb.onRmc(rmc);
++        }
++#ifdef GNSS_DEBUG
++        /* 打印 RMC 解析出的全部 13 个字段（中文，便于调试） */
++        ALOGD("[RMC] 时间=%s 有效=%c 纬度=%.7f 北南=%c 经度=%.7f 东西=%c "
++              "速度=%.3f节 航向=%.2f度 日期=%s 磁偏角=%s 磁偏角方向=%c "
++              "模式=%c 导航状态=%c 校验和=*%s",
++              rmc.utc_time, log_char(rmc.status),
++              rmc.latitude, log_char(rmc.ns), rmc.longitude, log_char(rmc.ew),
++              rmc.speed_knots, rmc.course_deg, rmc.date,
++              rmc.mag_var, log_char(rmc.mag_var_ew),
++              log_char(rmc.mode), log_char(rmc.nav_status), rmc.checksum);
++#endif
++    } else if (strncmp(tag, NMEA_TAG_GLL, 3) == 0) {
++        GLL gll;
++        parse_gll(line, len, &gll);
++#ifdef GNSS_DEBUG
++        /* 打印 GLL 解析出的全部 7 个字段（中文，便于调试） */
++        ALOGD("[GLL] 纬度=%.7f 北南=%c 经度=%.7f 东西=%c 时间=%s 状态=%c 模式=%c 校验和=*%s",
++              gll.latitude, log_char(gll.ns),
++              gll.longitude, log_char(gll.ew),
++              gll.utc_time, log_char(gll.status), log_char(gll.mode), gll.checksum);
++#endif
++    } else if (strncmp(tag, NMEA_TAG_VTG, 3) == 0) {
++        VTG vtg;
++        parse_vtg(line, len, &vtg);
++#ifdef GNSS_DEBUG
++        /* 打印 VTG 解析出的全部 9 个字段（中文，便于调试） */
++        ALOGD("[VTG] 真北航向=%.2f 真北单位=%c 磁北航向=%s 磁北单位=%c "
++              "速度(节)=%.3f 单位=%c 速度(km/h)=%.3f 单位=%c 定位模式=%c 校验和=*%s",
++              vtg.course_true, log_char(vtg.course_true_unit),
++              vtg.course_mag, log_char(vtg.course_mag_unit),
++              vtg.speed_knots, log_char(vtg.speed_knots_unit),
++              vtg.speed_kmh, log_char(vtg.speed_kmh_unit),
++              log_char(vtg.mode), vtg.checksum);
++#endif
++    } else if (strncmp(tag, NMEA_TAG_GSA, 3) == 0) {
++        GSA gsa;
++        parse_gsa(line, len, &gsa);
++        if (cb.onGsa) {
++            cb.onGsa(gsa);
++        }
++#ifdef GNSS_DEBUG
++        /* 打印 GSA 解析出的全部 18 个字段（中文，便于调试） */
++        ALOGD("[GSA] 模式1=%c 模式2=%d "
++              "PRN1=%d PRN2=%d PRN3=%d PRN4=%d PRN5=%d PRN6=%d "
++              "PRN7=%d PRN8=%d PRN9=%d PRN10=%d PRN11=%d PRN12=%d "
++              "PDOP=%.2f HDOP=%.2f VDOP=%.2f 系统ID=%d 校验和=*%s",
++              log_char(gsa.mode1), gsa.mode2,
++              gsa.prn[0], gsa.prn[1], gsa.prn[2], gsa.prn[3],
++              gsa.prn[4], gsa.prn[5], gsa.prn[6], gsa.prn[7],
++              gsa.prn[8], gsa.prn[9], gsa.prn[10], gsa.prn[11],
++              gsa.pdop, gsa.hdop, gsa.vdop, gsa.system_id, gsa.checksum);
++#endif
++    } else if (strncmp(tag, NMEA_TAG_GSV, 3) == 0) {
++        GSV gsv;
++        parse_gsv(line, len, &gsv);
++        if (cb.onGsv) {
++            cb.onGsv(gsv);
++        }
++#ifdef GNSS_DEBUG
++        /* 打印 GSV 解析出的 20 个字段（GSVField 1~20：头部3 + 卫星4×4 + 信号ID1，中文便于调试）。
++         * talker 前缀用于区分 GP/GL/GA/GB/GQ 五种 GSV。 */
++        ALOGD("[GSV:%s] 总帧数=%d 当前帧=%d 可见卫星数=%d "
++              "星1(sv=%d el=%d az=%d cno=%d) "
++              "星2(sv=%d el=%d az=%d cno=%d) "
++              "星3(sv=%d el=%d az=%d cno=%d) "
++              "星4(sv=%d el=%d az=%d cno=%d) "
++              "信号ID=%d 校验和=*%s",
++              gsv.talker,
++              gsv.total_messages, gsv.message_number, gsv.satellites_in_view,
++              gsv.satellites[0].svid, gsv.satellites[0].elevation,
++              gsv.satellites[0].azimuth, gsv.satellites[0].cno,
++              gsv.satellites[1].svid, gsv.satellites[1].elevation,
++              gsv.satellites[1].azimuth, gsv.satellites[1].cno,
++              gsv.satellites[2].svid, gsv.satellites[2].elevation,
++              gsv.satellites[2].azimuth, gsv.satellites[2].cno,
++              gsv.satellites[3].svid, gsv.satellites[3].elevation,
++              gsv.satellites[3].azimuth, gsv.satellites[3].cno,
++              gsv.signal_id, gsv.checksum);
++#endif
++    }
++}
++
++/* 循环读取串口：切行后解析并通过 cb 回调结构化数据，再打印到 logcat。 */
++int nmea_serial_read_loop(int fd, const NmeaCallbacks& cb) {
++    char buf[SERIAL_READ_BUF];
++    for (;;) {
++        const int n = nmea_serial_read(fd, buf, sizeof(buf));
++        if (n > 0) {
++            line_feed(buf, n, [&cb](const char* line, int len) {
++#ifdef GNSS_DEBUG_2
++                ALOGD("[nmea] %.*s", len, line);
++#endif
++                handle_line(line, len, cb);
++            });
++        } else if (n < 0 && errno == EINTR) {
++            continue;  /* 信号打断，重试 */
++        } else if (n < 0) {
++            ALOGE("%s: read failed: %s", __func__, strerror(errno));
++            return -1;
++        } else {
++            /* n == 0：100ms 超时无数据，视为一包 NMEA 结束，触发 onIdle 让上层收敛上报 */
++            if (cb.onIdle) {
++                cb.onIdle();
++            }
++        }
++    }
++    return 0;
++}
++}  // namespace nmea
++}  // namespace V2_1
++}  // namespace gnss
++}  // namespace hardware
++}  // namespace android
+\ No newline at end of file
+diff --git a/gnss/2.1/default/NmeaSerialReader.h b/gnss/2.1/default/NmeaSerialReader.h
+new file mode 100644
+index 000000000..6c9349756
+--- /dev/null
++++ b/gnss/2.1/default/NmeaSerialReader.h
+@@ -0,0 +1,494 @@
++#ifndef ANDROID_HARDWARE_GNSS_V2_1_NMEA_SERIAL_READER_H_
++#define ANDROID_HARDWARE_GNSS_V2_1_NMEA_SERIAL_READER_H_
++
++#include <fcntl.h>
++#include <termios.h>
++
++#include <functional>
++
++namespace android {
++namespace hardware {
++namespace gnss {
++namespace V2_1 {
++namespace nmea {
++
++/* ====================================================================================================================
++ * $GNGGA —— 定位解（Global Positioning System Fix Data）
++ *
++ * 实测数据示例（静置状态）：
++ *   $GNGGA,072655.000,3200.892919,N,11850.257262,E,1,34,0.68,6.512,M,5.286,M,,*49
++ *
++ *   Index  Value         GGAField                   GGA            Meaning
++ *   ------------------------------------------------------------------------------------------------------------------
++ *   0      $GNGGA        GGA_FIELD_TALKER_ID                      语句标识
++ *   1      072655.000    GGA_FIELD_UTC_TIME         utc_time      UTC 时间 hhmmss.sss
++ *   2      3200.892919   GGA_FIELD_LATITUDE         latitude      纬度 ddmm.mmmm
++ *   3      N             GGA_FIELD_NS_INDICATOR     ns            南北半球：N=北 S=南
++ *   4      11850.257262  GGA_FIELD_LONGITUDE        longitude     经度 dddmm.mmmm
++ *   5      E             GGA_FIELD_EW_INDICATOR     ew            东西半球：E=东 W=西
++ *   6      1             GGA_FIELD_FIX_QUALITY      fix_quality   定位质量：0=无效 1=单点 4=RTK固定 5=RTK浮点 9=惯导
++ *   7      34            GGA_FIELD_SATELLITES_USED  sats_used     参与解算卫星数
++ *   8      0.68          GGA_FIELD_HDOP             hdop          HDOP 水平精度因子
++ *   9      6.512         GGA_FIELD_ALTITUDE         altitude      海拔（米，单位见字段 10）
++ *   10     M             GGA_FIELD_ALT_UNIT         alt_unit      海拔单位：M=米
++ *   11     5.286         GGA_FIELD_GEOID_SEP        geoid_sep     大地水准面差距（单位见字段 12）
++ *   12     M             GGA_FIELD_GEOID_UNIT       geoid_unit    大地水准面差距单位：M=米
++ *   13                   GGA_FIELD_DIFF_AGE         diff_age      差分修正数据龄期（无差分时为空）
++ *   14     *49           GGA_FIELD_DIFF_STATION     diff_station  差分基准站 ID（无差分时省略，此段为校验和）
++ * ================================================================================================================= */
++
++enum GGAField : int {
++    GGA_FIELD_TALKER_ID       = 0,
++    GGA_FIELD_UTC_TIME        = 1,
++    GGA_FIELD_LATITUDE        = 2,
++    GGA_FIELD_NS_INDICATOR    = 3,
++    GGA_FIELD_LONGITUDE       = 4,
++    GGA_FIELD_EW_INDICATOR    = 5,
++    GGA_FIELD_FIX_QUALITY     = 6,
++    GGA_FIELD_SATELLITES_USED = 7,
++    GGA_FIELD_HDOP            = 8,
++    GGA_FIELD_ALTITUDE        = 9,
++    GGA_FIELD_ALT_UNIT        = 10,
++    GGA_FIELD_GEOID_SEP       = 11,
++    GGA_FIELD_GEOID_UNIT      = 12,
++    GGA_FIELD_DIFF_AGE        = 13,
++    GGA_FIELD_DIFF_STATION    = 14,
++    GGA_FIELD_COUNT           = 15,
++};
++
++struct GGA {
++    char   utc_time[16];
++    double latitude;
++    char   ns;
++    double longitude;
++    char   ew;
++    int    fix_quality;
++    int    sats_used;
++    float  hdop;
++    float  altitude;
++    char   alt_unit;
++    float  geoid_sep;
++    char   geoid_unit;
++    char   diff_age[16];
++    char   diff_station[16];
++    char   checksum[3];  /* *hh 校验和（2 位十六进制 + '\0'） */
++};
++
++/* ====================================================================================================================
++ * $GNRMC —— 推荐最小定位信息（Recommended Minimum Specific GNSS Data）
++ *
++ * 实测数据示例（静置状态）：
++ *   $GNRMC,072655.000,A,3200.892919,N,11850.257262,E,0.010,024.96,200826,,,A,V*37
++ *
++ *   Index  Value         RMCField                RMC          Meaning
++ *   ------------------------------------------------------------------------------------------------------------------
++ *   0      $GNRMC        RMC_FIELD_TALKER_ID                  语句标识
++ *   1      072655.000    RMC_FIELD_UTC_TIME      utc_time     UTC 时间 hhmmss.sss
++ *   2      A             RMC_FIELD_STATUS        status       数据有效：A=有效 V=无效
++ *   3      3200.892919   RMC_FIELD_LATITUDE      latitude     纬度 ddmm.mmmm
++ *   4      N             RMC_FIELD_NS_INDICATOR  ns           南北半球：N=北 S=南
++ *   5      11850.257262  RMC_FIELD_LONGITUDE     longitude    经度 dddmm.mmmm
++ *   6      E             RMC_FIELD_EW_INDICATOR  ew           东西半球：E=东 W=西
++ *   7      0.010         RMC_FIELD_SPEED         speed_knots  地面速度（节）
++ *   8      024.96        RMC_FIELD_COURSE        course_deg   地面航向（度，真北基准）
++ *   9      200826        RMC_FIELD_DATE          date         日期 ddmmyy
++ *   10                   RMC_FIELD_MAG_VAR       mag_var      磁偏角（度）
++ *   11                   RMC_FIELD_MAG_VAR_EW    mag_var_ew   磁偏角方向：E=东 W=西
++ *   12     A             RMC_FIELD_MODE          mode         定位模式：A=自主 D=差分 E=推算 F=浮点RTK M=手动 N=无定位 R=RTK
++ *   13     V             RMC_FIELD_NAV_STATUS    nav_status   导航状态：S=安全 C=注意 U=不安全 V=无效
++ * ================================================================================================================= */
++
++enum RMCField : int {
++    RMC_FIELD_TALKER_ID    = 0,
++    RMC_FIELD_UTC_TIME     = 1,
++    RMC_FIELD_STATUS       = 2,
++    RMC_FIELD_LATITUDE     = 3,
++    RMC_FIELD_NS_INDICATOR = 4,
++    RMC_FIELD_LONGITUDE    = 5,
++    RMC_FIELD_EW_INDICATOR = 6,
++    RMC_FIELD_SPEED        = 7,
++    RMC_FIELD_COURSE       = 8,
++    RMC_FIELD_DATE         = 9,
++    RMC_FIELD_MAG_VAR      = 10,
++    RMC_FIELD_MAG_VAR_EW   = 11,
++    RMC_FIELD_MODE         = 12,
++    RMC_FIELD_NAV_STATUS   = 13,
++    RMC_FIELD_COUNT        = 14,
++};
++
++struct RMC {
++    char   utc_time[16];
++    char   status;
++    double latitude;
++    char   ns;
++    double longitude;
++    char   ew;
++    float  speed_knots;
++    float  course_deg;
++    char   date[7];
++    char   mag_var[16];
++    char   mag_var_ew;
++    char   mode;
++    char   nav_status;
++    char   checksum[3];  /* *hh 校验和（2 位十六进制 + '\0'） */
++};
++
++/* ====================================================================================================================
++ * $GNGLL —— 地理定位信息（Geographic Position - Latitude/Longitude）
++ *
++ * 实测数据示例（静置状态）：
++ *   $GNGLL,3200.892919,N,11850.257262,E,072655.000,A,A*4C
++ *
++ *   Index  Value         GLLField                GLL        Meaning
++ *   ------------------------------------------------------------------------------------------------------------------
++ *   0      $GNGLL        GLL_FIELD_TALKER_ID                语句标识
++ *   1      3200.892919   GLL_FIELD_LATITUDE      latitude   纬度 ddmm.mmmm
++ *   2      N             GLL_FIELD_NS_INDICATOR  ns         南北半球：N=北 S=南
++ *   3      11850.257262  GLL_FIELD_LONGITUDE     longitude  经度 dddmm.mmmm
++ *   4      E             GLL_FIELD_EW_INDICATOR  ew         东西半球：E=东 W=西
++ *   5      072655.000    GLL_FIELD_UTC_TIME      utc_time   UTC 时间 hhmmss.sss
++ *   6      A             GLL_FIELD_STATUS        status     数据状态：A=有效 V=无效
++ *   7      A             GLL_FIELD_MODE          mode       定位模式：A=自主 D=差分 E=推算 F=浮点RTK M=手动 N=无定位 R=RTK
++ * ================================================================================================================= */
++
++enum GLLField : int {
++    GLL_FIELD_TALKER_ID    = 0,
++    GLL_FIELD_LATITUDE     = 1,
++    GLL_FIELD_NS_INDICATOR = 2,
++    GLL_FIELD_LONGITUDE    = 3,
++    GLL_FIELD_EW_INDICATOR = 4,
++    GLL_FIELD_UTC_TIME     = 5,
++    GLL_FIELD_STATUS       = 6,
++    GLL_FIELD_MODE         = 7,
++    GLL_FIELD_COUNT        = 8,
++};
++
++struct GLL {
++    double latitude;
++    char   ns;
++    double longitude;
++    char   ew;
++    char   utc_time[16];
++    char   status;
++    char   mode;
++    char   checksum[3];  /* *hh 校验和（2 位十六进制 + '\0'） */
++};
++
++/* ====================================================================================================================
++ * $GNVTG —— 对地航向与速度（Course Over Ground and Ground Speed）
++ *
++ * 实测数据示例（静置状态）：
++ *   $GNVTG,024.96,T,,M,0.011,N,0.020,K,A*28
++ *
++ *   Index  Value   VTGField                  VTG               Meaning
++ *   ------------------------------------------------------------------------------------------------------------------
++ *   0      $GNVTG  VTG_FIELD_TALKER_ID                         语句标识
++ *   1      024.96  VTG_FIELD_COURSE_TRUE     course_true       真北航向（度）
++ *   2      T       VTG_FIELD_COURSE_TRUE_UNIT course_true_unit 真北单位：T=真北
++ *   3               VTG_FIELD_COURSE_MAG     course_mag        磁北航向（度，可空）
++ *   4      M       VTG_FIELD_COURSE_MAG_UNIT course_mag_unit   磁北单位：M=磁北
++ *   5      0.011   VTG_FIELD_SPEED_KNOTS     speed_knots       对地速度（节）
++ *   6      N       VTG_FIELD_SPEED_KNOTS_UNIT speed_knots_unit 速度单位：N=节
++ *   7      0.020   VTG_FIELD_SPEED_KMH       speed_kmh         对地速度（km/h）
++ *   8      K       VTG_FIELD_SPEED_KMH_UNIT  speed_kmh_unit    速度单位：K=km/h
++ *   9      A       VTG_FIELD_MODE            mode              定位模式：A=自主 D=差分 E=推算 F=浮点RTK M=手动 N=无定位 R=RTK
++ * ================================================================================================================= */
++
++enum VTGField : int {
++    VTG_FIELD_TALKER_ID        = 0,
++    VTG_FIELD_COURSE_TRUE      = 1,
++    VTG_FIELD_COURSE_TRUE_UNIT = 2,
++    VTG_FIELD_COURSE_MAG       = 3,
++    VTG_FIELD_COURSE_MAG_UNIT  = 4,
++    VTG_FIELD_SPEED_KNOTS      = 5,
++    VTG_FIELD_SPEED_KNOTS_UNIT = 6,
++    VTG_FIELD_SPEED_KMH        = 7,
++    VTG_FIELD_SPEED_KMH_UNIT   = 8,
++    VTG_FIELD_MODE             = 9,
++    VTG_FIELD_COUNT            = 10,
++};
++
++struct VTG {
++    float course_true;
++    char  course_true_unit;
++    char  course_mag[16];
++    char  course_mag_unit;
++    float speed_knots;
++    char  speed_knots_unit;
++    float speed_kmh;
++    char  speed_kmh_unit;
++    char  mode;
++    char  checksum[3];  /* *hh 校验和（2 位十六进制 + '\0'） */
++};
++
++/* ====================================================================================================================
++ * $GNGSA —— DOP 与参与解算卫星（GNSS DOP and Active Satellites）
++ *
++ * 实测数据示例（静置状态，各星座各一条，此处取北斗句作代表）：
++ *   $GNGSA,A,3,01,04,06,07,10,14,19,21,22,36,39,26,1.20,0.68,0.99,4*09
++ *
++ *   Index  Value   GSAField             GSA            Meaning
++ *   ------------------------------------------------------------------------------------------------------------------
++ *   0      $GNGSA  GSA_FIELD_TALKER_ID                      语句标识
++ *   1      A       GSA_FIELD_MODE1      mode1      模式1：M=手动 A=自动
++ *   2      3       GSA_FIELD_MODE2      mode2      模式2：1=无定位 2=2D 3=3D
++ *   3      01      GSA_FIELD_PRN_1      prn[0]     参与解算卫星号 1
++ *   4      04      GSA_FIELD_PRN_2      prn[1]     参与解算卫星号 2
++ *   5      06      GSA_FIELD_PRN_3      prn[2]     参与解算卫星号 3
++ *   6      07      GSA_FIELD_PRN_4      prn[3]     参与解算卫星号 4
++ *   7      10      GSA_FIELD_PRN_5      prn[4]     参与解算卫星号 5
++ *   8      14      GSA_FIELD_PRN_6      prn[5]     参与解算卫星号 6
++ *   9      19      GSA_FIELD_PRN_7      prn[6]     参与解算卫星号 7
++ *   10     21      GSA_FIELD_PRN_8      prn[7]     参与解算卫星号 8
++ *   11     22      GSA_FIELD_PRN_9      prn[8]     参与解算卫星号 9
++ *   12     36      GSA_FIELD_PRN_10     prn[9]     参与解算卫星号 10
++ *   13     39      GSA_FIELD_PRN_11     prn[10]    参与解算卫星号 11
++ *   14     26      GSA_FIELD_PRN_12     prn[11]    参与解算卫星号 12
++ *   15     1.20    GSA_FIELD_PDOP       pdop       PDOP 位置精度因子
++ *   16     0.68    GSA_FIELD_HDOP       hdop       HDOP 水平精度因子
++ *   17     0.99    GSA_FIELD_VDOP       vdop       VDOP 垂直精度因子
++ *   18     4       GSA_FIELD_SYSTEM_ID  system_id  系统ID：1=GPS 2=GLONASS 3=Galileo 4=BeiDou 5=QZSS
++ * ================================================================================================================= */
++
++enum GSAField : int {
++    GSA_FIELD_TALKER_ID = 0,
++    GSA_FIELD_MODE1     = 1,
++    GSA_FIELD_MODE2     = 2,
++    GSA_FIELD_PRN_1     = 3,
++    GSA_FIELD_PRN_2     = 4,
++    GSA_FIELD_PRN_3     = 5,
++    GSA_FIELD_PRN_4     = 6,
++    GSA_FIELD_PRN_5     = 7,
++    GSA_FIELD_PRN_6     = 8,
++    GSA_FIELD_PRN_7     = 9,
++    GSA_FIELD_PRN_8     = 10,
++    GSA_FIELD_PRN_9     = 11,
++    GSA_FIELD_PRN_10    = 12,
++    GSA_FIELD_PRN_11    = 13,
++    GSA_FIELD_PRN_12    = 14,
++    GSA_FIELD_PDOP      = 15,
++    GSA_FIELD_HDOP      = 16,
++    GSA_FIELD_VDOP      = 17,
++    GSA_FIELD_SYSTEM_ID = 18,
++    GSA_FIELD_COUNT     = 19,
++};
++
++struct GSA {
++    char  mode1;
++    int   mode2;
++    int   prn[12];
++    float pdop;
++    float hdop;
++    float vdop;
++    int   system_id;
++    char  checksum[3];  /* *hh 校验和（2 位十六进制 + '\0'） */
++};
++
++/* ====================================================================================================================
++ * $GPGSV / $GLGSV / $GAGSV / $GBGSV / $GQGSV —— 可见卫星（GNSS Satellites in View）
++ *
++ * 实测数据示例（静置状态，取 GPS 首帧 4 颗完整；每帧 1~4 颗不等，且个别
++ * 卫星的仰角/方位角可为空，NMEA 4.1 句尾另有信号 ID 字段）：
++ *   $GPGSV,2,1,08,02,07,298,23,10,75,210,26,12,38,062,16,23,43,163,35,1*63
++ *
++ *   Index  Value   GSVField                GSV                  Meaning
++ *   ------------------------------------------------------------------------------------------------------------------
++ *   0      $GPGSV  GSV_FIELD_TALKER_ID                              语句标识（GP=GPS GL=GLONASS GA=Galileo GB=BeiDou GQ=QZSS）
++ *   1      2       GSV_FIELD_TOTAL_MSG     total_messages           总帧数
++ *   2      1       GSV_FIELD_MSG_NUM       message_number           当前帧号，从 1 起
++ *   3      08      GSV_FIELD_SATS_IN_VIEW  satellites_in_view       本星座可见卫星总数
++ *   4      02      GSV_FIELD_SAT1_SVID     satellites[0].svid       卫星1 卫星号
++ *   5      07      GSV_FIELD_SAT1_ELEV     satellites[0].elevation  卫星1 仰角（度）
++ *   6      298     GSV_FIELD_SAT1_AZIM     satellites[0].azimuth    卫星1 方位角（度）
++ *   7      23      GSV_FIELD_SAT1_CNO      satellites[0].cno        卫星1 载噪比（dB-Hz）
++ *   8      10      GSV_FIELD_SAT2_SVID     satellites[1].svid       卫星2 卫星号
++ *   9      75      GSV_FIELD_SAT2_ELEV     satellites[1].elevation  卫星2 仰角（度）
++ *   10     210     GSV_FIELD_SAT2_AZIM     satellites[1].azimuth    卫星2 方位角（度）
++ *   11     26      GSV_FIELD_SAT2_CNO      satellites[1].cno        卫星2 载噪比（dB-Hz）
++ *   12     12      GSV_FIELD_SAT3_SVID     satellites[2].svid       卫星3 卫星号
++ *   13     38      GSV_FIELD_SAT3_ELEV     satellites[2].elevation  卫星3 仰角（度）
++ *   14     062     GSV_FIELD_SAT3_AZIM     satellites[2].azimuth    卫星3 方位角（度）
++ *   15     16      GSV_FIELD_SAT3_CNO      satellites[2].cno        卫星3 载噪比（dB-Hz）
++ *   16     23      GSV_FIELD_SAT4_SVID     satellites[3].svid       卫星4 卫星号
++ *   17     43      GSV_FIELD_SAT4_ELEV     satellites[3].elevation  卫星4 仰角（度）
++ *   18     163     GSV_FIELD_SAT4_AZIM     satellites[3].azimuth    卫星4 方位角（度）
++ *   19     35      GSV_FIELD_SAT4_CNO      satellites[3].cno        卫星4 载噪比（dB-Hz）
++ *   20     1       GSV_FIELD_SIGNAL_ID     signal_id                信号ID（NMEA 4.1 尾部新增）
++ * ================================================================================================================= */
++
++enum GSVField : int {
++    GSV_FIELD_TALKER_ID    = 0,
++    GSV_FIELD_TOTAL_MSG    = 1,
++    GSV_FIELD_MSG_NUM      = 2,
++    GSV_FIELD_SATS_IN_VIEW = 3,
++    GSV_FIELD_SAT1_SVID    = 4,
++    GSV_FIELD_SAT1_ELEV    = 5,
++    GSV_FIELD_SAT1_AZIM    = 6,
++    GSV_FIELD_SAT1_CNO     = 7,
++    GSV_FIELD_SAT2_SVID    = 8,
++    GSV_FIELD_SAT2_ELEV    = 9,
++    GSV_FIELD_SAT2_AZIM    = 10,
++    GSV_FIELD_SAT2_CNO     = 11,
++    GSV_FIELD_SAT3_SVID    = 12,
++    GSV_FIELD_SAT3_ELEV    = 13,
++    GSV_FIELD_SAT3_AZIM    = 14,
++    GSV_FIELD_SAT3_CNO     = 15,
++    GSV_FIELD_SAT4_SVID    = 16,
++    GSV_FIELD_SAT4_ELEV    = 17,
++    GSV_FIELD_SAT4_AZIM    = 18,
++    GSV_FIELD_SAT4_CNO     = 19,
++    GSV_FIELD_SIGNAL_ID    = 20,
++    GSV_FIELD_COUNT        = 21,
++};
++
++struct GSVSatellite {
++    int svid;
++    int elevation;
++    int azimuth;
++    int cno;
++};
++
++struct GSV {
++    char          talker[3];
++    int           total_messages;
++    int           message_number;
++    int           satellites_in_view;
++    int           signal_id;
++    GSVSatellite  satellites[4];
++    int           satellite_count;
++    char          checksum[3];  /* *hh 校验和（2 位十六进制 + '\0'） */
++};
++
++/* ====================================================================================================================
++ * NMEA 语句类型标识
++ *
++ * 用于按语句类型分发解析。语句标识取 $ 符号后第 2~4 字节（如 "$GNGGA" 的 "GGA"），
++ * 与 talker 前缀（GN/GP/GL/GA/GB/GQ）无关，同一类型各 talker 复用同一标识。
++ * ================================================================================================================= */
++
++constexpr char NMEA_TAG_GGA[] = "GGA"; /* 定位解 */
++constexpr char NMEA_TAG_RMC[] = "RMC"; /* 推荐最小定位信息 */
++constexpr char NMEA_TAG_GLL[] = "GLL"; /* 地理定位信息 */
++constexpr char NMEA_TAG_VTG[] = "VTG"; /* 对地航向与速度 */
++constexpr char NMEA_TAG_GSA[] = "GSA"; /* DOP 与参与解算卫星 */
++constexpr char NMEA_TAG_GSV[] = "GSV"; /* 可见卫星 */
++
++/* ====================================================================================================================
++ * 星座枚举
++ *
++ * 与 GSV 语句的 talker 前缀对应（详见 GSV 字段表），供卫星上报时区分星座使用。
++ * ================================================================================================================= */
++
++enum Constellation : int {
++    CONSTELLATION_GPS = 0,     /* talker: GP */
++    CONSTELLATION_GLONASS = 1, /* talker: GL */
++    CONSTELLATION_GALILEO = 2, /* talker: GA */
++    CONSTELLATION_BEIDOU = 3,  /* talker: GB */
++    CONSTELLATION_QZSS = 4,    /* talker: GQ */
++    CONSTELLATION_UNKNOWN = 5, /* 其它/未知 */
++};
++
++/* ====================================================================================================================
++ * 串口配置常量
++ *
++ * 设备：Quectel LC29H GNSS 模组经 USB 转串口工具挂在 RK3588 上，默认枚举为
++ *       /dev/ttyUSB0，115200 8N1 原始模式（raw），阻塞读 + 100ms 超时。
++ * ================================================================================================================= */
++
++/* ---- 设备 ---- */
++
++/* 默认串口设备节点（USB 转串口，RK 板上枚举为 ttyUSB0） */
++constexpr char SERIAL_DEV_DEFAULT[] = "/dev/ttyUSB0";
++
++/* 波特率（termios 常量）：LC29H 默认 NMEA 输出 115200 */
++constexpr speed_t SERIAL_BAUD_RATE = B115200;
++
++/* 数据位：CS8 = 8 数据位 */
++constexpr tcflag_t SERIAL_DATA_BITS = CS8;
++
++/* 校验位：0 = 不使能校验（8N1 中的 N 无校验） */
++constexpr tcflag_t SERIAL_PARITY_NONE = 0;
++
++/* 停止位：0 = 1 停止位（8N1 中的 1；CSTOPB 置位才是 2 停止位） */
++constexpr tcflag_t SERIAL_STOP_BITS_1 = 0;
++
++/* 控制模式标志（c_cflag）：8N1 组合 + CLOCAL（忽略 Modem 控制线，
++ * 防 open 卡死）+ CREAD（使能接收）；不置 CRTSCTS 关闭硬件流控 */
++constexpr tcflag_t SERIAL_C_CFLAG = CLOCAL | CREAD | CS8;
++
++/* ---- 读超时（阻塞读语义）---- */
++
++/* VMIN=0：有数据立即返回；VTIME=1：无数据最多等 100ms（单位 0.1s）。
++ * 保证 stop() 后读线程能在 100ms 内退出阻塞的 read()。 */
++constexpr cc_t SERIAL_VMIN = 0;
++constexpr cc_t SERIAL_VTIME = 1;
++
++/* ---- 打开标志 ---- */
++
++/* O_NONBLOCK 仅用于打开阶段：避免对端无载波（DCD）时 open 阻塞。
++ * 配好 termios 后需 fcntl(F_SETFL, 0) 清掉该标志，恢复阻塞读。 */
++constexpr int SERIAL_OPEN_FLAGS = O_RDONLY | O_NOCTTY | O_NONBLOCK;
++
++/* ---- 读取缓冲 / 打开重试 ---- */
++
++/* 单次 read() 块缓冲 */
++constexpr int SERIAL_READ_BUF = 1024;
++
++/* NMEA 行缓冲（按 '\n' 切行时累积用，单行最长约 77 字节） */
++constexpr int NMEA_LINE_MAX = 1024;
++
++/* 打开失败后分段重试：20 × 100ms = 2s，兼容 USB 晚枚举 / 热插拔；
++ * 分段睡眠保证 stop() 能及时生效。 */
++constexpr int SERIAL_OPEN_RETRIES = 20;
++constexpr int SERIAL_RETRY_STEP_US = 100000;
++
++/* ====================================================================================================================
++ * 日志配置
++ * ================================================================================================================= */
++
++/* 运行时日志级别（编译期定死，不使用系统属性）：
++ * 0 = 仅生命周期 / 错误
++ * 1 = + 每周期解析摘要
++ * 2 = + 原始 NMEA 语句逐条转储 */
++constexpr int SERIAL_VERBOSE_LEVEL = 2;
++
++/* ====================================================================================================================
++ * 上报回调
++ *
++ * 串口读线程解析出语句后，通过以下回调把结构化数据传给上层（Gnss HAL）。
++ * 未设置的回调（std::function 为空）不调用；GLL/VTG 结构化上报用不到，故不设回调。
++ * ================================================================================================================= */
++
++struct NmeaCallbacks {
++    std::function<void(const GGA&)> onGga;  /* $GNGGA / $GPGGA 定位解 */
++    std::function<void(const RMC&)> onRmc;  /* $GNRMC / $GPRMC 推荐最小定位信息 */
++    std::function<void(const GSA&)> onGsa;  /* $GNGSA / $GPGSA DOP 与参与解算卫星 */
++    std::function<void(const GSV&)> onGsv;  /* $GPGSV 等 可见卫星 */
++    std::function<void()> onIdle;           /* 串口 100ms 无数据，视为一包 NMEA 结束 */
++};
++
++/* ====================================================================================================================
++ * 函数
++ * ================================================================================================================= */
++
++/* 打开串口。
++ * 返回：成功 fd(>=0)；失败 -1（errno 为具体错误）。 */
++int nmea_serial_open(const char* dev);
++
++/* 关闭串口（fd 无效时直接返回）。 */
++void nmea_serial_close(int fd);
++
++/* 单次阻塞读取原始字节（不切行、不解析）。
++ * 返回：>0 实际字节数；0 超时无数据；-1 出错（errno=EINTR 可重试）。 */
++int nmea_serial_read(int fd, char* buf, int len);
++
++/* 循环读取串口：按 '\n' 切出完整一行，解析后通过 cb 回调结构化数据，
++ * 并打印到 logcat（验证数据链路用）。阻塞运行，直到出错返回 -1。 */
++int nmea_serial_read_loop(int fd, const NmeaCallbacks& cb);
++}  // namespace nmea
++}  // namespace V2_1
++}  // namespace gnss
++}  // namespace hardware
++}  // namespace android
++
++#endif  // ANDROID_HARDWARE_GNSS_V2_1_NMEA_SERIAL_READER_H_
+diff --git a/gnss/2.1/default/android.hardware.gnss@2.1-service.rc b/gnss/2.1/default/android.hardware.gnss@2.1-service.rc
+index 5926c775d..1e38d6570 100644
+--- a/gnss/2.1/default/android.hardware.gnss@2.1-service.rc
++++ b/gnss/2.1/default/android.hardware.gnss@2.1-service.rc
+@@ -1,4 +1,4 @@
+ service vendor.gnss-2-1 /vendor/bin/hw/android.hardware.gnss@2.1-service
+     class hal
+     user system
+-    group system
++    group system radio
+diff --git a/gnss/2.1/default/service.cpp b/gnss/2.1/default/service.cpp
+index 4f282cfda..e725413f8 100644
+--- a/gnss/2.1/default/service.cpp
++++ b/gnss/2.1/default/service.cpp
+@@ -18,22 +18,25 @@
+ 
+ #include <hidl/HidlSupport.h>
+ #include <hidl/HidlTransportSupport.h>
++
++#include "Gnss.h"
+ #include "v2_1/GnssTemplate.h"
+ 
+ using ::android::OK;
+ using ::android::sp;
+ using ::android::hardware::configureRpcThreadpool;
+ using ::android::hardware::joinRpcThreadpool;
+-using ::android::hardware::gnss::common::implementation::GnssTemplate;
+ using ::android::hardware::gnss::V2_1::IGnss;
++using ::android::hardware::gnss::V2_1::implementation::Gnss;
+ 
+ int main(int /* argc */, char* /* argv */[]) {
+-    sp<IGnss> gnss = new GnssTemplate<IGnss>();
++    sp<IGnss> gnss = new Gnss();
+     configureRpcThreadpool(1, true /* will join */);
+     if (gnss->registerAsService() != OK) {
+         ALOGE("Could not register gnss 2.1 service.");
+         return 1;
+     }
++
+     joinRpcThreadpool();
+ 
+     ALOGE("Service exited!");
+diff --git a/gnss/common/utils/default/include/v2_1/GnssTemplate.h b/gnss/common/utils/default/include/v2_1/GnssTemplate.h
+index c5a186b7a..330673819 100644
+--- a/gnss/common/utils/default/include/v2_1/GnssTemplate.h
++++ b/gnss/common/utils/default/include/v2_1/GnssTemplate.h
+@@ -111,13 +111,15 @@ struct GnssTemplate : public T_IGnss {
+ 
+     Return<void> debug(const hidl_handle& fd, const hidl_vec<hidl_string>& options) override;
+ 
+-  private:
+-    std::unique_ptr<V2_0::GnssLocation> getLocationFromHW();
++  protected:
+     void reportLocation(const V2_0::GnssLocation&) const;
+     void reportLocation(const V1_0::GnssLocation&) const;
+     void reportSvStatus(const hidl_vec<V2_1::IGnssCallback::GnssSvInfo>&) const;
+     void reportGnssStatusValue(const V1_0::IGnssCallback::GnssStatusValue) const;
+ 
++  private:
++    std::unique_ptr<V2_0::GnssLocation> getLocationFromHW();
++
+     Return<void> help(const hidl_handle& fd);
+     Return<void> setLocation(const hidl_handle& fd, const hidl_vec<hidl_string>& options);
+ 
+-- 
+2.53.0
+
